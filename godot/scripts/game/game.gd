@@ -757,9 +757,9 @@ func _build_stage() -> void:
 	for i in B.HUNTERS.size():
 		var sprite := TextureRect.new()
 		sprite.texture = load(B.HUNTERS[i]["sprite"])
-		sprite.size = HERO_SIZE
 		sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		sprite.size = HERO_SIZE
 		sprite.pivot_offset = Vector2(HERO_SIZE.x / 2.0, HERO_SIZE.y)
 		sprite.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_squad.append(sprite)
@@ -835,6 +835,7 @@ func _layout_stage() -> void:
 		var slot: Vector2 = HERO_SLOTS[i]
 		var pos := Vector2(slot.x, ground + slot.y - HERO_SIZE.y)
 		_squad_base[i] = pos
+		_squad[i].size = HERO_SIZE
 		_squad[i].position = pos
 		_place_shadow(_hero_shadows[i], pos.x + HERO_SIZE.x * 0.5, ground + slot.y, HERO_SIZE.x * 0.62)
 	var boss := B.is_boss(GameState.wave)
