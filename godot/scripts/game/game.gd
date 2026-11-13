@@ -26,6 +26,11 @@ var _rank_label: Label
 var _rank_badge: TextureRect
 var _gate_label: Label
 var _area: Control
+var _stage: Control
+var _gold_icon: TextureRect
+var _shake := 0.0
+var _particles: Array[CPUParticles2D] = []
+var _particle_index := 0
 var _monster_name: Label
 var _monster_body: Panel
 var _monster_art: TextureRect
@@ -50,6 +55,7 @@ func _ready() -> void:
 	Ads.ready_changed.connect(func(_r: bool) -> void: _refresh())
 	_spawn_monster()
 	_refresh()
+	_start_idle_animations.call_deferred()
 	if GameState.pending_offline_gold > 0.0:
 		_show_offline.call_deferred()
 
@@ -65,6 +71,11 @@ func _process(delta: float) -> void:
 				_on_boss_timeout()
 	if _hp_back.value > _hp_bar.value:
 		_hp_back.value = move_toward(_hp_back.value, _hp_bar.value, _monster_max * 1.5 * delta)
+	if _shake > 0.0:
+		_stage.position = Vector2(randf_range(-1, 1), randf_range(-1, 1)) * _shake
+		_shake = move_toward(_shake, 0.0, 70.0 * delta)
+	elif _stage.position != Vector2.ZERO:
+		_stage.position = Vector2.ZERO
 	_attack_timer -= delta
 	if _attack_timer <= 0.0 and not _paused:
 		_attack_timer = 0.9
@@ -98,8 +109,20 @@ func _squad_attack() -> void:
 			continue
 		var t := create_tween()
 		t.tween_interval(i * 0.15)
-		t.tween_property(sprite, "scale", Vector2(1.06, 1.06), 0.08)
-		t.tween_property(sprite, "scale", Vector2.ONE, 0.15)
+		t.tween_property(sprite, "rotation", 0.12, 0.08)
+		t.tween_callback(_hunter_hit.bind(i))
+		t.tween_property(sprite, "rotation", 0.0, 0.18)
+
+
+func _hunter_hit(index: int) -> void:
+	if _paused:
+		return
+	var center := _monster_center()
+	var spot := center + Vector2(randf_range(-70, 70), randf_range(-90, 30))
+	_burst(spot, B.HUNTERS[index]["color"], 10, 0.8)
+	var dps := B.hunter_dps(index, GameState.hunters[index]) * GameState.dmg_mult() * 0.9
+	if dps >= 1.0:
+		_popup(spot, B.format_num(dps), Color(B.HUNTERS[index]["color"]).lightened(0.4), 24)
 
 func _spawn_monster() -> void:
 	_monster_max = B.monster_hp(GameState.gate, GameState.wave)
@@ -125,11 +148,27 @@ func _spawn_monster() -> void:
 	_hp_back.max_value = _monster_max
 	_hp_back.value = _monster_max
 	_update_monster_ui()
+	var target: Control = _monster_art if _monster_art.visible else _monster_body
+	target.scale = Vector2(0.6, 0.6)
+	target.rotation = 0.0
+	create_tween().tween_property(target, "scale", Vector2.ONE, 0.3) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	if boss:
+		_boss_intro(biome["boss"])
 
 
 func _tap(local_pos: Vector2) -> void:
 	var dmg := GameState.tap_damage()
-	_popup(local_pos, B.format_num(dmg), Color(1, 1, 1))
+	var crit := randf() < B.CRIT_CHANCE
+	if crit:
+		dmg *= B.CRIT_MULT
+		_popup(local_pos, "КРИТ! " + B.format_num(dmg), Color(1, 0.55, 0.15), 46)
+		_burst(local_pos, Color(1, 0.6, 0.2), 22, 1.4)
+		_shake = maxf(_shake, 9.0)
+	else:
+		_popup(local_pos, B.format_num(dmg), Color(1, 1, 1))
+		_burst(local_pos, B.biome(GameState.gate)["color"].lightened(0.3), 12, 1.0)
+		_shake = maxf(_shake, 3.0)
 	var target: Control = _monster_art if _monster_art.visible else _monster_body
 	var t := create_tween().set_parallel(true)
 	target.scale = Vector2(0.94, 0.94)
@@ -142,8 +181,17 @@ func _tap(local_pos: Vector2) -> void:
 func _damage(amount: float) -> void:
 	_monster_hp -= amount
 	if _monster_hp <= 0.0:
+		var was_boss := B.is_boss(GameState.wave)
+		var cleared_gate := GameState.gate
+		var center := _monster_center()
+		_death_ghost()
 		var reward := GameState.monster_killed()
-		_popup(_area.size / 2.0 + Vector2(0, -60), "+" + B.format_num(reward) + " золота", Color(1, 0.85, 0.3))
+		_popup(center + Vector2(0, -60), "+" + B.format_num(reward), Color(1, 0.85, 0.3), 40)
+		_burst(center, Color(1, 0.85, 0.35), 26, 1.6)
+		_fly_coins(_area.global_position + center, 8 if was_boss else 4)
+		_shake = maxf(_shake, 18.0 if was_boss else 7.0)
+		if was_boss:
+			_banner("Врата %d закрыты!" % cleared_gate, Color(1, 0.85, 0.3), 60)
 		_spawn_monster()
 
 
@@ -206,6 +254,143 @@ func _on_offline_double_pressed() -> void:
 func _grant_offline_double() -> void:
 	GameState.claim_offline(2.0)
 	_close_overlay()
+
+
+# ---------- эффекты ----------
+
+func _monster_center() -> Vector2:
+	var target: Control = _monster_art if _monster_art.visible else _monster_body
+	return target.get_global_rect().get_center() - _area.global_position
+
+
+## Вспышка частиц в координатах зоны боя (пул из 8 эмиттеров).
+func _burst(pos: Vector2, color: Color, amount: int, power: float) -> void:
+	if _particles.is_empty():
+		for i in 8:
+			var p := CPUParticles2D.new()
+			p.one_shot = true
+			p.emitting = false
+			p.explosiveness = 1.0
+			p.lifetime = 0.5
+			p.spread = 180.0
+			p.gravity = Vector2(0, 700)
+			p.initial_velocity_min = 180.0
+			p.initial_velocity_max = 420.0
+			p.scale_amount_min = 5.0
+			p.scale_amount_max = 11.0
+			var ramp := Gradient.new()
+			ramp.set_color(0, Color(1, 1, 1, 1))
+			ramp.set_color(1, Color(1, 1, 1, 0))
+			p.color_ramp = ramp
+			_area.add_child(p)
+			_particles.append(p)
+	var e := _particles[_particle_index]
+	_particle_index = (_particle_index + 1) % _particles.size()
+	e.position = pos
+	e.amount = amount
+	e.color = color
+	e.initial_velocity_max = 420.0 * power
+	e.restart()
+
+
+func _death_ghost() -> void:
+	if not _monster_art.visible or _monster_art.texture == null:
+		return
+	var rect := _monster_art.get_global_rect()
+	var ghost := TextureRect.new()
+	ghost.texture = _monster_art.texture
+	ghost.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ghost.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ghost.position = rect.position
+	ghost.size = rect.size
+	ghost.pivot_offset = rect.size / 2.0
+	add_child(ghost)
+	var t := create_tween().set_parallel(true)
+	ghost.modulate = Color(3, 3, 3, 1)
+	t.tween_property(ghost, "scale", Vector2(1.25, 1.25), 0.28)
+	t.tween_property(ghost, "modulate", Color(3, 3, 3, 0), 0.28)
+	t.chain().tween_callback(ghost.queue_free)
+
+
+## Монеты летят от монстра к счётчику золота.
+func _fly_coins(from_global: Vector2, count: int) -> void:
+	var to := _gold_icon.get_global_rect().get_center()
+	for i in count:
+		var coin := _icon(IC_GOLD, 40)
+		coin.pivot_offset = Vector2(20, 20)
+		var start := from_global + Vector2(randf_range(-60, 60), randf_range(-60, 40)) - Vector2(20, 20)
+		coin.position = start
+		add_child(coin)
+		var ctrl := start + Vector2(randf_range(-160, 160), -randf_range(80, 220))
+		var end := to - Vector2(20, 20)
+		var t := create_tween()
+		t.tween_interval(i * 0.05)
+		t.tween_method(_coin_step.bind(coin, start, ctrl, end), 0.0, 1.0, 0.55).set_ease(Tween.EASE_IN)
+		t.tween_callback(func() -> void:
+			coin.queue_free()
+			_pulse_gold())
+
+
+func _coin_step(k: float, coin: Control, start: Vector2, ctrl: Vector2, end: Vector2) -> void:
+	var a := start.lerp(ctrl, k)
+	var b := ctrl.lerp(end, k)
+	coin.position = a.lerp(b, k)
+	coin.scale = Vector2.ONE * lerpf(1.0, 0.6, k)
+
+
+func _pulse_gold() -> void:
+	_gold_label.pivot_offset = _gold_label.size / 2.0
+	_gold_icon.pivot_offset = _gold_icon.size / 2.0
+	var t := create_tween().set_parallel(true)
+	_gold_label.scale = Vector2(1.15, 1.15)
+	_gold_icon.scale = Vector2(1.2, 1.2)
+	t.tween_property(_gold_label, "scale", Vector2.ONE, 0.15)
+	t.tween_property(_gold_icon, "scale", Vector2.ONE, 0.15)
+
+
+## Крупная надпись по центру экрана.
+func _banner(text: String, color: Color, size: int, hold: float = 0.7) -> void:
+	var l := _label(text, size, color, true)
+	l.add_theme_constant_override("outline_size", 14)
+	l.set_anchors_preset(Control.PRESET_FULL_RECT)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.position.y = -140
+	add_child(l)
+	l.pivot_offset = get_viewport_rect().size / 2.0
+	l.scale = Vector2(1.8, 1.8)
+	l.modulate.a = 0.0
+	var t := create_tween()
+	t.set_parallel(true)
+	t.tween_property(l, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(l, "modulate:a", 1.0, 0.15)
+	t.chain().tween_interval(hold)
+	t.chain().tween_property(l, "modulate:a", 0.0, 0.3)
+	t.chain().tween_callback(l.queue_free)
+
+
+## Заставка босса: пауза, надпись, затем таймер стартует.
+func _boss_intro(boss_name: String) -> void:
+	_paused = true
+	_banner("БОСС\n" + boss_name, Color(1, 0.35, 0.3), 64, 0.9)
+	_shake = 12.0
+	get_tree().create_timer(1.4).timeout.connect(func() -> void:
+		if _overlay == null:
+			_paused = false)
+
+
+func _start_idle_animations() -> void:
+	for i in _squad.size():
+		var sprite := _squad[i]
+		var t := create_tween().set_loops()
+		t.tween_interval(i * 0.3)
+		t.tween_property(sprite, "scale", Vector2(1.0, 1.025), 0.9).set_trans(Tween.TRANS_SINE)
+		t.tween_property(sprite, "scale", Vector2.ONE, 0.9).set_trans(Tween.TRANS_SINE)
+	var m := create_tween().set_loops()
+	m.tween_property(_monster_art, "rotation", 0.025, 1.3).set_trans(Tween.TRANS_SINE)
+	m.tween_property(_monster_art, "rotation", -0.025, 1.3).set_trans(Tween.TRANS_SINE)
 
 
 # ---------- обновление интерфейса ----------
@@ -301,7 +486,8 @@ func _build_ui() -> void:
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 10)
 	top_panel.add_child(top)
-	top.add_child(_icon(IC_GOLD, 52))
+	_gold_icon = _icon(IC_GOLD, 52)
+	top.add_child(_gold_icon)
 	_gold_label = _label("", 36, Color(1, 0.85, 0.3), true)
 	_gold_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(_gold_label)
@@ -323,6 +509,7 @@ func _build_ui() -> void:
 	root.add_child(_area)
 
 	var stage := VBoxContainer.new()
+	_stage = stage
 	stage.set_anchors_preset(Control.PRESET_FULL_RECT)
 	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_area.add_child(stage)
@@ -498,8 +685,8 @@ func _icon(tex: Texture2D, size: int) -> TextureRect:
 	return tr
 
 
-func _popup(pos: Vector2, text: String, color: Color) -> void:
-	var l := _label(text, 36, color, true)
+func _popup(pos: Vector2, text: String, color: Color, size: int = 36) -> void:
+	var l := _label(text, size, color, true)
 	l.position = pos - Vector2(40, 20)
 	_area.add_child(l)
 	var t := create_tween().set_parallel(true)

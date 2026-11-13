@@ -5,6 +5,8 @@ const WAVES_PER_GATE := 10
 const BOSS_TIME := 30.0
 const BOSS_EXTRA_TIME := 15.0
 const BUFF_SECONDS := 300.0
+const CRIT_CHANCE := 0.1
+const CRIT_MULT := 3.0
 const OFFLINE_CAP_SECONDS := 8 * 3600
 const OFFLINE_MIN_SECONDS := 60
 
