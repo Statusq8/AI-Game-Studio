@@ -47,6 +47,7 @@ var _press_cell := Vector2i(-1, -1)
 var _press_pos := Vector2.ZERO
 var _selected := Vector2i(-1, -1)
 var _dragging := false
+var _touch_seen := false
 var _idle := 0.0
 var _hint_tweens: Array[Tween] = []
 var _hits := {}
@@ -432,26 +433,32 @@ func _swap_data(a: Vector2i, b: Vector2i) -> void:
 
 # ---------- ввод ----------
 
-func _unhandled_input(event: InputEvent) -> void:
-	if not input_enabled or busy:
+## Пальцем (ScreenTouch/Drag) и мышью. Если пришло касание, мышиные события (эмуляция) игнорируем.
+func _input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		_touch_seen = true
+		if event.index == 0:
+			_pointer(event.position, event.pressed, false)
+	elif event is InputEventScreenDrag:
+		if event.index == 0:
+			_pointer(event.position, true, true)
+	elif _touch_seen:
 		return
-	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
-		var local: Vector2 = get_global_transform_with_canvas().affine_inverse() * event.position
-		var cell := Vector2i(floori(local.x / CELL), floori(local.y / CELL))
-		if event.pressed:
-			_stop_hint()
-			if not inside(cell):
-				_selected = Vector2i(-1, -1)
-				return
-			_press_cell = cell
-			_press_pos = local
-			_dragging = true
-		elif _dragging:
-			_dragging = false
-			if cell == _press_cell:
-				_on_tap(cell)
-	elif event is InputEventMouseMotion and _dragging:
-		var local: Vector2 = get_global_transform_with_canvas().affine_inverse() * event.position
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		_pointer(event.position, event.pressed, false)
+	elif event is InputEventMouseMotion and (event.button_mask & MOUSE_BUTTON_MASK_LEFT):
+		_pointer(event.position, true, true)
+
+
+func _pointer(screen_pos: Vector2, pressed: bool, motion: bool) -> void:
+	if not input_enabled or busy:
+		_dragging = false
+		return
+	var local: Vector2 = get_global_transform_with_canvas().affine_inverse() * screen_pos
+	var cell := Vector2i(floori(local.x / CELL), floori(local.y / CELL))
+	if motion:
+		if not _dragging:
+			return
 		var d := local - _press_pos
 		if d.length() > CELL * 0.35:
 			_dragging = false
@@ -459,6 +466,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			_selected = Vector2i(-1, -1)
 			_unselect_all()
 			try_swap(_press_cell, _press_cell + dir)
+		return
+	if pressed:
+		_stop_hint()
+		if not inside(cell):
+			return
+		_press_cell = cell
+		_press_pos = local
+		_dragging = true
+	elif _dragging:
+		_dragging = false
+		if cell == _press_cell:
+			_on_tap(cell)
 
 
 func _on_tap(cell: Vector2i) -> void:

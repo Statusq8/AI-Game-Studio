@@ -39,6 +39,7 @@ var _bot := false
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	theme = UiTheme.build()
 	_build_background()
 	_build_home()
@@ -55,6 +56,8 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--shots="):
 			_run_shots.call_deferred(arg.trim_prefix("--shots="))
+		elif arg == "--inputtest":
+			_run_input_test.call_deferred()
 		elif arg.begins_with("--bot"):
 			_run_bot.call_deferred(int(arg.trim_prefix("--bot=")) if "=" in arg else 10)
 
@@ -175,6 +178,7 @@ func _refresh_hearts() -> void:
 func _build_home() -> void:
 	_home = Control.new()
 	_home.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_home.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_home)
 	var top := MarginContainer.new()
 	top.set_anchors_preset(Control.PRESET_TOP_WIDE)
@@ -247,6 +251,7 @@ func _build_home() -> void:
 func _build_level_screen() -> void:
 	_level_screen = Control.new()
 	_level_screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_level_screen.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_level_screen)
 
 	var top := MarginContainer.new()
@@ -307,9 +312,11 @@ func _build_level_screen() -> void:
 
 	_board_frame = PanelContainer.new()
 	_board_frame.theme_type_variation = "BoardPanel"
+	_board_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_level_screen.add_child(_board_frame)
 	var clip := Control.new()
 	clip.clip_contents = true
+	clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	clip.custom_minimum_size = Vector2(8, 8) * Board.CELL
 	_board_frame.add_child(clip)
 	_board = Board.new()
@@ -731,6 +738,76 @@ func _run_bot(levels: int) -> void:
 		_clear_overlay()
 	print("BOT done: %d/%d wins" % [wins, levels])
 	get_tree().quit()
+
+
+## Проверка настоящего ввода: свайп и два тапа через очередь событий, как палец на телефоне.
+func _run_input_test() -> void:
+	Save.hearts = Save.MAX_HEARTS
+	_start_level(1)
+	await get_tree().create_timer(1.5).timeout
+	var ok := 0
+	for mode in ["mouse", "swipe", "tap"]:
+		var m: Array = []
+		for cand in _board.all_moves():
+			if cand[0] != cand[1]:
+				m = cand
+				break
+		var before := _moves
+		var a := _board.get_global_transform_with_canvas() * _board.cell_pos(m[0])
+		var b := _board.get_global_transform_with_canvas() * _board.cell_pos(m[1])
+		if mode == "mouse":
+			_mouse(a, true)
+			for i in 6:
+				var mm := InputEventMouseMotion.new()
+				mm.position = a.lerp(b, (i + 1) / 6.0)
+				mm.button_mask = MOUSE_BUTTON_MASK_LEFT
+				get_viewport().push_input(mm, true)
+				await get_tree().process_frame
+			_mouse(b, false)
+		elif mode == "swipe":
+			_touch(a, true)
+			for i in 6:
+				_drag(a.lerp(b, (i + 1) / 6.0))
+				await get_tree().process_frame
+			_touch(b, false)
+		else:
+			_touch(a, true)
+			await get_tree().process_frame
+			_touch(a, false)
+			await get_tree().process_frame
+			_touch(b, true)
+			await get_tree().process_frame
+			_touch(b, false)
+		await get_tree().create_timer(0.3).timeout
+		while _board.busy:
+			await get_tree().process_frame
+		await get_tree().create_timer(1.2).timeout
+		print("INPUT %s: moves %d -> %d" % [mode, before, _moves])
+		if _moves == before - 1:
+			ok += 1
+	print("INPUT TEST %s" % ("OK" if ok == 3 else "FAIL"))
+	get_tree().quit()
+
+
+func _touch(pos: Vector2, pressed: bool) -> void:
+	var e := InputEventScreenTouch.new()
+	e.position = pos
+	e.pressed = pressed
+	get_viewport().push_input(e, true)
+
+
+func _mouse(pos: Vector2, pressed: bool) -> void:
+	var e := InputEventMouseButton.new()
+	e.position = pos
+	e.button_index = MOUSE_BUTTON_LEFT
+	e.pressed = pressed
+	get_viewport().push_input(e, true)
+
+
+func _drag(pos: Vector2) -> void:
+	var e := InputEventScreenDrag.new()
+	e.position = pos
+	get_viewport().push_input(e, true)
 
 
 func _run_shots(dir: String) -> void:
