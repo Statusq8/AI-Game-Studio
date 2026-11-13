@@ -72,10 +72,6 @@ func _draw() -> void:
 				# мягкая тень под кристаллом + редкий блеск
 				draw_circle(Vector2(0, size * 0.36), size * 0.3, Color(0, 0, 0, 0.12))
 				_draw_tex(t, box)
-				var ph := fmod(_shine + _t, 6.0)
-				if ph < 0.35:
-					var k := ph / 0.35
-					draw_circle(Vector2(-size * 0.18, -size * 0.2), size * (0.05 + 0.08 * sin(k * PI)), Color(1, 1, 1, 0.9 * sin(k * PI)))
 				return
 		ROCKET_H, ROCKET_V:
 			t = tex("rocket")

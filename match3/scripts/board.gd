@@ -240,10 +240,11 @@ func _tile_box(col: Color) -> StyleBoxFlat:
 ## Поле: «премиальные» плитки со скруглением, зазором, глянцем сверху и тенью снизу.
 func _draw() -> void:
 	var r := Rect2(Vector2.ZERO, board_size())
-	draw_rect(r, Color("#2a1a4a", 0.55))
+	draw_rect(r, Color("#1d3b4f", 0.55))
 	var gap := 3.0
-	var light := _tile_box(Color("#ffffff", 0.96))
-	var dark := _tile_box(Color("#dceeff", 0.96))
+	# спокойные клетки средней яркости: фишки читаются, глаз не слепит
+	var light := _tile_box(Color("#c9dde6", 0.88))
+	var dark := _tile_box(Color("#b5cdd8", 0.88))
 	var grass_a := _tile_box(Color("#6fdc5e"))
 	var grass_b := _tile_box(Color("#5ccc4f"))
 	var soil_a := _tile_box(Color("#c08a55"))
@@ -259,7 +260,7 @@ func _draw() -> void:
 				sb = soil_a if even else soil_b
 			draw_style_box(sb, rect)
 			# глянцевая полоска сверху
-			draw_rect(Rect2(rect.position + Vector2(8, 5), Vector2(rect.size.x - 16, 6)), Color(1, 1, 1, 0.45))
+			draw_rect(Rect2(rect.position + Vector2(8, 5), Vector2(rect.size.x - 16, 5)), Color(1, 1, 1, 0.18))
 			if grass[x][y]:
 				for k in 3:
 					var bx := rect.position.x + 12 + k * 24
