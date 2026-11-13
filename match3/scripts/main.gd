@@ -6,11 +6,14 @@ const Levels := preload("res://scripts/levels.gd")
 const Board := preload("res://scripts/board.gd")
 const Gem := preload("res://scripts/gem.gd")
 
-const VERSION := "0.3.1"
+const VERSION := "0.4.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
 const EXTRA_MOVES_PRICE := 300
+const BOOSTER_PRICE := 250
+const IN_BOOSTERS := [["hammer", "Молот"], ["arrow", "Ряд"], ["cannon", "Столбец"], ["shuffle", "Микс"]]
+const PRE_BOOSTERS := [["pre_rocket", "Ракета", 1], ["pre_bomb", "Бомба", 3], ["pre_orb", "Шар", 4]]
 
 var _bg: TextureRect
 var _home: Control
@@ -26,6 +29,10 @@ var _ui_tick := 0.0
 var _board: Board
 var _home_panda: Control
 var _panda: Control
+var _booster_bar: HBoxContainer
+var _booster_btns := {}
+var _aiming := ""
+var _pre_selected := {}
 var _board_frame: Control
 var _moves_label: Label
 var _level_label: Label
@@ -318,13 +325,26 @@ func _build_level_screen() -> void:
 	_board.goal_hit.connect(_on_goal_hit)
 	_board.settled.connect(_on_settled)
 	_board.big_hit.connect(func(p: float) -> void: _shake = maxf(_shake, 6.0 + p * 4.0))
+	_booster_bar = HBoxContainer.new()
+	_booster_bar.alignment = BoxContainer.ALIGNMENT_CENTER
+	_booster_bar.add_theme_constant_override("separation", 14)
+	_level_screen.add_child(_booster_bar)
+	for b in IN_BOOSTERS:
+		var btn := Button.new()
+		btn.theme_type_variation = "OrangeButton"
+		btn.custom_minimum_size = Vector2(150, 104)
+		btn.add_theme_font_size_override("font_size", 24)
+		btn.pressed.connect(_on_booster.bind(b[0]))
+		_booster_bar.add_child(btn)
+		_booster_btns[b[0]] = btn
 	_panda = _make_panda(200.0)
 	_level_screen.add_child(_panda)
 	_level_screen.move_child(_panda, _board_frame.get_index())
 	_board.combo_made.connect(func(n: int) -> void: if n >= 2: _panda_react("combo"))
 	_level_screen.resized.connect(func() -> void:
 		_board_frame.position = _board_rest()
-		_panda.position = _panda_rest())
+		_panda.position = _panda_rest()
+		_layout_bar())
 
 
 ## Панда: картинка с «дыханием». Позже заменим на версию из частей (голова, лапы, тело).
@@ -382,10 +402,67 @@ func _panda_rest() -> Vector2:
 	return Vector2(_level_screen.size.x - h * 0.84 - 10, top - h + 18)
 
 
+func _layout_bar() -> void:
+	var r := _board_rest()
+	var bottom := r.y + _board_frame.get_combined_minimum_size().y
+	_booster_bar.size = Vector2(_level_screen.size.x, 110)
+	_booster_bar.position = Vector2(0, bottom + maxf(14.0, (_level_screen.size.y - bottom - 110.0) * 0.35))
+
+
+func _refresh_boosters() -> void:
+	for b in IN_BOOSTERS:
+		var btn: Button = _booster_btns[b[0]]
+		var n := int(Save.boosters.get(b[0], 0))
+		btn.text = "%s\n%s" % [b[1], ("×%d" % n) if n > 0 else "+"]
+		btn.theme_type_variation = "GreenButton" if _aiming == b[0] else "OrangeButton"
+
+
+func _on_booster(kind: String) -> void:
+	if _state != "play" or _board.busy:
+		return
+	if _aiming == kind:
+		_aiming = ""
+		_board.target_cb = Callable()
+		_refresh_boosters()
+		return
+	if int(Save.boosters.get(kind, 0)) <= 0:
+		_board.input_enabled = false
+		_dialog("Нет бустера", ["Купить 1 шт. за %d монет?" % BOOSTER_PRICE], [
+			["%d монет" % BOOSTER_PRICE, "OrangeButton", func() -> void:
+				if Save.spend(BOOSTER_PRICE):
+					Save.add_booster(kind)
+				_close_dialog(), Save.coins < BOOSTER_PRICE],
+			["▶ Реклама: +1", "PurpleButton", func() -> void:
+				Ads.show_rewarded(func() -> void: Save.add_booster(kind))
+				_close_dialog(), not Ads.is_ready()],
+			["Закрыть", "Button", _close_dialog],
+		])
+		return
+	if kind == "shuffle":
+		Save.use_booster(kind)
+		_refresh_boosters()
+		_board.shuffle_now()
+		return
+	_aiming = kind
+	_refresh_boosters()
+	_board.target_cb = func(cell: Vector2i) -> void:
+		_aiming = ""
+		Save.use_booster(kind)
+		_refresh_boosters()
+		_board.booster_hit(kind, cell)
+
+
+func _close_dialog() -> void:
+	_clear_overlay()
+	_refresh_boosters()
+	if _state == "play":
+		_board.input_enabled = true
+
+
 func _board_rest() -> Vector2:
 	var s := _board_frame.get_combined_minimum_size()
 	var free_top := 300.0
-	var y := free_top + maxf(0.0, (_level_screen.size.y - free_top - s.y) * 0.45)
+	var y := free_top + maxf(0.0, (_level_screen.size.y - free_top - 140.0 - s.y) * 0.5)
 	return Vector2((_level_screen.size.x - s.x) / 2.0, y)
 
 
@@ -405,7 +482,7 @@ func _show_home() -> void:
 func _try_play() -> void:
 	Save.update_hearts()
 	if Save.hearts > 0:
-		_start_level(Save.level)
+		_show_prelevel(Save.level)
 		return
 	var sec := Save.seconds_to_heart()
 	_dialog("Нет жизней", ["Новая жизнь через %d:%02d" % [sec / 60, sec % 60]], [
@@ -415,6 +492,41 @@ func _try_play() -> void:
 				_show_home()), not Ads.is_ready()],
 		["Закрыть", "Button", _show_home],
 	])
+
+
+## Окно перед уровнем: цели и бустеры «до уровня» (ракета, бомба, шар появятся на поле в начале).
+func _show_prelevel(n: int) -> void:
+	_home.visible = true
+	_level_screen.visible = false
+	_pre_selected.clear()
+	var lv := Levels.make(n)
+	var goals: Array = []
+	for g in lv.goals:
+		goals.append({"color": "фишки", "crate": "ящики", "vase": "вазы", "chain": "цепи", "grass": "трава", "item": "яйца"}[g.kind] + " " + str(g.left))
+	var v := _dialog("Уровень %d" % n, ["Цели: " + ", ".join(goals), "Бустеры на старт:"], [
+		["▶ Играть", "GreenButton", func() -> void: _start_level(n)],
+		["Закрыть", "Button", _show_home],
+	])
+	# ряд переключателей бустеров перед кнопкой «Играть»
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 12)
+	v.add_child(row)
+	v.move_child(row, v.get_child_count() - 3)
+	for b in PRE_BOOSTERS:
+		var kind: String = b[0]
+		var t := Button.new()
+		t.toggle_mode = true
+		t.custom_minimum_size = Vector2(150, 110)
+		t.add_theme_font_size_override("font_size", 24)
+		var cnt := int(Save.boosters.get(kind, 0))
+		t.text = "%s\n×%d" % [b[1], cnt]
+		t.disabled = cnt <= 0
+		t.theme_type_variation = "Button"
+		t.toggled.connect(func(on: bool) -> void:
+			_pre_selected[kind] = on
+			t.theme_type_variation = "GreenButton" if on else "Button")
+		row.add_child(t)
 
 
 ## Выход из уровня без победы стоит жизнь.
@@ -443,6 +555,14 @@ func _start_level(n: int) -> void:
 	_panda_react("reset")
 	_build_goals()
 	_update_moves()
+	_aiming = ""
+	_board.target_cb = Callable()
+	for b in PRE_BOOSTERS:
+		if _pre_selected.get(b[0], false) and Save.use_booster(b[0]):
+			_board.spawn_specials(1, b[2])
+	_pre_selected.clear()
+	_refresh_boosters()
+	_layout_bar()
 	_state = "play"
 	_intro_banner()
 
@@ -663,7 +783,7 @@ func _clear_overlay() -> void:
 		c.queue_free()
 
 
-func _dialog(title_text: String, lines: Array, buttons: Array) -> void:
+func _dialog(title_text: String, lines: Array, buttons: Array) -> VBoxContainer:
 	_clear_overlay()
 	var dim := ColorRect.new()
 	dim.color = Color(0.05, 0.03, 0.2, 0.6)
@@ -706,6 +826,7 @@ func _dialog(title_text: String, lines: Array, buttons: Array) -> void:
 	panel.pivot_offset = Vector2(280, 250)
 	panel.scale = Vector2(0.6, 0.6)
 	panel.create_tween().tween_property(panel, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	return v
 
 
 func _show_win() -> void:
@@ -777,7 +898,11 @@ func _run_bot(levels: int) -> void:
 				if cand[0] == cand[1]:
 					m = cand
 			guard += 1
-			if m[0] == m[1]:
+			if guard % 7 == 3:
+				_board.booster_hit(["hammer", "arrow", "cannon"].pick_random(), Vector2i(randi() % 8, randi() % 8))
+			elif guard % 11 == 5:
+				_board.shuffle_now()
+			elif m[0] == m[1]:
 				_board.activate_single(m[0])
 			else:
 				_board.try_swap(m[0], m[1])
@@ -904,6 +1029,9 @@ func _run_shots(dir: String) -> void:
 	_show_win()
 	await get_tree().create_timer(0.5).timeout
 	await _snap(dir, "6_win")
+	_show_prelevel(9)
+	await get_tree().create_timer(0.5).timeout
+	await _snap(dir, "8_prelevel")
 	Save.hearts = 0
 	_show_home()
 	_try_play()

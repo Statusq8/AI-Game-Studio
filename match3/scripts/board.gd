@@ -51,6 +51,7 @@ var _touch_seen := false
 var _idle := 0.0
 var _hint_tweens: Array[Tween] = []
 var _hits := {}
+var target_cb: Callable    # режим прицеливания бустером: следующий тап по клетке вызывает его
 
 
 # ---------- создание поля ----------
@@ -471,6 +472,11 @@ func _pointer(screen_pos: Vector2, pressed: bool, motion: bool) -> void:
 		_stop_hint()
 		if not inside(cell):
 			return
+		if target_cb.is_valid():
+			var cb := target_cb
+			target_cb = Callable()
+			cb.call(cell)
+			return
 		_press_cell = cell
 		_press_pos = local
 		_dragging = true
@@ -606,6 +612,40 @@ func activate_single(cell: Vector2i) -> void:
 	_hits.clear()
 	move_made.emit()
 	await _clear({cell: true})
+	await _cascade([])
+
+
+## Бустеры на уровне (ход не тратят): "hammer" — клетка, "arrow" — ряд, "cannon" — столбец.
+func booster_hit(kind: String, cell: Vector2i) -> void:
+	if busy or not inside(cell):
+		return
+	_stop_hint()
+	busy = true
+	_hits.clear()
+	var area := {}
+	match kind:
+		"hammer":
+			area[cell] = true
+			_beam_fx(cell, Gem.BOMB, -1, 0.45)
+		"arrow":
+			for x in W:
+				area[Vector2i(x, cell.y)] = true
+			_beam_fx(cell, Gem.ROCKET_H, -1)
+		"cannon":
+			for y in H:
+				area[Vector2i(cell.x, y)] = true
+			_beam_fx(cell, Gem.ROCKET_V, -1)
+	big_hit.emit(1.5)
+	await _clear(area)
+	await _cascade([])
+
+
+func shuffle_now() -> void:
+	if busy:
+		return
+	_stop_hint()
+	busy = true
+	await _shuffle()
 	await _cascade([])
 
 

@@ -11,7 +11,9 @@ var level := 1
 var coins := 0
 var sound := true
 var hearts := MAX_HEARTS
-var heart_at := 0.0  # unix-время, когда придёт следующее сердце (0 — сердца полные)
+var heart_at := 0.0
+## Бустеры: на уровне (молот, ряд, столбец, перемешать) и до уровня (ракета, бомба, шар).
+var boosters := {"hammer": 2, "arrow": 2, "cannon": 2, "shuffle": 2, "pre_rocket": 2, "pre_bomb": 2, "pre_orb": 1}  # unix-время, когда придёт следующее сердце (0 — сердца полные)
 
 
 func _ready() -> void:
@@ -24,13 +26,17 @@ func _ready() -> void:
 		sound = bool(data.get("sound", true))
 		hearts = clampi(int(data.get("hearts", MAX_HEARTS)), 0, MAX_HEARTS)
 		heart_at = float(data.get("heart_at", 0.0))
+		var b: Variant = data.get("boosters", {})
+		if b is Dictionary:
+			for k in boosters:
+				boosters[k] = int(b.get(k, boosters[k]))
 	update_hearts()
 
 
 func store() -> void:
 	var f := FileAccess.open(PATH, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"level": level, "coins": coins, "sound": sound, "hearts": hearts, "heart_at": heart_at}))
+		f.store_string(JSON.stringify({"level": level, "coins": coins, "sound": sound, "hearts": hearts, "heart_at": heart_at, "boosters": boosters}))
 	changed.emit()
 
 
@@ -81,4 +87,17 @@ func lose_heart() -> void:
 func add_heart() -> void:
 	hearts = mini(MAX_HEARTS, hearts + 1)
 	update_hearts()
+	store()
+
+
+func use_booster(kind: String) -> bool:
+	if int(boosters.get(kind, 0)) <= 0:
+		return false
+	boosters[kind] -= 1
+	store()
+	return true
+
+
+func add_booster(kind: String, n: int = 1) -> void:
+	boosters[kind] = int(boosters.get(kind, 0)) + n
 	store()
