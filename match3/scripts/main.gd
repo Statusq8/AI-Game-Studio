@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.2.0"
+const VERSION := "1.2.1"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1705,27 +1705,101 @@ func _begin_bonus() -> void:
 # ---------- окна ----------
 
 ## Переход между экранами: шторка из листьев с отпечатком лапы.
+## Шторки из листьев: две половины съезжаются к центру, в середине — медальон с лапкой, потом расходятся.
 func _transition(then: Callable) -> void:
-	var cur := Control.new()
-	cur.mouse_filter = Control.MOUSE_FILTER_STOP
-	cur.size = size
-	cur.position = Vector2(-size.x, 0)
-	cur.draw.connect(func() -> void:
-		cur.draw_rect(Rect2(Vector2.ZERO, cur.size), Color("#3fb85a"))
-		for i in 18:
-			var p := Vector2(fmod(i * 173.0, cur.size.x), fmod(i * 291.0, cur.size.y))
-			cur.draw_circle(p, 70, Color("#56c96c"))
-		var m := cur.size / 2
-		cur.draw_circle(m + Vector2(0, 30), 60, Color("#2b8a41"))
-		for d in [Vector2(-60, -40), Vector2(-22, -78), Vector2(22, -78), Vector2(60, -40)]:
-			cur.draw_circle(m + d, 26, Color("#2b8a41")))
-	add_child(cur)
-	var tw := cur.create_tween()
-	tw.tween_property(cur, "position:x", 0.0, 0.25).set_trans(Tween.TRANS_SINE)
-	tw.tween_callback(then)
-	tw.tween_interval(0.1)
-	tw.tween_property(cur, "position:x", size.x, 0.25).set_trans(Tween.TRANS_SINE)
-	tw.tween_callback(cur.queue_free)
+	var root := Control.new()
+	root.mouse_filter = Control.MOUSE_FILTER_STOP
+	root.size = size
+	root.z_index = 60
+	add_child(root)
+	var halves: Array = []
+	for side in [-1, 1]:
+		var h := _leaf_curtain(side)
+		h.size = Vector2(size.x / 2.0 + 40.0, size.y)
+		h.position = Vector2(-h.size.x if side < 0 else size.x, 0)
+		root.add_child(h)
+		halves.append(h)
+	var medal := _paw_medal()
+	medal.position = size / 2 - medal.size / 2
+	medal.pivot_offset = medal.size / 2
+	medal.scale = Vector2.ZERO
+	root.add_child(medal)
+	var tw := root.create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(halves[0], "position:x", -40.0, 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(halves[1], "position:x", size.x / 2.0, 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.chain().tween_property(medal, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.chain().tween_property(medal, "rotation", TAU * 0.05, 0.08)
+	tw.chain().tween_property(medal, "rotation", 0.0, 0.08)
+	tw.chain().tween_callback(then)
+	tw.chain().tween_interval(0.15)
+	tw.chain().tween_property(medal, "scale", Vector2.ZERO, 0.14).set_ease(Tween.EASE_IN)
+	tw.chain().tween_property(halves[0], "position:x", -halves[0].size.x, 0.3).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_property(halves[1], "position:x", size.x, 0.3).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.chain().tween_callback(root.queue_free)
+
+
+## Половина шторки: тёмно-зелёная основа, ряды крупных объёмных листьев, золотой кант по внутреннему краю.
+func _leaf_curtain(side: int) -> Control:
+	var c := Control.new()
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7 + side
+	var leaves: Array = []
+	for row in 26:
+		for col in 7:
+			leaves.append([Vector2(col * 64.0 + rng.randf_range(-14, 14) + (32.0 if row % 2 else 0.0), row * 64.0 + rng.randf_range(-10, 10)),
+				rng.randf_range(-0.6, 0.6) + (PI if rng.randf() < 0.5 else 0.0), rng.randf_range(0.85, 1.25), rng.randi_range(0, 2)])
+	var greens := [Color("#2f9e3a"), Color("#3fb84a"), Color("#56c95a")]
+	c.draw.connect(func() -> void:
+		c.draw_rect(Rect2(Vector2.ZERO, c.size), Color("#1d6b2a"))
+		for L in leaves:
+			var p: Vector2 = L[0]
+			if p.x > c.size.x + 40 or p.y > c.size.y + 40:
+				continue
+			c.draw_set_transform(p, L[1], Vector2(L[2], L[2]))
+			var g: Color = greens[L[3]]
+			var leaf := PackedVector2Array([Vector2(-46, 0), Vector2(-22, -24), Vector2(10, -26), Vector2(46, 0), Vector2(10, 26), Vector2(-22, 24)])
+			c.draw_colored_polygon(leaf, g.darkened(0.35))
+			var top := PackedVector2Array()
+			for v in leaf:
+				top.append(v * 0.9 + Vector2(-2, -3))
+			c.draw_colored_polygon(top, g)
+			c.draw_line(Vector2(-40, 0), Vector2(40, 0), g.darkened(0.3), 3.0)
+			c.draw_line(Vector2(-14, -12), Vector2(14, -14), Color(1, 1, 1, 0.35), 4.0)
+			c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		# золотой кант по внутренней кромке
+		var ex := c.size.x - 14.0 if side < 0 else 0.0
+		c.draw_rect(Rect2(Vector2(ex, 0), Vector2(14, c.size.y)), Color("#a86a08"))
+		c.draw_rect(Rect2(Vector2(ex + 3, 0), Vector2(8, c.size.y)), Color("#ffcf3a"))
+		c.draw_rect(Rect2(Vector2(ex + 4, 0), Vector2(3, c.size.y)), Color(1, 1, 1, 0.5))
+		# тень от канта внутрь шторки
+		var sx := ex - 24.0 if side < 0 else 14.0
+		c.draw_rect(Rect2(Vector2(sx, 0), Vector2(24, c.size.y)), Color(0, 0, 0, 0.18)))
+	return c
+
+
+## Круглый медальон с лапкой посередине закрытых шторок.
+func _paw_medal() -> Control:
+	var m := Control.new()
+	m.size = Vector2(200, 200)
+	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var slot: Texture2D = load("res://assets/art/ui_slot_round.png")
+	m.draw.connect(func() -> void:
+		var c := m.size / 2
+		m.draw_circle(c + Vector2(0, 8), 96, Color(0, 0, 0, 0.3))
+		if slot:
+			m.draw_texture_rect(slot, Rect2(Vector2.ZERO, m.size), false)
+		var paw := Color("#ffd23f")
+		var dark := Color("#8a4a0a")
+		for k in 2:
+			var col: Color = dark if k == 0 else paw
+			var off := Vector2(0, 4) if k == 0 else Vector2.ZERO
+			m.draw_circle(c + Vector2(0, 22) + off, 34, col)
+			for d in [Vector2(-40, -14), Vector2(-15, -42), Vector2(15, -42), Vector2(40, -14)]:
+				m.draw_circle(c + d + off, 15, col)
+		m.draw_circle(c + Vector2(-10, 12), 9, Color(1, 1, 1, 0.55)))
+	return m
 
 
 func _clear_overlay() -> void:
@@ -2164,6 +2238,10 @@ func _run_shots(dir: String) -> void:
 	_show_win()
 	await get_tree().create_timer(1.4).timeout
 	await _snap(dir, "6_win")
+	_transition(func() -> void: pass)
+	await get_tree().create_timer(0.62).timeout
+	await _snap(dir, "6c_curtain")
+	await get_tree().create_timer(0.8).timeout
 	_level_transition(12)
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "6b_transition")
