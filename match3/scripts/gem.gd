@@ -5,10 +5,10 @@ extends Node2D
 enum { NONE, ROCKET_H, ROCKET_V, BOMB, ORB, PROPELLER, ITEM }
 
 const COLORS := [
-	Color("#ff4f63"),  # 0 красный — рубин
-	Color("#38a6ff"),  # 1 синий — капля
-	Color("#3fd46a"),  # 2 зелёный — шестигранник
-	Color("#ffcf2e"),  # 3 жёлтый — звезда
+	Color("#ff3b3b"),  # 0 красный — круглый рубин
+	Color("#2f8bff"),  # 1 синий — капля
+	Color("#3fd43f"),  # 2 зелёный — шестигранник
+	Color("#ffc21a"),  # 3 жёлтый — звезда
 	Color("#b06bff"),  # 4 фиолетовый — ромб
 	Color("#ff9a2a"),  # 5 оранжевый — квадрат
 ]
