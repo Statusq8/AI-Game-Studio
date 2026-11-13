@@ -2,6 +2,12 @@ extends Control
 ## Главный экран «Охотника за Вратами». Интерфейс строится кодом; графика — заглушки.
 
 const B := preload("res://scripts/game/balance.gd")
+const IC_STRIKE := preload("res://assets/art/ic_strike.png")
+const IC_GOLD := preload("res://assets/art/ic_gold.png")
+const IC_X2 := preload("res://assets/art/ic_x2.png")
+const IC_HOURGLASS := preload("res://assets/art/ic_hourglass.png")
+const IC_CHEST := preload("res://assets/art/ic_chest.png")
+const IC_AD := preload("res://assets/art/ic_ad.png")
 
 var _monster_hp := 1.0
 var _monster_max := 1.0
@@ -135,9 +141,10 @@ func _damage(amount: float) -> void:
 
 func _on_boss_timeout() -> void:
 	_paused = true
-	var box := _open_overlay("Время вышло!", "Босс оказался сильнее. Улучши отряд или попробуй ещё раз.")
+	var box := _open_overlay("Время вышло!", "Босс оказался сильнее. Улучши отряд или попробуй ещё раз.", IC_HOURGLASS)
 	if not _boss_extra_used:
-		var extra := _button("Ещё +15 сек (реклама)", 30, _on_boss_extra_pressed)
+		var extra := _button("Ещё +15 сек", 30, _on_boss_extra_pressed)
+		extra.icon = IC_AD
 		extra.disabled = not Ads.is_ready()
 		box.add_child(extra)
 	box.add_child(_button("Отступить", 30, func() -> void:
@@ -168,8 +175,9 @@ func _show_offline() -> void:
 	if _overlay != null or GameState.pending_offline_gold <= 0.0:
 		return
 	var amount := GameState.pending_offline_gold
-	var box := _open_overlay("С возвращением!", "Пока тебя не было, отряд добыл %s золота." % B.format_num(amount))
-	var double := _button("Забрать x2 (реклама)", 30, _on_offline_double_pressed)
+	var box := _open_overlay("С возвращением!", "Пока тебя не было, отряд добыл %s золота." % B.format_num(amount), IC_CHEST)
+	var double := _button("Забрать x2", 30, _on_offline_double_pressed)
+	double.icon = IC_AD
 	double.disabled = not Ads.is_ready()
 	box.add_child(double)
 	box.add_child(_button("Забрать", 30, func() -> void:
@@ -201,7 +209,7 @@ func _update_monster_ui() -> void:
 
 func _refresh() -> void:
 	var gs := GameState
-	_gold_label.text = "Золото: " + B.format_num(gs.gold)
+	_gold_label.text = B.format_num(gs.gold)
 	_rank_label.text = "Ранг " + B.RANKS[gs.rank()]
 	var biome := B.biome(gs.gate)
 	var wave_text := "БОСС" if B.is_boss(gs.wave) else "Волна %d/%d" % [gs.wave, B.WAVES_PER_GATE]
@@ -212,9 +220,11 @@ func _refresh() -> void:
 	var left := gs.buff_left()
 	if left > 0.0:
 		_buff_button.text = "x2 урон: %d:%02d" % [int(left) / 60, int(left) % 60]
+		_buff_button.icon = IC_X2
 		_buff_button.disabled = true
 	else:
-		_buff_button.text = "x2 урон на 5 мин (реклама)"
+		_buff_button.text = "x2 урон · 5 мин"
+		_buff_button.icon = IC_AD
 		_buff_button.disabled = not Ads.is_ready()
 	_boss_button.visible = gs.farm
 
@@ -271,6 +281,7 @@ func _build_ui() -> void:
 
 	var top := HBoxContainer.new()
 	root.add_child(top)
+	top.add_child(_icon(IC_GOLD, 52))
 	_gold_label = _label("", 34, Color(1, 0.85, 0.3))
 	_gold_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(_gold_label)
@@ -362,7 +373,7 @@ func _build_ui() -> void:
 	var list := VBoxContainer.new()
 	list.add_theme_constant_override("separation", 10)
 	root.add_child(list)
-	_tap_row = _upgrade_row(list, null, func() -> void: GameState.try_buy_tap())
+	_tap_row = _upgrade_row(list, IC_STRIKE, func() -> void: GameState.try_buy_tap())
 	for i in B.HUNTERS.size():
 		var idx := i
 		_hunter_rows.append(_upgrade_row(list, load(B.HUNTERS[i]["icon"]), func() -> void: GameState.try_buy_hunter(idx)))
@@ -414,8 +425,19 @@ func _button(text: String, size: int, on_press: Callable) -> Button:
 	b.text = text
 	b.custom_minimum_size = Vector2(0, 76)
 	b.add_theme_font_size_override("font_size", size)
+	b.add_theme_constant_override("icon_max_width", 52)
 	b.pressed.connect(on_press)
 	return b
+
+
+func _icon(tex: Texture2D, size: int) -> TextureRect:
+	var tr := TextureRect.new()
+	tr.texture = tex
+	tr.custom_minimum_size = Vector2(size, size)
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return tr
 
 
 func _popup(pos: Vector2, text: String, color: Color) -> void:
@@ -428,7 +450,7 @@ func _popup(pos: Vector2, text: String, color: Color) -> void:
 	t.chain().tween_callback(l.queue_free)
 
 
-func _open_overlay(title: String, text: String) -> VBoxContainer:
+func _open_overlay(title: String, text: String, image: Texture2D = null) -> VBoxContainer:
 	_close_overlay()
 	_overlay = ColorRect.new()
 	(_overlay as ColorRect).color = Color(0, 0, 0, 0.7)
@@ -444,6 +466,10 @@ func _open_overlay(title: String, text: String) -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 18)
 	panel.add_child(box)
+	if image != null:
+		var pic := _icon(image, 150)
+		pic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		box.add_child(pic)
 	var t := _label(title, 38, Color(1, 0.85, 0.3))
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(t)
