@@ -49,8 +49,18 @@ jobs:
           if grep -E "SCRIPT ERROR|Parse Error|Failed to load script|Invalid call|Invalid access" build/import.log build/run.log; then
             echo "::error::GDScript errors found"; exit 1
           fi
-          godot --headless --path godot --export-release Web "$GITHUB_WORKSPACE/build/web/index.html"
-          test -s build/web/index.html
+          # Имя файлов = коммит: браузер не возьмёт старую игру из кэша.
+          NAME="game-${GITHUB_SHA::8}"
+          godot --headless --path godot --export-release Web "$GITHUB_WORKSPACE/build/web/$NAME.html"
+          test -s "build/web/$NAME.html"
+          cat > build/web/index.html <<HTML
+          <!DOCTYPE html><html><head><meta charset="utf-8">
+          <meta http-equiv="Cache-Control" content="no-cache">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Охотник за Вратами</title>
+          <script>location.replace("$NAME.html" + location.search);</script>
+          </head><body style="background:#000"></body></html>
+          HTML
           ls -la build/web
 
       - name: Upload Pages artifact

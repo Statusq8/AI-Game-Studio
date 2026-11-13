@@ -27,6 +27,10 @@ var _ui_timer := 0.0
 var _attack_timer := 0.0
 var _shake := 0.0
 var _popups := 0
+var _shown_gold := -1.0
+var _fade: ColorRect
+var _hud: Control
+var _sheet: Control
 
 var _glow: Texture2D
 var _additive: CanvasItemMaterial
@@ -81,6 +85,7 @@ func _ready() -> void:
 	_spawn_monster()
 	_refresh()
 	_start_idle_animations.call_deferred()
+	_intro.call_deferred()
 	if GameState.pending_offline_gold > 0.0:
 		_show_offline.call_deferred()
 	for arg in OS.get_cmdline_user_args():
@@ -108,6 +113,12 @@ func _process(delta: float) -> void:
 	if _attack_timer <= 0.0 and not _paused:
 		_attack_timer = 1.0
 		_squad_attack()
+	if _shown_gold < 0.0:
+		_shown_gold = GameState.gold
+	_shown_gold = lerpf(_shown_gold, GameState.gold, 1.0 - exp(-9.0 * delta))
+	if absf(_shown_gold - GameState.gold) < 1.0:
+		_shown_gold = GameState.gold
+	_gold_label.text = B.format_num(_shown_gold)
 	_update_monster_ui()
 	_ui_timer -= delta
 	if _ui_timer <= 0.0:
@@ -196,7 +207,9 @@ func _damage(amount: float) -> void:
 		_shake = maxf(_shake, 18.0 if was_boss else 6.0)
 		if was_boss:
 			_banner("Врата %d закрыты!" % cleared_gate, Color(1, 0.85, 0.3), 60)
-		_spawn_monster()
+			_gate_transition()
+		else:
+			_spawn_monster()
 
 
 func _squad_attack() -> void:
@@ -415,10 +428,10 @@ func _death_ghost() -> void:
 	ghost.size = _monster_art.size
 	ghost.pivot_offset = _monster_art.size * Vector2(0.5, 1.0)
 	_stage.add_child(ghost)
-	ghost.modulate = Color(2.5, 2.5, 2.5, 0.9)
+	ghost.modulate = Color(1.8, 1.8, 1.8, 0.75)
 	var t := create_tween().set_parallel(true)
 	t.tween_property(ghost, "scale", Vector2(1.15, 0.85), 0.25)
-	t.tween_property(ghost, "modulate", Color(2.5, 2.5, 2.5, 0.0), 0.25)
+	t.tween_property(ghost, "modulate", Color(1.8, 1.8, 1.8, 0.0), 0.22)
 	t.chain().tween_callback(ghost.queue_free)
 
 
@@ -523,6 +536,102 @@ func _start_idle_animations() -> void:
 	m.tween_property(_monster_art, "rotation", -0.018, 1.4).set_trans(Tween.TRANS_SINE)
 
 
+## Кнопки сжимаются при нажатии и пружинят обратно; рекламные — мягко пульсируют.
+func _animate_button(b: Button) -> void:
+	b.resized.connect(func() -> void: b.pivot_offset = b.size / 2.0)
+	b.button_down.connect(func() -> void:
+		create_tween().tween_property(b, "scale", Vector2(0.92, 0.92), 0.06))
+	b.button_up.connect(func() -> void:
+		create_tween().tween_property(b, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+
+
+func _pulse_ad_buttons() -> void:
+	var t := create_tween().set_loops()
+	t.tween_interval(1.4)
+	t.tween_callback(func() -> void:
+		if not _buff_button.disabled and _buff_button.scale.is_equal_approx(Vector2.ONE):
+			var p := create_tween()
+			_buff_button.modulate = Color(1.35, 1.25, 1.5)
+			p.tween_property(_buff_button, "scale", Vector2(1.06, 1.06), 0.12)
+			p.parallel().tween_property(_buff_button, "modulate", Color(1, 1, 1), 0.4)
+			p.tween_property(_buff_button, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK))
+
+
+## Покупка с откликом: вспышка строки, «+1 ур.», прыжок героя. Нет денег — кнопка трясётся.
+func _buy(index: int) -> void:
+	var row: Dictionary = _tap_row if index < 0 else _hunter_rows[index]
+	var was_level: int = GameState.tap_level if index < 0 else GameState.hunters[index]
+	var ok: bool = GameState.try_buy_tap() if index < 0 else GameState.try_buy_hunter(index)
+	var buy: Button = row["buy"]
+	if not ok:
+		var s := create_tween()
+		var x := buy.position.x
+		for k in 4:
+			s.tween_property(buy, "position:x", x + (8.0 if k % 2 == 0 else -8.0), 0.04)
+		s.tween_property(buy, "position:x", x, 0.04)
+		return
+	var panel: Control = row["panel"]
+	panel.modulate = Color(1.5, 1.4, 1.1)
+	create_tween().tween_property(panel, "modulate", Color(1, 1, 1), 0.35)
+	var lvl_label: Label = row["level"]
+	lvl_label.pivot_offset = lvl_label.size / 2.0
+	lvl_label.scale = Vector2(1.6, 1.6)
+	create_tween().tween_property(lvl_label, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK)
+	_pulse_gold()
+	if index >= 0:
+		var sprite := _squad[index]
+		var base := _squad_base[index]
+		var color: Color = B.HUNTERS[index]["color"]
+		_burst(base + HERO_SIZE * Vector2(0.5, 0.6), color.lightened(0.3), 18 if was_level == 0 else 10, 0.9)
+		var j := create_tween()
+		if was_level == 0:
+			sprite.position = base - Vector2(260, 0)
+			j.tween_property(sprite, "position", base, 0.35).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+		else:
+			j.tween_property(sprite, "position", base - Vector2(0, 28), 0.12).set_ease(Tween.EASE_OUT)
+			j.tween_property(sprite, "position", base, 0.18).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_BOUNCE)
+		_popup(base + Vector2(HERO_SIZE.x * 0.5, 10), "+1 ур.", color.lightened(0.5), 26)
+	else:
+		_popup(_monster_center() + Vector2(0, -80), "Удар +1", Color(0.7, 0.9, 1.0), 28)
+
+
+## Появление экрана: HUD и панель проявляются, отряд вбегает слева.
+func _intro() -> void:
+	for c: Control in [_hud, _sheet]:
+		c.modulate.a = 0.0
+		create_tween().tween_property(c, "modulate:a", 1.0, 0.45)
+	_heroes_run_in()
+	_pulse_ad_buttons()
+
+
+func _heroes_run_in() -> void:
+	for i in _squad.size():
+		var sprite := _squad[i]
+		var base := _squad_base[i]
+		sprite.position = base - Vector2(320, 0)
+		var t := create_tween()
+		t.tween_interval(0.08 * (2 - i))
+		t.tween_property(sprite, "position", base, 0.45).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+
+
+## Переход к следующим Вратам: затемнение, новая локация, титул.
+func _gate_transition() -> void:
+	_paused = true
+	var t := create_tween()
+	t.tween_interval(0.7)
+	t.tween_property(_fade, "color:a", 1.0, 0.3)
+	t.tween_callback(func() -> void:
+		_spawn_monster()
+		_paused = true
+		_heroes_run_in())
+	t.tween_property(_fade, "color:a", 0.0, 0.35)
+	t.tween_callback(func() -> void:
+		var biome := B.biome(GameState.gate)
+		_banner("%s\nВрата %d" % [biome["name"], GameState.gate], Color(0.85, 0.92, 1.0), 50, 0.8)
+		if _overlay == null:
+			_paused = false)
+
+
 # ---------- скриншоты для проверки в CI (запуск с аргументом -- --shots=DIR) ----------
 
 func _run_shots(dir: String) -> void:
@@ -580,7 +689,6 @@ func _update_monster_ui() -> void:
 
 func _refresh() -> void:
 	var gs := GameState
-	_gold_label.text = B.format_num(gs.gold)
 	_rank_label.text = B.RANKS[gs.rank()]
 	_rank_badge.texture = load(B.RANK_BADGES[gs.rank()])
 	_gate_label.text = "%s · %d" % [B.biome(gs.gate)["name"], gs.gate]
@@ -629,6 +737,14 @@ func _set_row(row: Dictionary, title: String, level: int, stat: String, cost: fl
 	var buy: Button = row["buy"]
 	buy.text = (verb + "  " if verb != "" else "") + B.format_num(cost)
 	buy.disabled = not affordable
+	if affordable and not row["aff"]:
+		buy.pivot_offset = buy.size / 2.0
+		var t := create_tween()
+		buy.modulate = Color(1.6, 1.5, 1.2)
+		t.tween_property(buy, "scale", Vector2(1.08, 1.08), 0.1)
+		t.parallel().tween_property(buy, "modulate", Color(1, 1, 1), 0.35)
+		t.tween_property(buy, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK)
+	row["aff"] = affordable
 
 
 # ---------- построение интерфейса ----------
@@ -657,7 +773,8 @@ func _build_ui() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(root)
 
-	root.add_child(_build_hud())
+	_hud = _build_hud()
+	root.add_child(_hud)
 
 	# Сцена боя: тап по любой её точке бьёт монстра.
 	_area = Control.new()
@@ -670,7 +787,13 @@ func _build_ui() -> void:
 	_area.add_child(_stage)
 	_build_stage()
 
-	root.add_child(_build_sheet())
+	_sheet = _build_sheet()
+	root.add_child(_sheet)
+	_fade = ColorRect.new()
+	_fade.color = Color(0, 0, 0, 0)
+	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_fade)
 
 
 func _vignette() -> TextureRect:
@@ -884,10 +1007,10 @@ func _build_sheet() -> Control:
 	_buff_button.custom_minimum_size = Vector2(190, 58)
 	actions.add_child(_buff_button)
 
-	_tap_row = _upgrade_row(box, IC_STRIKE, func() -> void: GameState.try_buy_tap())
+	_tap_row = _upgrade_row(box, IC_STRIKE, func() -> void: _buy(-1))
 	for i in B.HUNTERS.size():
 		var idx := i
-		_hunter_rows.append(_upgrade_row(box, load(B.HUNTERS[i]["icon"]), func() -> void: GameState.try_buy_hunter(idx)))
+		_hunter_rows.append(_upgrade_row(box, load(B.HUNTERS[i]["icon"]), func() -> void: _buy(idx)))
 	return sheet
 
 
@@ -920,7 +1043,7 @@ func _upgrade_row(parent: Container, icon_tex: Texture2D, on_buy: Callable) -> D
 	buy.icon = IC_GOLD
 	buy.custom_minimum_size = Vector2(200, 62)
 	row.add_child(buy)
-	return {"icon": icon, "name": title, "level": level, "stat": stat, "buy": buy}
+	return {"icon": icon, "name": title, "level": level, "stat": stat, "buy": buy, "panel": panel, "aff": false}
 
 
 ## Эмблема ранга с буквой поверх (буквы рисуем сами — нейросети их искажают).
@@ -964,6 +1087,7 @@ func _button(text: String, size: int, on_press: Callable) -> Button:
 	b.custom_minimum_size = Vector2(0, 70)
 	b.add_theme_font_size_override("font_size", size)
 	b.pressed.connect(on_press)
+	_animate_button(b)
 	return b
 
 
