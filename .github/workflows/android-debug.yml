@@ -92,7 +92,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build
-          godot --headless --path godot --editor --quit --verbose
+          godot --headless --path godot --editor --quit --verbose 2>&1 | tee build/import.log
+          # Smoke-тест: запустить игру на ~10 секунд без экрана; ошибки скриптов валят сборку.
+          timeout 120 godot --headless --path godot --quit-after 600 2>&1 | tee build/run.log || true
+          if grep -E "SCRIPT ERROR|Parse Error|Failed to load script|Invalid call|Invalid access" build/import.log build/run.log; then
+            echo "::error::GDScript errors found"; exit 1
+          fi
           godot --headless --path godot --install-android-build-template --export-debug Android "$GITHUB_WORKSPACE/build/ai-game-studio-debug.apk" --verbose
           test -s build/ai-game-studio-debug.apk
 

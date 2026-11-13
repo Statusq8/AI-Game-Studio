@@ -4,10 +4,15 @@
 config_version=5
 
 [application]
-config/name="AI Game Studio Test"
-run/main_scene="res://scenes/main.tscn"
+config/name="Охотник за Вратами"
+run/main_scene="res://scenes/game.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
-config/description="Android build verification"
+config/description="Idle clicker MVP (decision #21)"
+
+[autoload]
+
+GameState="*res://scripts/core/game_state.gd"
+Ads="*res://scripts/core/ads.gd"
 
 [display]
 window/size/viewport_width=720
