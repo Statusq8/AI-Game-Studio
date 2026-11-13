@@ -58,6 +58,9 @@ func _ready() -> void:
 	_start_idle_animations.call_deferred()
 	if GameState.pending_offline_gold > 0.0:
 		_show_offline.call_deferred()
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--shots="):
+			_run_shots.call_deferred(arg.trim_prefix("--shots="))
 
 
 func _process(delta: float) -> void:
@@ -391,6 +394,50 @@ func _start_idle_animations() -> void:
 	var m := create_tween().set_loops()
 	m.tween_property(_monster_art, "rotation", 0.025, 1.3).set_trans(Tween.TRANS_SINE)
 	m.tween_property(_monster_art, "rotation", -0.025, 1.3).set_trans(Tween.TRANS_SINE)
+
+
+# ---------- скриншоты для проверки в CI (запуск с аргументом -- --shots=DIR) ----------
+
+func _run_shots(dir: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	var gs := GameState
+	gs.gold = 12345.0
+	gs.tap_level = 8
+	gs.hunters[0] = 5
+	gs.hunters[1] = 3
+	gs.hunters[2] = 1
+	gs.gate = 3
+	gs.wave = 4
+	gs.gates_cleared = 2
+	gs.farm = false
+	_spawn_monster()
+	_refresh()
+	await get_tree().create_timer(1.2).timeout
+	await _shot(dir, "1_battle")
+	var c := _monster_center()
+	for i in 4:
+		_tap(c + Vector2(randf_range(-80, 80), randf_range(-80, 40)))
+		await get_tree().create_timer(0.05).timeout
+	await _shot(dir, "2_taps")
+	await get_tree().create_timer(1.0).timeout
+	gs.start_boss()
+	_spawn_monster()
+	await get_tree().create_timer(0.35).timeout
+	await _shot(dir, "3_boss_intro")
+	await get_tree().create_timer(1.6).timeout
+	await _shot(dir, "4_boss")
+	gs.pending_offline_gold = 5400.0
+	_show_offline()
+	await get_tree().create_timer(0.4).timeout
+	await _shot(dir, "5_offline")
+	get_tree().quit()
+
+
+func _shot(dir: String, name: String) -> void:
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	img.save_png(dir.path_join(name + ".png"))
+	print("Screenshot saved: ", name)
 
 
 # ---------- обновление интерфейса ----------

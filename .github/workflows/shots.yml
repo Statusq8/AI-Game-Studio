@@ -1,0 +1,56 @@
+name: Screenshots
+
+# Рендерит несколько экранов игры (xvfb + OpenGL) и кладёт PNG в релиз «screenshots»,
+# чтобы проверять внешний вид без телефона.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'godot/**'
+      - '.github/workflows/shots.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: shots
+  cancel-in-progress: true
+
+jobs:
+  shots:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    env:
+      GODOT_VERSION: '4.5.1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot and GL
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglu1-mesa > /dev/null
+          BASE="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable"
+          curl -fL --retry 3 "$BASE/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -o /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          sudo install -m 755 "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+
+      - name: Render screenshots
+        run: |
+          set -euo pipefail
+          godot --headless --path godot --editor --quit > /dev/null 2>&1 || true
+          mkdir -p shots
+          timeout 120 xvfb-run -a -s "-screen 0 1080x1920x24" \
+            godot --path godot --rendering-driver opengl3 --resolution 720x1280 -- --shots="$GITHUB_WORKSPACE/shots" 2>&1 | tail -40 || true
+          ls -la shots
+          test -n "$(ls shots/*.png 2>/dev/null)"
+
+      - name: Publish to release "screenshots"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release delete screenshots --yes --cleanup-tag -R "$GITHUB_REPOSITORY" || true
+          gh release create screenshots shots/*.png --prerelease --target "$GITHUB_SHA" \
+            --title "Screenshots" --notes "Автоскриншоты, коммит $GITHUB_SHA" -R "$GITHUB_REPOSITORY"
