@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.1.0"
+const VERSION := "1.1.1"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -403,7 +403,7 @@ func _refresh_home() -> void:
 	_home_panda.visible = _repair_mode
 	_zone_title.visible = _repair_mode
 	_zone_box.visible = _repair_mode
-	_repair_btn.text = "← Назад" if _repair_mode else "Ремонт ★%d" % Save.stars
+	_repair_btn.text = "← Назад" if _repair_mode else "Ремонт: %d зв." % Save.stars
 	_refresh_coins()
 	_refresh_hearts()
 	if _stars_label:
@@ -427,7 +427,7 @@ func _on_spot(i: int) -> void:
 	var task: Dictionary = Zones.ZONES[Save.zone].tasks[i]
 	if Save.stars < int(task.cost):
 		_dialog(task.name, ["Нужно звёзд: %d (у тебя %d)" % [task.cost, Save.stars], "Проходи уровни — за каждый дают звезду!"], [
-			["▶ Играть", "GreenButton", _try_play],
+			["Играть", "GreenButton", _try_play],
 			["Закрыть", "Button", _clear_overlay],
 		])
 		return
@@ -693,7 +693,7 @@ func _build_level_screen() -> void:
 	frame.patch_margin_bottom = 72
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	frame.z_index = 2
-	var fk := 0.42
+	var fk := 0.36
 	frame.scale = Vector2(fk, fk)
 	frame.top_level = false
 	var holder := Control.new()
@@ -701,7 +701,7 @@ func _build_level_screen() -> void:
 	holder.set_anchors_preset(Control.PRESET_FULL_RECT)
 	holder.add_child(frame)
 	holder.resized.connect(func() -> void:
-		var out := 36.0
+		var out := 31.0
 		frame.position = Vector2(-out, -out)
 		frame.size = (holder.size + Vector2(out, out) * 2) / fk)
 	_board_frame.add_child(holder)
@@ -1013,7 +1013,7 @@ func _on_booster(kind: String) -> void:
 				if Save.spend(BOOSTER_PRICE):
 					Save.add_booster(kind)
 				_close_dialog(), Save.coins < BOOSTER_PRICE],
-			["▶ Реклама: +1", "PurpleButton", func() -> void:
+			["Реклама: +1", "PurpleButton", func() -> void:
 				Ads.show_rewarded(func() -> void: Save.add_booster(kind))
 				_close_dialog(), not Ads.is_ready()],
 			["Закрыть", "Button", _close_dialog],
@@ -1076,7 +1076,7 @@ func _try_play() -> void:
 		return
 	var sec := Save.seconds_to_heart()
 	_dialog("Нет жизней", ["Новая жизнь через %d:%02d" % [sec / 60, sec % 60]], [
-		["▶ Реклама: +1 жизнь", "PurpleButton", func() -> void:
+		["Реклама: +1 жизнь", "PurpleButton", func() -> void:
 			Ads.show_rewarded(func() -> void:
 				Save.add_heart()
 				_show_home()), not Ads.is_ready()],
@@ -1699,7 +1699,8 @@ func _dialog(title_text: String, lines: Array, buttons: Array) -> VBoxContainer:
 		while ts.x > ribbon.size.x * 0.62 and fs > 26:
 			fs -= 2
 			ts = font.get_string_size(title_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-		var p := Vector2(ribbon.size.x / 2 - ts.x / 2, ribbon.size.y * 0.36 + fs * 0.36)
+		# центр полосы ленты — 32% её высоты; вычитаем половину объёма надписи
+		var p := Vector2(ribbon.size.x / 2 - ts.x / 2, ribbon.size.y * 0.32 + fs * 0.36 - 2)
 		for d in range(5, 0, -1):
 			ribbon.draw_string_outline(font, p + Vector2(0, d), title_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#14451f"))
 		ribbon.draw_string_outline(font, p, title_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#14451f"))
@@ -1757,10 +1758,10 @@ func _show_win() -> void:
 	Save.streak += 1
 	Save.add_coins(coins)
 	Save.vibrate(60)
-	var v := _dialog("Уровень пройден!", ["+1 ★   +%d монет" % coins, "Серия побед: %d" % Save.streak], [
+	var v := _dialog("Уровень пройден!", ["+1 звезда   +%d монет" % coins, "Серия побед: %d" % Save.streak], [
 		["Дальше", "GreenButton", _next_level],
 		["Домой", "Button", func() -> void: _transition(_show_home)],
-		["▶ Удвоить монеты за рекламу", "PurpleButton", func() -> void:
+		["Удвоить монеты (реклама)", "PurpleButton", func() -> void:
 			Ads.show_rewarded(func() -> void: Save.add_coins(coins))
 			_next_level(), not Ads.is_ready()],
 	])
@@ -1807,7 +1808,7 @@ func _show_lose() -> void:
 			left.append(GOAL_NAMES.get(g.kind, g.kind) + " " + str(g.left))
 	var warn := "Сдашься — потеряешь серию побед (%d)!" % Save.streak if Save.streak > 0 else "Ещё чуть-чуть!"
 	_dialog("Ходы кончились", ["Осталось: " + ", ".join(left), warn, "+%d ходов, чтобы доиграть?" % EXTRA_MOVES], [
-		["▶ Реклама: +%d ходов" % EXTRA_MOVES, "PurpleButton", func() -> void:
+		["Реклама: +%d ходов" % EXTRA_MOVES, "PurpleButton", func() -> void:
 			Ads.show_rewarded(_add_moves), not Ads.is_ready()],
 		["%d монет: +%d ходов" % [EXTRA_MOVES_PRICE, EXTRA_MOVES], "OrangeButton", func() -> void:
 			if Save.spend(EXTRA_MOVES_PRICE):

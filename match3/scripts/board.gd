@@ -55,6 +55,7 @@ var hole: Array = []         # дыра в фигурном поле (клетк
 var honey: Array = []        # мёд на фишке (растекается)
 var _honey_hit := false
 var _player_move := false
+var _grass_carry := false  # ход сделан с травы — всё, что убьёт этот бустер/комбо, тоже покрывается травой
 var chain: Array = []        # прочность цепи на фишке
 var grass: Array = []        # bool
 var grass_target: Array = [] # bool — клетки, которые надо покрыть травой
@@ -703,6 +704,7 @@ func try_swap(a: Vector2i, b: Vector2i) -> void:
 	_idle = 0.0
 	_hits.clear()
 	_player_move = true
+	_grass_carry = grass[a.x][a.y] or grass[b.x][b.y]
 	await _animate_swap(ga, gb, a, b)
 	_swap_data(a, b)
 	# теперь ga стоит в b, gb — в a
@@ -750,6 +752,7 @@ func activate_single(cell: Vector2i) -> void:
 	_stop_hint()
 	busy = true
 	_hits.clear()
+	_grass_carry = grass[cell.x][cell.y]
 	move_made.emit()
 	await _clear({cell: true})
 	await _cascade([])
@@ -806,6 +809,7 @@ func _animate_swap(ga: Node2D, gb: Node2D, a: Vector2i, b: Vector2i) -> void:
 
 func _cascade(prefer: Array) -> void:
 	var wave := 0
+	_grass_carry = false
 	# после взрыва особой фишки дырки надо заполнить, даже если новых совпадений нет
 	await _gravity()
 	while true:
@@ -984,7 +988,7 @@ func _break_chain(c: Vector2i) -> void:
 func _grow_grass(cells: Dictionary) -> void:
 	var changed := false
 	for c: Vector2i in cells:
-		if inside(c) and not grass[c.x][c.y] and block_kind[c.x][c.y] == B_NONE:
+		if inside(c) and not grass[c.x][c.y] and block_kind[c.x][c.y] == B_NONE and not hole[c.x][c.y]:
 			grass[c.x][c.y] = true
 			changed = true
 			if grass_target[c.x][c.y]:
@@ -1093,6 +1097,11 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 		tw.tween_property(g, "modulate:a", 0.0, 0.14)
 		tw.chain().tween_callback(g.queue_free)
 		last = tw
+	if _grass_carry:
+		for c2: Vector2i in cleared:
+			grassify[c2] = true
+		for c2: Vector2i in initial:
+			grassify[c2] = true
 	_grow_grass(grassify)
 	if last:
 		await last.finished

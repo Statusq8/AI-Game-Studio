@@ -37,23 +37,25 @@ static func build() -> Theme:
 			t.set_type_variation(type, "Button")
 		_button_styles(t, type, BUTTONS[type], title)
 
-	# зелёная кнопка — ИИ-картинка (растягивается по 9 частям)
-	var gtex: Texture2D = load("res://assets/art/ui_btn_green.png")
-	for st in [["normal", Color.WHITE, 0], ["hover", Color(1.08, 1.08, 1.08), 0], ["pressed", Color(0.85, 0.85, 0.85), 4], ["disabled", Color(0.6, 0.6, 0.6, 0.7), 0]]:
-		var sbt := StyleBoxTexture.new()
-		sbt.texture = gtex
-		sbt.texture_margin_left = 70
-		sbt.texture_margin_right = 70
-		sbt.texture_margin_top = 40
-		sbt.texture_margin_bottom = 50
-		sbt.modulate_color = st[1]
-		sbt.content_margin_left = 30
-		sbt.content_margin_right = 30
-		sbt.content_margin_top = 10 + st[2]
-		sbt.content_margin_bottom = 20 - st[2]
-		t.set_stylebox(st[0], "GreenButton", sbt)
-	t.set_color("font_outline_color", "GreenButton", Color("#1e5a14"))
-	t.set_constant("outline_size", "GreenButton", 10)
+	# кнопки — ИИ-картинка (зелёная) и её перекраски; растягиваются по 9 частям, концы-полукруги не искажаются
+	for pair in [["GreenButton", "green", Color("#1e5a14")], ["Button", "blue", Color("#14305a")], ["OrangeButton", "orange", Color("#6a3208")],
+			["RedButton", "red", Color("#5a0a12")], ["PurpleButton", "purple", Color("#3a1460")]]:
+		var tex: Texture2D = load("res://assets/art/ui_btn_%s.png" % pair[1])
+		for st in [["normal", Color.WHITE, 0], ["hover", Color(1.08, 1.08, 1.08), 0], ["pressed", Color(0.85, 0.85, 0.85), 3], ["disabled", Color(0.6, 0.6, 0.6, 0.7), 0]]:
+			var sbt := StyleBoxTexture.new()
+			sbt.texture = tex
+			sbt.texture_margin_left = 50
+			sbt.texture_margin_right = 50
+			sbt.texture_margin_top = 30
+			sbt.texture_margin_bottom = 36
+			sbt.modulate_color = st[1]
+			sbt.content_margin_left = 34
+			sbt.content_margin_right = 34
+			sbt.content_margin_top = 8 + st[2]
+			sbt.content_margin_bottom = 16 - st[2]
+			t.set_stylebox(st[0], pair[0], sbt)
+		t.set_color("font_outline_color", pair[0], pair[2])
+		t.set_constant("outline_size", pair[0], 10)
 
 	t.set_type_variation("DialogPanel", "PanelContainer")
 	t.set_stylebox("panel", "DialogPanel", _panel(CREAM, Color("#f0b34a"), 6, 34, 30))
@@ -69,7 +71,7 @@ static func build() -> Theme:
 	t.set_type_variation("BoardPanel", "PanelContainer")
 	# рамка поля: дерево (лианы рисует main.gd поверх)
 	# фон рамки прозрачный: в дырах фигурного поля виден фон уровня
-	var wood := _panel(Color("#8a5326", 0.0), Color("#ffcf5a", 0.0), 0, 28, 36)
+	var wood := _panel(Color("#8a5326", 0.0), Color("#ffcf5a", 0.0), 0, 28, 38)
 	wood.shadow_size = 0
 	wood.shadow_size = 18
 	wood.shadow_color = Color(0, 0, 0, 0.35)
