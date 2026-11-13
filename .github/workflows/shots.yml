@@ -60,5 +60,5 @@ jobs:
         run: |
           set -euo pipefail
           gh release delete screenshots --yes --cleanup-tag -R "$GITHUB_REPOSITORY" || true
-          gh release create screenshots shots/*.png --prerelease --target "$GITHUB_SHA" \
+          gh release create screenshots shots/* --prerelease --target "$GITHUB_SHA" \
             --title "Screenshots" --notes "Автоскриншоты, коммит $GITHUB_SHA" -R "$GITHUB_REPOSITORY"
