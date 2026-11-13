@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "0.9.0"
+const VERSION := "0.9.1"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1799,6 +1799,14 @@ func _run_shots(dir: String) -> void:
 		_board.activate_single(bc)
 		await get_tree().create_timer(0.1).timeout
 		await _snap(dir, "4c_bomb")
+	while _board.busy:
+		await get_tree().process_frame
+	var og: Node2D = _board.gem_at(Vector2i(3, 5))
+	if og and _board.gem_at(Vector2i(4, 5)):
+		og.set_special(Gem.ORB)
+		_board.try_swap(Vector2i(3, 5), Vector2i(4, 5))
+		await get_tree().create_timer(0.42).timeout
+		await _snap(dir, "4e_orb")
 	while _board.busy:
 		await get_tree().process_frame
 	var m: Array = _board.find_move()

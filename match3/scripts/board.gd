@@ -326,8 +326,8 @@ func _draw() -> void:
 				top = Color("#8be36e") if even else Color("#7ad85e")
 				bottom = Color("#4fb33c") if even else Color("#43a533")
 			elif grass_target[x][y]:
-				top = Color("#d7a46e") if even else Color("#cc9862")
-				bottom = Color("#9c6a3c") if even else Color("#915f33")
+				top = Color("#a07850") if even else Color("#96704a")
+				bottom = Color("#6e4e30") if even else Color("#654729")
 			var rim := StyleBoxFlat.new()
 			rim.bg_color = bottom.darkened(0.25)
 			rim.set_corner_radius_all(15)
@@ -871,6 +871,9 @@ func holes() -> int:
 	var n := 0
 	for x in W:
 		for y in H:
+			var bg := gem_at(Vector2i(x, y))
+			if bg and bg.special == Gem.NONE and bg.color < 0:
+				push_error("BADGEM at %s" % Vector2i(x, y))
 			if _fillable(Vector2i(x, y)) and gem_at(Vector2i(x, y)) == null:
 				n += 1
 	return n
@@ -1026,7 +1029,10 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 				wait = maxf(wait, 0.16)
 			Gem.ORB:
 				_beam_fx(e.cell, e.kind, e.color)
-				wait = maxf(wait, 0.12)
+				var orb_targets: Array = []
+				for oc in _area(Gem.ORB, e.cell):
+					orb_targets.append(oc)
+				await _chain_lightning(e.cell, orb_targets, color_at(orb_targets[0]) if not orb_targets.is_empty() else -1)
 	for f in flights:
 		_propeller_fx(f.from, f.to, f.color)
 		wait = maxf(wait, 0.38)
@@ -1231,17 +1237,49 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 
 func _orb_with_color(orb: Node2D, col: int) -> void:
 	var area := {orb.cell: true}
+	var start: Vector2i = orb.cell
 	orb.set_special(Gem.NONE)
 	orb.color = -1
+	var targets: Array = []
 	for x in W:
 		for y in H:
 			var g := gem_at(Vector2i(x, y))
 			if g and g != orb and g.color == col and g.special != Gem.ITEM:
 				area[Vector2i(x, y)] = true
-				_lightning(fx.to_local(to_global(cell_pos(orb.cell))), fx.to_local(to_global(cell_pos(Vector2i(x, y)))), Gem.COLORS[col].lightened(0.4), 7) if fx else null
+				targets.append(Vector2i(x, y))
 	big_hit.emit(1.5)
-	await get_tree().create_timer(0.25).timeout
+	await _chain_lightning(start, targets, col)
 	await _clear(area)
+
+
+## Цепная молния: прыгает от шара к ближайшей фишке нужного цвета, потом к следующей и т. д.
+## Каждая задетая фишка вспыхивает; убираются все вместе в конце.
+func _chain_lightning(start: Vector2i, targets: Array, col: int) -> void:
+	var color: Color = Gem.COLORS[col].lightened(0.45) if col >= 0 else Color("#bfe9ff")
+	var left := targets.duplicate()
+	var cur := start
+	var step := clampf(0.5 / maxf(1.0, left.size()), 0.025, 0.06)
+	while not left.is_empty():
+		var best := 0
+		var bd := 1e9
+		for i in left.size():
+			var d := Vector2(left[i] - cur).length_squared()
+			if d < bd:
+				bd = d
+				best = i
+		var nxt: Vector2i = left[best]
+		left.remove_at(best)
+		if fx:
+			_lightning(fx.to_local(to_global(cell_pos(cur))), fx.to_local(to_global(cell_pos(nxt))), color, 8)
+			_sparkles(fx.to_local(to_global(cell_pos(nxt))), color, 2)
+		var g := gem_at(nxt)
+		if g:
+			var t := create_tween().set_parallel(true)
+			t.tween_property(g, "scale", Vector2(1.25, 1.25), 0.08).set_trans(Tween.TRANS_BACK)
+			t.tween_property(g, "modulate", Color(1.8, 1.8, 2.0), 0.08)
+		cur = nxt
+		await get_tree().create_timer(step).timeout
+	await get_tree().create_timer(0.12).timeout
 
 
 ## Предметы на нижней доступной клетке столбца уходят с поля. true — если что-то собрано.

@@ -67,7 +67,13 @@ func _draw() -> void:
 	var t: Texture2D = null
 	match special:
 		NONE:
-			t = tex("gem_%d" % color) if color >= 0 else null
+			if color < 0:
+				# «использованная» особая фишка (шар после свапа) — рисуем шар, а не красный квадрат-заглушку
+				t = tex("orb")
+				if t:
+					_draw_tex(t, box, _t * 3.0, 1.0 + sin(_t * 20.0) * 0.06)
+				return
+			t = tex("gem_%d" % color)
 			if t:
 				# мягкая тень под кристаллом + редкий блеск
 				draw_circle(Vector2(0, size * 0.36), size * 0.3, Color(0, 0, 0, 0.12))
