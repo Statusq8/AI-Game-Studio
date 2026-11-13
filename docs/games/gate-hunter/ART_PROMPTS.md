@@ -24,4 +24,40 @@
 4. **Лесные Врата (фон)**
 `Vertical mobile game background 9:16, inside a dungeon gate: dark overgrown forest with giant twisted roots, glowing blue mushrooms, mist, a swirling blue portal light far in the background, empty clear ground area in the lower middle for characters, no characters, no text. Korean webtoon style digital painting, clean bold lineart, cel shading with soft gradients, dramatic rim light, saturated neon accents, high detail, game asset`
 
-Следующие пачки (после утверждения стиля): монстры 5 Врат, боссы, иконки улучшений, интерфейс.
+Пачка 1 утверждена в игре 2026-11-13 (отряд, фон и монстры Лесных Врат).
+
+## Пачка 2 — остальные Врата (фон 9:16, монстры 1:1, монстры смотрят влево)
+
+### Пещерные Врата
+**Фон**
+`Vertical mobile game background 9:16, inside a dungeon gate: vast crystal cave with huge stalactites and stalagmites, glowing violet crystals in the walls, underground stream reflecting light, a swirling violet portal far in the background, empty clear ground area in the lower middle for characters, no characters, no text. Korean webtoon style digital painting, clean bold lineart, cel shading with soft gradients, dramatic rim light, saturated neon accents, high detail, game asset`
+**Каменный клык (монстр)**
+`Full body game monster, cave beast with a body of dark grey stone plates, huge jagged stone fangs, glowing violet crystal shards growing from its spine, small fierce violet eyes, heavy stone claws, 3/4 view facing left, aggressive stance, plain solid white background, no text. Korean webtoon style digital painting, clean bold lineart, cel shading with soft gradients, dramatic rim light, saturated neon accents, high detail, game asset`
+**Король Сталактитов (босс)**
+`Full body game boss monster, colossal cave king made of rock and hanging stalactites, crown of giant violet crystals, cracked stone body with glowing violet veins, enormous stone fists, menacing glowing eyes, 3/4 view facing left, aggressive stance, plain solid white background, no text. Korean webtoon style digital painting, clean bold lineart, cel shading with soft gradients, dramatic rim light, saturated neon accents, high detail, game asset`
+
+### Песчаные Врата
+**Фон**
+`Vertical mobile game background 9:16, inside a dungeon gate: endless golden desert with giant dunes, half-buried ancient sandstone pillars and a broken colossal statue, heat haze, an orange sun-colored swirling portal far in the background, empty clear ground area in the lower middle for characters, no characters, no text. Korean webtoon style digital painting, clean bold lineart, cel shading with soft gradients, dramatic rim light, saturated neon accents, high detail, game asset`
+**Дюнный скорпион (монстр)**
+`Full body game monster, giant desert scorpion with sand-colored armored carapace, glowing amber stinger, amber gem eyes, sharp pincers, sand pouring from its joints, 3/4 view facing left, aggressive stance, plain solid white background, no text. Korean webtoon style digital painting, clean bold lineart, cel shading with soft gradients, dramatic rim light, saturated neon accents, high detail, game asset`
+**Пожиратель Барханов (босс)**
+`Full body game boss monster, gigantic sand worm bursting out of a dune, armored segmented body with golden sandstone plates, huge round mouth with rings of teeth glowing amber inside, ancient runes on its armor, 3/4 view facing left, aggressive stance, plain solid white background, no text. Korean webtoon style digital painting, clean bold lineart, cel shading with soft gradients, dramatic rim light, saturated neon accents, high detail, game asset`
+
+### Ледяные Врата
+**Фон**
+`Vertical mobile game background 9:16, inside a dungeon gate: frozen valley with towering ice cliffs, frosted pine trees, glowing pale blue ice crystals, falling snow, aurora in the sky, a swirling icy cyan portal far in the background, empty clear ground area in the lower middle for characters, no characters, no text. Korean webtoon style digital painting, clean bold lineart, cel shading with soft gradients, dramatic rim light, saturated neon accents, high detail, game asset`
+**Морозный волк (монстр)**
+`Full body game monster, large frost wolf with white and pale blue fur, ice crystal spikes along its back, glowing cyan eyes, frosty breath, icy claws, 3/4 view facing left, aggressive stance, plain solid white background, no text. Korean webtoon style digital painting, clean bold lineart, cel shading with soft gradients, dramatic rim light, saturated neon accents, high detail, game asset`
+**Владыка Метели (босс)**
+`Full body game boss monster, towering ice giant lord wrapped in a swirling blizzard, body of cracked blue ice and frozen armor, crown of ice spikes, glowing cyan eyes, giant ice greataxe, 3/4 view facing left, aggressive stance, plain solid white background, no text. Korean webtoon style digital painting, clean bold lineart, cel shading with soft gradients, dramatic rim light, saturated neon accents, high detail, game asset`
+
+### Руины Врат
+**Фон**
+`Vertical mobile game background 9:16, inside a dungeon gate: ruined ancient temple city at night, broken marble columns and floating stone fragments, crimson magic circles glowing on the ground, dark red sky, a swirling crimson portal far in the background, empty clear ground area in the lower middle for characters, no characters, no text. Korean webtoon style digital painting, clean bold lineart, cel shading with soft gradients, dramatic rim light, saturated neon accents, high detail, game asset`
+**Безликий страж (монстр)**
+`Full body game monster, faceless armored temple guardian, smooth blank white porcelain mask with no face, dark ancient armor with crimson glowing cracks, tattered dark cloth, long halberd, 3/4 view facing left, aggressive stance, plain solid white background, no text. Korean webtoon style digital painting, clean bold lineart, cel shading with soft gradients, dramatic rim light, saturated neon accents, high detail, game asset`
+**Падший Хранитель (босс)**
+`Full body game boss monster, fallen ancient temple guardian giant, broken angel-like stone wings, cracked marble and black armor with crimson glowing runes, shattered halo of red light above its head, huge greatsword, 3/4 view facing left, aggressive stance, plain solid white background, no text. Korean webtoon style digital painting, clean bold lineart, cel shading with soft gradients, dramatic rim light, saturated neon accents, high detail, game asset`
+
+Дальше: иконки улучшений и элементы интерфейса.
