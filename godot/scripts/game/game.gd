@@ -11,6 +11,9 @@ var _paused := false
 var _ui_timer := 0.0
 
 var _bg: ColorRect
+var _bg_art: TextureRect
+var _squad: Array[TextureRect] = []
+var _attack_timer := 0.0
 var _gold_label: Label
 var _rank_label: Label
 var _gate_label: Label
@@ -51,6 +54,10 @@ func _process(delta: float) -> void:
 			_boss_time -= delta
 			if _boss_time <= 0.0:
 				_on_boss_timeout()
+	_attack_timer -= delta
+	if _attack_timer <= 0.0 and not _paused:
+		_attack_timer = 0.9
+		_squad_attack()
 	_update_monster_ui()
 	_ui_timer -= delta
 	if _ui_timer <= 0.0:
@@ -73,15 +80,27 @@ func _input(event: InputEvent) -> void:
 
 # ---------- бой ----------
 
+func _squad_attack() -> void:
+	for i in _squad.size():
+		var sprite := _squad[i]
+		if not sprite.visible:
+			continue
+		var t := create_tween()
+		t.tween_interval(i * 0.15)
+		t.tween_property(sprite, "scale", Vector2(1.06, 1.06), 0.08)
+		t.tween_property(sprite, "scale", Vector2.ONE, 0.15)
+
 func _spawn_monster() -> void:
 	_monster_max = B.monster_hp(GameState.gate, GameState.wave)
 	_monster_hp = _monster_max
 	var biome := B.biome(GameState.gate)
 	var boss := B.is_boss(GameState.wave)
 	_bg.color = biome["bg"]
+	var art_path: String = biome.get("art", "")
+	_bg_art.texture = load(art_path) if art_path != "" else null
 	_monster_name.text = (biome["boss"] if boss else biome["monster"]) + (" (БОСС)" if boss else "")
 	_monster_style.bg_color = biome["color"].darkened(0.25) if boss else biome["color"]
-	_monster_body.custom_minimum_size = Vector2(380, 380) if boss else Vector2(290, 290)
+	_monster_body.custom_minimum_size = Vector2(300, 300) if boss else Vector2(230, 230)
 	_monster_body.pivot_offset = _monster_body.custom_minimum_size / 2.0
 	_boss_time = B.BOSS_TIME
 	_boss_extra_used = false
@@ -206,7 +225,8 @@ func _refresh() -> void:
 			row["info"].text = "%s  ур. %d\n%s урона/сек" % [hname, lvl, B.format_num(B.hunter_dps(i, lvl))]
 			row["buy"].text = B.format_num(cost)
 		row["buy"].disabled = gs.gold < cost
-		row["icon"].modulate.a = 1.0 if lvl > 0 else 0.3
+		row["icon"].modulate.a = 1.0 if lvl > 0 else 0.35
+		_squad[i].visible = lvl > 0
 
 
 # ---------- построение интерфейса ----------
@@ -216,6 +236,17 @@ func _build_ui() -> void:
 	_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_bg)
+	_bg_art = TextureRect.new()
+	_bg_art.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_bg_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_bg_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_bg_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_bg_art)
+	var shade := ColorRect.new()
+	shade.color = Color(0, 0, 0, 0.28)
+	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(shade)
 
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -249,10 +280,29 @@ func _build_ui() -> void:
 	_area.clip_contents = true
 	root.add_child(_area)
 
+	var stage := VBoxContainer.new()
+	stage.set_anchors_preset(Control.PRESET_FULL_RECT)
+	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_area.add_child(stage)
 	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_area.add_child(center)
+	stage.add_child(center)
+	var squad_box := HBoxContainer.new()
+	squad_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	squad_box.add_theme_constant_override("separation", -40)
+	squad_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage.add_child(squad_box)
+	for h in B.HUNTERS:
+		var sprite := TextureRect.new()
+		sprite.texture = load(h["sprite"])
+		sprite.custom_minimum_size = Vector2(230, 240)
+		sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		sprite.pivot_offset = Vector2(115, 240)
+		sprite.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		squad_box.add_child(sprite)
+		_squad.append(sprite)
 	var mbox := VBoxContainer.new()
 	mbox.add_theme_constant_override("separation", 12)
 	mbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -303,19 +353,28 @@ func _build_ui() -> void:
 	var list := VBoxContainer.new()
 	list.add_theme_constant_override("separation", 10)
 	root.add_child(list)
-	_tap_row = _upgrade_row(list, Color(0.95, 0.95, 1.0), func() -> void: GameState.try_buy_tap())
+	_tap_row = _upgrade_row(list, null, func() -> void: GameState.try_buy_tap())
 	for i in B.HUNTERS.size():
 		var idx := i
-		_hunter_rows.append(_upgrade_row(list, B.HUNTERS[i]["color"], func() -> void: GameState.try_buy_hunter(idx)))
+		_hunter_rows.append(_upgrade_row(list, load(B.HUNTERS[i]["icon"]), func() -> void: GameState.try_buy_hunter(idx)))
 
 
-func _upgrade_row(parent: Container, color: Color, on_buy: Callable) -> Dictionary:
+func _upgrade_row(parent: Container, icon_tex: Texture2D, on_buy: Callable) -> Dictionary:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
 	parent.add_child(row)
-	var icon := ColorRect.new()
-	icon.color = color
-	icon.custom_minimum_size = Vector2(72, 72)
+	var icon: Control
+	if icon_tex != null:
+		var tr := TextureRect.new()
+		tr.texture = icon_tex
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon = tr
+	else:
+		var cr := ColorRect.new()
+		cr.color = Color(0.95, 0.95, 1.0, 0.85)
+		icon = cr
+	icon.custom_minimum_size = Vector2(76, 76)
 	row.add_child(icon)
 	var info := _label("", 24)
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -335,6 +394,8 @@ func _label(text: String, size: int, color: Color = Color(1, 1, 1)) -> Label:
 	l.text = text
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", color)
+	l.add_theme_constant_override("outline_size", 8)
+	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.85))
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return l
 
