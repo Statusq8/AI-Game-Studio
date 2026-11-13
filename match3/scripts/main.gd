@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.2.2"
+const VERSION := "1.2.3"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1462,7 +1462,7 @@ func _big_text(text: String, fsize: int, top: Color, bottom: Color) -> Control:
 		var ts := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 		var cx := c.size.x / 2.0
 		var cy := c.size.y / 2.0
-		if banner:
+		if banner and not c.has_meta("no_banner"):
 			var bw := minf(c.size.x - 6.0, ts.x + 170.0)
 			var bh := bw * banner.get_height() / banner.get_width()
 			# надпись помещается в «окно» плашки (≈ 72% ширины)
@@ -1929,30 +1929,134 @@ func _show_win() -> void:
 	Save.streak += 1
 	Save.add_coins(coins)
 	Save.vibrate(60)
-	var v := _dialog("Уровень пройден!", [], [
-		["Дальше", "GreenButton", _next_level],
-		["Домой", "Button", func() -> void: _transition(_show_home)],
-	])
-	var rewards := _reward_row([["star", 1], ["coin", coins], ["streak", Save.streak]])
-	v.add_child(rewards)
-	v.move_child(rewards, 0)
-	# круглая кнопка «x2» на карточке монет: удвоить за рекламу
-	var coin_cell: Control = rewards.get_child(1)
-	var x2 := _x2_badge()
-	coin_cell.add_child(x2)
-	x2.position = Vector2(84, -18)
-	x2.pressed.connect(func() -> void:
-		if not Ads.is_ready():
-			return
-		x2.disabled = true
+	var v := _dialog("Уровень %d" % _level.n, [], [])
+	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	# крупная объёмная похвала
+	var praise := _big_text(["Отлично!", "Здорово!", "Супер!", "Молодец!"][_level.n % 4], 66, Color("#ffe14d"), Color("#ff9a1a"))
+	praise.custom_minimum_size = Vector2(0, 96)
+	praise.set_meta("no_banner", true)
+	v.add_child(praise)
+	# большое число монет рядом с горкой монет на пеньке, число «набегает»
+	var pile := Control.new()
+	pile.custom_minimum_size = Vector2(0, 200)
+	pile.set_meta("val", 0)
+	pile.draw.connect(func() -> void:
+		var cx := pile.size.x / 2
+		# пенёк-подставка
+		var base := Vector2(cx + 10, 168)
+		pile.draw_set_transform(base, 0.0, Vector2(1.0, 0.32))
+		pile.draw_circle(Vector2(0, 30), 128, Color(0, 0, 0, 0.18))
+		pile.draw_circle(Vector2.ZERO, 120, Color("#8a5326"))
+		pile.draw_circle(Vector2(0, -10), 116, Color("#d9a066"))
+		pile.draw_arc(Vector2(0, -10), 80, 0, TAU, 40, Color("#b07a47"), 6.0)
+		pile.draw_arc(Vector2(0, -10), 40, 0, TAU, 32, Color("#b07a47"), 6.0)
+		pile.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		for leaf in [Vector2(-105, 4), Vector2(112, -2)]:
+			pile.draw_set_transform(base + leaf, 0.5 * signf(leaf.x), Vector2.ONE)
+			pile.draw_colored_polygon(PackedVector2Array([Vector2(-26, 0), Vector2(0, -14), Vector2(26, 0), Vector2(0, 14)]), Color("#4cc24c"))
+			pile.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		# горка монет
+		var coins_at := [Vector2(40, 0), Vector2(80, 0), Vector2(120, 0), Vector2(60, -22), Vector2(100, -22), Vector2(80, -44), Vector2(40, -22), Vector2(120, -22), Vector2(80, -66)]
+		for cp in coins_at:
+			var c: Vector2 = base + Vector2(-40, -18) + cp
+			pile.draw_set_transform(c, 0.0, Vector2(1.0, 0.55))
+			pile.draw_circle(Vector2(0, 12), 26, Color("#a86a08"))
+			pile.draw_circle(Vector2.ZERO, 26, Color("#e09a12"))
+			pile.draw_circle(Vector2.ZERO, 20, Color("#ffd23f"))
+			pile.draw_circle(Vector2(-8, -6), 5, Color(1, 1, 1, 0.8))
+			pile.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		# число
+		var txt := str(int(pile.get_meta("val")))
+		var fs := 92
+		var ts := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var p := Vector2(cx - 30 - ts.x, 130)
+		for d in range(12, 0, -1):
+			pile.draw_string_outline(font, p + Vector2(0, d), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 16, Color("#2a1440"))
+			pile.draw_string(font, p + Vector2(0, d), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#c98a12"))
+		pile.draw_string_outline(font, p, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 16, Color("#2a1440"))
+		pile.draw_string(font, p, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#fff6d8"))
+		# искры
+		for k in 5:
+			var sp := Vector2(cx - 120 + k * 60, 20 + (k % 2) * 30)
+			pile.draw_circle(sp, 3.0, Color(1, 1, 0.8, 0.9)))
+	v.add_child(pile)
+	var pt := pile.create_tween()
+	pt.tween_interval(0.3)
+	pt.tween_method(func(val: float) -> void:
+		pile.set_meta("val", int(val))
+		pile.queue_redraw(), 0.0, float(coins), 0.7)
+	# звезда и серия — маленькие плашки
+	var chips := Label.new()
+	chips.text = "+1 звезда   ·   серия побед: %d" % Save.streak
+	chips.theme_type_variation = "InkLabel"
+	chips.add_theme_font_size_override("font_size", 24)
+	chips.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(chips)
+	# две кнопки рядом: «Дальше» и «реклама x2»
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 14)
+	v.add_child(row)
+	var go := Button.new()
+	go.text = "Дальше"
+	go.theme_type_variation = "GreenButton"
+	go.custom_minimum_size = Vector2(230, 96)
+	go.add_theme_font_size_override("font_size", 30)
+	go.pressed.connect(_next_level)
+	row.add_child(go)
+	var ad := Button.new()
+	ad.theme_type_variation = "OrangeButton"
+	ad.custom_minimum_size = Vector2(230, 96)
+	ad.text = "      %d" % (coins * 2)
+	ad.add_theme_font_size_override("font_size", 30)
+	ad.disabled = not Ads.is_ready()
+	ad.draw.connect(func() -> void:
+		# значок видео слева и «x2» справа
+		var c := Vector2(42, ad.size.y / 2 - 4)
+		ad.draw_rect(Rect2(c - Vector2(20, 14), Vector2(40, 28)), Color("#2b2350"))
+		ad.draw_rect(Rect2(c - Vector2(17, 11), Vector2(34, 22)), Color("#5fa8ff"))
+		ad.draw_colored_polygon(PackedVector2Array([c + Vector2(-6, -8), c + Vector2(9, 0), c + Vector2(-6, 8)]), Color.WHITE)
+		var bc := Vector2(ad.size.x - 26, 18)
+		ad.draw_circle(bc, 20, Color("#8a2a9a"))
+		ad.draw_circle(bc, 16, Color("#c04ad8"))
+		var ts := font.get_string_size("x2", HORIZONTAL_ALIGNMENT_LEFT, -1, 22)
+		ad.draw_string_outline(font, bc + Vector2(-ts.x / 2, 8), "x2", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, 6, Color("#3a0a48"))
+		ad.draw_string(font, bc + Vector2(-ts.x / 2, 8), "x2", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE))
+	ad.pressed.connect(func() -> void:
+		ad.disabled = true
 		Ads.show_rewarded(func() -> void:
 			Save.add_coins(coins)
-			var from: int = coin_cell.get_meta("val")
-			var t := coin_cell.create_tween()
+			var t := pile.create_tween()
 			t.tween_method(func(val: float) -> void:
-				coin_cell.set_meta("val", int(val))
-				coin_cell.queue_redraw(), float(from), float(coins * 2), 0.5)
-			x2.queue_free()))
+				pile.set_meta("val", int(val))
+				pile.queue_redraw(), float(coins), float(coins * 2), 0.5)
+			get_tree().create_timer(0.9).timeout.connect(_next_level)))
+	row.add_child(ad)
+	# красный крестик «домой» в углу окна
+	var close := Button.new()
+	close.flat = true
+	for st in ["normal", "hover", "pressed", "focus"]:
+		close.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+	close.custom_minimum_size = Vector2(76, 76)
+	close.z_index = 3
+	close.size = Vector2(76, 76)
+	close.draw.connect(func() -> void:
+		var c := Vector2(38, 38)
+		close.draw_circle(c + Vector2(0, 4), 34, Color(0, 0, 0, 0.3))
+		close.draw_circle(c, 34, Color("#ffcf3a"))
+		close.draw_circle(c, 29, Color("#a0101c"))
+		close.draw_circle(c + Vector2(0, -3), 25, Color("#e8283c"))
+		for d in [Vector2(1, 1), Vector2(1, -1)]:
+			close.draw_line(c - d * 12, c + d * 12, Color("#5a0a12"), 11.0, true)
+			close.draw_line(c - d * 12, c + d * 12, Color.WHITE, 7.0, true))
+	close.pressed.connect(func() -> void: _transition(_show_home))
+	var box: Control = v.get_parent().get_parent()
+	box.add_child(close)
+	close.top_level = false
+	var place := func() -> void: close.position = Vector2(box.size.x - 60, 120)
+	box.resized.connect(place)
+	place.call_deferred()
+	get_tree().process_frame.connect(place, CONNECT_ONE_SHOT)
 	# звезда и монеты летят вверх, конфетти
 	var c := size / 2
 	for i in 24:
