@@ -202,8 +202,8 @@ func _draw_block(n: Node2D, cell: Vector2i) -> void:
 	var t := block_tex(kind, block_max[cell.x][cell.y] - hp)
 	if t:
 		var sz := t.get_size()
-		var k := CELL * 0.92 / maxf(sz.x, sz.y)
-		n.draw_set_transform(Vector2(0, 2), 0.0, Vector2(k, k))
+		var k := CELL * 1.06 / maxf(sz.x, sz.y)
+		n.draw_set_transform(Vector2(0, 0), 0.0, Vector2(k, k))
 		n.draw_texture(t, -sz / 2)
 		n.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		if hp >= 2 and BLOCKS[kind].tex.size() == 1:
@@ -270,9 +270,19 @@ static func draw_chain(n: CanvasItem, o: Vector2, s: float) -> void:
 func _draw_overlay() -> void:
 	var vt := Gem.tex("ob_vines")
 	var ht := Gem.tex("ob_honey")
+	var itx := Gem.tex("ob_tile_ice")
 	for x in W:
 		for y in H:
 			var cp := cell_pos(Vector2i(x, y))
+			if ice[x][y] > 0 and itx:
+				var r := Rect2(cp - Vector2(CELL, CELL) * 0.47, Vector2(CELL, CELL) * 0.94)
+				_overlay.draw_texture_rect(itx, r, false, Color(1, 1, 1, 0.42 if ice[x][y] == 1 else 0.62))
+				var frost := StyleBoxFlat.new()
+				frost.bg_color = Color(0, 0, 0, 0)
+				frost.set_corner_radius_all(14)
+				frost.set_border_width_all(4)
+				frost.border_color = Color(0.85, 0.97, 1.0, 0.95)
+				_overlay.draw_style_box(frost, r)
 			if honey[x][y] and ht:
 				var hs := ht.get_size()
 				var hk := CELL * 0.98 / maxf(hs.x, hs.y)
@@ -352,7 +362,7 @@ func _draw() -> void:
 			if ice[x][y] > 0:
 				var it := Gem.tex("ob_tile_ice")
 				if it:
-					draw_texture_rect(it, rect.grow(1.0), false, Color(1, 1, 1, 0.85 if ice[x][y] >= 2 else 0.65))
+					draw_texture_rect(it, rect.grow(2.0), false, Color(1, 1, 1, 1.0))
 			if grass[x][y] and gt == null:
 				for k in 3:
 					var bx := rect.position.x + 14 + k * 22

@@ -37,6 +37,24 @@ static func build() -> Theme:
 			t.set_type_variation(type, "Button")
 		_button_styles(t, type, BUTTONS[type], title)
 
+	# зелёная кнопка — ИИ-картинка (растягивается по 9 частям)
+	var gtex: Texture2D = load("res://assets/art/ui_btn_green.png")
+	for st in [["normal", Color.WHITE, 0], ["hover", Color(1.08, 1.08, 1.08), 0], ["pressed", Color(0.85, 0.85, 0.85), 4], ["disabled", Color(0.6, 0.6, 0.6, 0.7), 0]]:
+		var sbt := StyleBoxTexture.new()
+		sbt.texture = gtex
+		sbt.texture_margin_left = 70
+		sbt.texture_margin_right = 70
+		sbt.texture_margin_top = 40
+		sbt.texture_margin_bottom = 50
+		sbt.modulate_color = st[1]
+		sbt.content_margin_left = 30
+		sbt.content_margin_right = 30
+		sbt.content_margin_top = 10 + st[2]
+		sbt.content_margin_bottom = 20 - st[2]
+		t.set_stylebox(st[0], "GreenButton", sbt)
+	t.set_color("font_outline_color", "GreenButton", Color("#1e5a14"))
+	t.set_constant("outline_size", "GreenButton", 10)
+
 	t.set_type_variation("DialogPanel", "PanelContainer")
 	t.set_stylebox("panel", "DialogPanel", _panel(CREAM, Color("#f0b34a"), 6, 34, 30))
 	t.set_type_variation("HudPanel", "PanelContainer")

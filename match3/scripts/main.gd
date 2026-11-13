@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.0.3"
+const VERSION := "1.1.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1090,34 +1090,126 @@ func _show_prelevel(n: int) -> void:
 	_level_screen.visible = false
 	_pre_selected.clear()
 	var lv := Levels.make(n)
-	var goals: Array = []
-	for g in lv.goals:
-		goals.append(GOAL_NAMES.get(g.kind, g.kind) + " " + str(g.left))
-	var diff: String = ["Обычный", "Сложный", "Очень сложный"][int(lv.get("hard", 0))]
-	var streak_line := "Серия побед: %d — бонус на старте!" % Save.streak if Save.streak > 0 else "Серия побед: 0"
-	var v := _dialog("Уровень %d" % n, ["Сложность: " + diff, "Цели: " + ", ".join(goals), streak_line, "Бустеры на старт:"], [
-		["▶ Играть", "GreenButton", func() -> void: _transition(_start_level.bind(n))],
+	var hard := int(lv.get("hard", 0))
+	var v := _dialog("Уровень %d" % n, [], [
+		["Играть", "GreenButton", func() -> void: _transition(_start_level.bind(n))],
 		["Закрыть", "Button", _show_home],
 	])
-	# ряд переключателей бустеров перед кнопкой «Играть»
+	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	var at := 0
+	# плашка сложности
+	if hard > 0:
+		var hb := Control.new()
+		hb.custom_minimum_size = Vector2(0, 90)
+		var ht: Texture2D = load("res://assets/art/ui_hard.png")
+		var htxt: String = ["", "Сложный уровень", "Очень сложный!"][hard]
+		hb.draw.connect(func() -> void:
+			var w := minf(hb.size.x, 420.0)
+			var h := w * ht.get_height() / ht.get_width()
+			var r := Rect2(Vector2(hb.size.x / 2 - w / 2, hb.size.y / 2 - h / 2), Vector2(w, h))
+			hb.draw_texture_rect(ht, r, false)
+			var ts := font.get_string_size(htxt, HORIZONTAL_ALIGNMENT_LEFT, -1, 30)
+			var p := Vector2(hb.size.x / 2 - ts.x / 2, hb.size.y / 2 + 11)
+			hb.draw_string_outline(font, p, htxt, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 9, Color("#5a0a0a"))
+			hb.draw_string(font, p, htxt, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color.WHITE))
+		v.add_child(hb)
+		v.move_child(hb, at)
+		at += 1
+	# цели в ячейках
+	var gl := Label.new()
+	gl.text = "Цели"
+	gl.theme_type_variation = "InkLabel"
+	gl.add_theme_font_size_override("font_size", 28)
+	gl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(gl)
+	v.move_child(gl, at)
+	at += 1
+	var grow := HBoxContainer.new()
+	grow.alignment = BoxContainer.ALIGNMENT_CENTER
+	grow.add_theme_constant_override("separation", 10)
+	v.add_child(grow)
+	v.move_child(grow, at)
+	at += 1
+	var slot_t: Texture2D = load("res://assets/art/ui_slot_goal.png")
+	for g in lv.goals:
+		var cell := Control.new()
+		cell.custom_minimum_size = Vector2(104, 112)
+		var kind: String = g.kind
+		var col: int = int(g.get("color", -1))
+		var cnt := str(g.left)
+		cell.draw.connect(func() -> void:
+			cell.draw_texture_rect(slot_t, Rect2(Vector2(2, 0), Vector2(100, 100)), false)
+			if kind == "color" or kind == "item":
+				var gt: Texture2D = Gem.tex("gem_%d" % col) if kind == "color" else null
+				if gt:
+					cell.draw_texture_rect(gt, Rect2(Vector2(22, 16), Vector2(60, 60)), false)
+				else:
+					_draw_goal_icon(cell, "crate", Vector2(52, 46))
+			else:
+				_draw_goal_icon(cell, kind, Vector2(52, 46))
+			var ts := font.get_string_size(cnt, HORIZONTAL_ALIGNMENT_LEFT, -1, 28)
+			var p := Vector2(52 - ts.x / 2, 104)
+			cell.draw_string_outline(font, p, cnt, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, 8, Color("#2b2350"))
+			cell.draw_string(font, p, cnt, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, Color.WHITE))
+		grow.add_child(cell)
+	if Save.streak > 0:
+		var sl := Label.new()
+		sl.text = "Серия побед: %d — бонус на старте!" % Save.streak
+		sl.theme_type_variation = "InkLabel"
+		sl.add_theme_font_size_override("font_size", 24)
+		sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(sl)
+		v.move_child(sl, at)
+		at += 1
+	# бустеры на старт в круглых ячейках
+	var bl := Label.new()
+	bl.text = "Бустеры на старт"
+	bl.theme_type_variation = "InkLabel"
+	bl.add_theme_font_size_override("font_size", 24)
+	bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(bl)
+	v.move_child(bl, at)
+	at += 1
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 12)
+	row.add_theme_constant_override("separation", 18)
 	v.add_child(row)
-	v.move_child(row, v.get_child_count() - 3)
+	v.move_child(row, at)
+	var rs: Texture2D = load("res://assets/art/ui_slot_round.png")
 	for b in PRE_BOOSTERS:
 		var kind: String = b[0]
+		var tex_name: String = {"pre_rocket": "rocket", "pre_bomb": "bomb", "pre_orb": "orb"}[kind]
 		var t := Button.new()
 		t.toggle_mode = true
-		t.custom_minimum_size = Vector2(150, 110)
-		t.add_theme_font_size_override("font_size", 24)
+		t.flat = true
+		for st in ["normal", "hover", "pressed", "focus", "disabled", "hover_pressed"]:
+			t.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+		t.custom_minimum_size = Vector2(112, 116)
 		var cnt := int(Save.boosters.get(kind, 0))
-		t.text = "%s\n×%d" % [b[1], cnt]
 		t.disabled = cnt <= 0
-		t.theme_type_variation = "Button"
+		t.draw.connect(func() -> void:
+			var on := t.button_pressed
+			if on:
+				t.draw_circle(Vector2(56, 56), 58, Color("#7dff8a", 0.55))
+			t.draw_texture_rect(rs, Rect2(Vector2(4, 4), Vector2(104, 104)), false, Color(1, 1, 1, 0.45) if t.disabled else Color.WHITE)
+			var it: Texture2D = Gem.tex(tex_name)
+			if it:
+				var k := 62.0 / maxf(it.get_width(), it.get_height())
+				var sz := it.get_size() * k
+				t.draw_texture_rect(it, Rect2(Vector2(56, 56) - sz / 2, sz), false, Color(1, 1, 1, 0.45) if t.disabled else Color.WHITE)
+			var bc := Vector2(92, 94)
+			t.draw_circle(bc, 18, Color("#7a0f1c"))
+			t.draw_circle(bc + Vector2(0, -2), 16, Color("#e8283c") if not on else Color("#3fc25a"))
+			var txt := "✓" if on else str(cnt)
+			var ts := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 20)
+			t.draw_string(font, bc + Vector2(-ts.x / 2, 6), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE))
 		t.toggled.connect(func(on: bool) -> void:
 			_pre_selected[kind] = on
-			t.theme_type_variation = "GreenButton" if on else "Button")
+			t.queue_redraw()
+			t.pivot_offset = t.size / 2
+			var tw := t.create_tween()
+			tw.tween_property(t, "scale", Vector2(1.15, 1.15), 0.08)
+			tw.tween_property(t, "scale", Vector2.ONE, 0.1))
 		row.add_child(t)
 
 
@@ -1590,25 +1682,54 @@ func _dialog(title_text: String, lines: Array, buttons: Array) -> VBoxContainer:
 	var cc := CenterContainer.new()
 	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_overlay.add_child(cc)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", -46)
+	cc.add_child(box)
+	# лента-заголовок поверх окна
+	var ribbon := Control.new()
+	ribbon.custom_minimum_size = Vector2(600, 150)
+	ribbon.z_index = 1
+	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var rt: Texture2D = load("res://assets/art/ui_ribbon.png")
+	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	ribbon.draw.connect(func() -> void:
+		ribbon.draw_texture_rect(rt, Rect2(Vector2.ZERO, ribbon.size), false)
+		var fs := 48
+		var ts := font.get_string_size(title_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		while ts.x > ribbon.size.x * 0.62 and fs > 26:
+			fs -= 2
+			ts = font.get_string_size(title_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var p := Vector2(ribbon.size.x / 2 - ts.x / 2, ribbon.size.y * 0.36 + fs * 0.36)
+		for d in range(5, 0, -1):
+			ribbon.draw_string_outline(font, p + Vector2(0, d), title_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#14451f"))
+		ribbon.draw_string_outline(font, p, title_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#14451f"))
+		ribbon.draw_string(font, p, title_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	box.add_child(ribbon)
+	# окно: картинка растягивается по 9 частям
 	var panel := PanelContainer.new()
-	panel.theme_type_variation = "DialogPanel"
-	panel.custom_minimum_size = Vector2(560, 0)
-	cc.add_child(panel)
+	var sb := StyleBoxTexture.new()
+	sb.texture = load("res://assets/art/ui_window.png")
+	sb.texture_margin_left = 60
+	sb.texture_margin_right = 60
+	sb.texture_margin_top = 70
+	sb.texture_margin_bottom = 60
+	sb.content_margin_left = 54
+	sb.content_margin_right = 54
+	sb.content_margin_top = 70
+	sb.content_margin_bottom = 48
+	panel.add_theme_stylebox_override("panel", sb)
+	panel.custom_minimum_size = Vector2(580, 0)
+	box.add_child(panel)
+	box.move_child(ribbon, 1)
+	box.move_child(panel, 0)
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 22)
+	v.add_theme_constant_override("separation", 18)
 	panel.add_child(v)
-	var t := Label.new()
-	t.text = title_text
-	t.theme_type_variation = "TitleLabel"
-	t.add_theme_font_size_override("font_size", 52)
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	t.add_theme_color_override("font_color", Color("#ffd23f"))
-	v.add_child(t)
 	for line in lines:
 		var l := Label.new()
 		l.text = line
 		l.theme_type_variation = "InkLabel"
-		l.add_theme_font_size_override("font_size", 30)
+		l.add_theme_font_size_override("font_size", 28)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		v.add_child(l)
@@ -1616,13 +1737,15 @@ func _dialog(title_text: String, lines: Array, buttons: Array) -> VBoxContainer:
 		var btn := Button.new()
 		btn.text = b[0]
 		btn.theme_type_variation = b[1]
-		btn.custom_minimum_size = Vector2(0, 96)
+		btn.custom_minimum_size = Vector2(0, 100 if b[1] == "GreenButton" else 84)
 		btn.disabled = b.size() > 3 and b[3]
 		btn.pressed.connect(b[2])
 		v.add_child(btn)
-	panel.pivot_offset = Vector2(280, 250)
-	panel.scale = Vector2(0.6, 0.6)
-	panel.create_tween().tween_property(panel, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	# лента сверху: переставляем — сначала лента, потом окно (окно уходит под ленту за счёт отрицательного отступа)
+	box.move_child(ribbon, 0)
+	box.pivot_offset = Vector2(300, 300)
+	box.scale = Vector2(0.6, 0.6)
+	box.create_tween().tween_property(box, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	return v
 
 
@@ -1863,7 +1986,7 @@ func _run_shots(dir: String) -> void:
 	await _snap(dir, "1d_settings")
 	_clear_overlay()
 	# уровни с разными препятствиями: 4 ящики, 5 трава, 6 предметы, 7 цепи, 8 вазы
-	for n in [6, 7, 8, 10, 11, 12, 14, 15, 16, 18, 19, 20]:
+	for n in [9, 23, 26, 27]:
 		_start_level(n)
 		await get_tree().create_timer(1.6).timeout
 		await _snap(dir, "2_level_%d" % n)
@@ -1936,7 +2059,7 @@ func _run_shots(dir: String) -> void:
 	_show_win()
 	await get_tree().create_timer(0.5).timeout
 	await _snap(dir, "6_win")
-	_show_prelevel(9)
+	_show_prelevel(10)
 	await get_tree().create_timer(0.5).timeout
 	await _snap(dir, "8_prelevel")
 	Save.hearts = 0
