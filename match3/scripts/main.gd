@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "0.6.0"
+const VERSION := "0.6.1"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1299,10 +1299,11 @@ func _show_win() -> void:
 	Save.add_coins(coins)
 	Save.vibrate(60)
 	var v := _dialog("Уровень пройден!", ["+1 ★   +%d монет" % coins, "Серия побед: %d" % Save.streak], [
-		["Дальше", "GreenButton", func() -> void: _transition(_show_home)],
+		["Дальше", "GreenButton", _next_level],
+		["Домой", "Button", func() -> void: _transition(_show_home)],
 		["▶ Удвоить монеты за рекламу", "PurpleButton", func() -> void:
 			Ads.show_rewarded(func() -> void: Save.add_coins(coins))
-			_transition(_show_home), not Ads.is_ready()],
+			_next_level(), not Ads.is_ready()],
 	])
 	# звезда и монеты летят вверх, конфетти
 	var c := size / 2
@@ -1327,6 +1328,15 @@ func _show_win() -> void:
 	st.tween_property(star, "scale", Vector2(1.2, 1.2), 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	st.tween_property(star, "rotation", TAU, 0.6)
 	v.get_parent().get_parent().move_to_front()
+
+
+## «Дальше» после победы — сразу следующий уровень (если есть жизни).
+func _next_level() -> void:
+	Save.update_hearts()
+	if Save.hearts <= 0:
+		_transition(_show_home)
+		return
+	_transition(_start_level.bind(Save.level))
 
 
 func _show_lose() -> void:

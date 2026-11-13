@@ -21,10 +21,11 @@ var special := NONE
 var cell := Vector2i.ZERO
 var size := 80.0
 var _t := 0.0
+var _shine := randf() * 6.0
 
 
 func _ready() -> void:
-	set_process(special != NONE)
+	set_process(true)
 
 
 ## Особая фишка, которая взрывается (предмет «спустить вниз» — не взрывается).
@@ -36,7 +37,6 @@ func set_special(kind: int) -> void:
 	special = kind
 	if kind == ORB or kind == ITEM:
 		color = -1
-	set_process(kind != NONE)
 	queue_redraw()
 
 
@@ -62,14 +62,20 @@ func _draw_tex(t: Texture2D, box: float, angle: float = 0.0, k: float = 1.0) -> 
 
 func _draw() -> void:
 	var r := size * 0.41
-	var box := size * 0.9
+	var box := size * 0.94
 	var pulse := 1.0 + sin(_t * 5.0) * 0.05
 	var t: Texture2D = null
 	match special:
 		NONE:
 			t = tex("gem_%d" % color) if color >= 0 else null
 			if t:
+				# мягкая тень под кристаллом + редкий блеск
+				draw_circle(Vector2(0, size * 0.36), size * 0.3, Color(0, 0, 0, 0.12))
 				_draw_tex(t, box)
+				var ph := fmod(_shine + _t, 6.0)
+				if ph < 0.35:
+					var k := ph / 0.35
+					draw_circle(Vector2(-size * 0.18, -size * 0.2), size * (0.05 + 0.08 * sin(k * PI)), Color(1, 1, 1, 0.9 * sin(k * PI)))
 				return
 		ROCKET_H, ROCKET_V:
 			t = tex("rocket")

@@ -228,24 +228,44 @@ func board_size() -> Vector2:
 	return Vector2(W, H) * CELL
 
 
+func _tile_box(col: Color) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = col
+	sb.set_corner_radius_all(14)
+	sb.border_width_bottom = 4
+	sb.border_color = col.darkened(0.18)
+	return sb
+
+
+## Поле: «премиальные» плитки со скруглением, зазором, глянцем сверху и тенью снизу.
 func _draw() -> void:
 	var r := Rect2(Vector2.ZERO, board_size())
+	draw_rect(r, Color("#2a1a4a", 0.55))
+	var gap := 3.0
+	var light := _tile_box(Color("#ffffff", 0.96))
+	var dark := _tile_box(Color("#dceeff", 0.96))
+	var grass_a := _tile_box(Color("#6fdc5e"))
+	var grass_b := _tile_box(Color("#5ccc4f"))
+	var soil_a := _tile_box(Color("#c08a55"))
+	var soil_b := _tile_box(Color("#b07a47"))
 	for x in W:
 		for y in H:
-			var rect := Rect2(Vector2(x, y) * CELL, Vector2(CELL, CELL))
-			var c := Color("#fffaf0", 0.92) if (x + y) % 2 == 0 else Color("#efe4c9", 0.92)
+			var rect := Rect2(Vector2(x, y) * CELL + Vector2(gap, gap), Vector2(CELL, CELL) - Vector2(gap, gap) * 2)
+			var even := (x + y) % 2 == 0
+			var sb: StyleBoxFlat = light if even else dark
 			if grass[x][y]:
-				c = Color("#5fd35a") if (x + y) % 2 == 0 else Color("#4cc24c")
+				sb = grass_a if even else grass_b
 			elif grass_target[x][y]:
-				c = Color("#a8794a", 0.75) if (x + y) % 2 == 0 else Color("#97693e", 0.75)
-			draw_rect(rect, c)
+				sb = soil_a if even else soil_b
+			draw_style_box(sb, rect)
+			# глянцевая полоска сверху
+			draw_rect(Rect2(rect.position + Vector2(8, 5), Vector2(rect.size.x - 16, 6)), Color(1, 1, 1, 0.45))
 			if grass[x][y]:
 				for k in 3:
-					var bx := rect.position.x + 14 + k * 26
-					var by := rect.position.y + rect.size.y - 6
-					draw_line(Vector2(bx, by), Vector2(bx - 4, by - 14), Color("#3a9a3a"), 3.0)
-					draw_line(Vector2(bx + 4, by), Vector2(bx + 8, by - 12), Color("#3a9a3a"), 3.0)
-	draw_rect(r, Color("#6b4423", 0.6), false, 2.0)
+					var bx := rect.position.x + 12 + k * 24
+					var by := rect.position.y + rect.size.y - 8
+					draw_line(Vector2(bx, by), Vector2(bx - 4, by - 14), Color("#2f8f2f"), 3.0)
+					draw_line(Vector2(bx + 4, by), Vector2(bx + 8, by - 12), Color("#2f8f2f"), 3.0)
 
 
 # ---------- запросы к полю ----------
