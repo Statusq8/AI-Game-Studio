@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "0.5.2"
+const VERSION := "0.6.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -24,6 +24,10 @@ var _overlay: Control
 var _fx: Node2D
 var _home_level_btn: Button
 var _zoo: Control
+var _map: TextureRect
+var _repair_btn: Button
+var _repair_mode := false
+var _zone_box: Control
 var _zone_title: Label
 var _zone_bar: ProgressBar
 var _tabbar: HBoxContainer
@@ -200,6 +204,16 @@ func _build_home() -> void:
 	_home.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_home)
 
+	# карта всего зоопарка (вид сверху под углом); ремонт — отдельный экран
+	_map = TextureRect.new()
+	_map.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_map.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_map.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_map.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var map_path := "res://assets/art/zoo_map.webp"
+	_map.texture = load(map_path) if ResourceLoader.exists(map_path) else null
+	_home.add_child(_map)
+
 	# текущая зона зоопарка с местами ремонта
 	_zoo = Zoo.new()
 	_zoo.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -247,6 +261,7 @@ func _build_home() -> void:
 	_zone_bar.custom_minimum_size = Vector2(360, 22)
 	bar_box.add_child(_zone_bar)
 	col.add_child(bar_box)
+	_zone_box = bar_box
 
 	# кнопки сбоку: почта, друзья, рейтинг, настройки
 	var side := VBoxContainer.new()
@@ -280,6 +295,13 @@ func _build_home() -> void:
 	_home_level_btn.pivot_offset = Vector2(165, 55)
 	pulse.tween_property(_home_level_btn, "scale", Vector2(1.05, 1.05), 0.6).set_trans(Tween.TRANS_SINE)
 	pulse.tween_property(_home_level_btn, "scale", Vector2.ONE, 0.6).set_trans(Tween.TRANS_SINE)
+
+	_repair_btn = Button.new()
+	_repair_btn.theme_type_variation = "OrangeButton"
+	_repair_btn.custom_minimum_size = Vector2(250, 110)
+	_repair_btn.add_theme_font_size_override("font_size", 34)
+	_repair_btn.pressed.connect(func() -> void: _transition(_set_repair_mode.bind(not _repair_mode)))
+	_home.add_child(_repair_btn)
 
 	# нижняя панель: 5 вкладок
 	_tabbar = HBoxContainer.new()
@@ -320,7 +342,8 @@ func _layout_home() -> void:
 	_tabbar.size = Vector2(w, 100)
 	_tabbar.position = Vector2(0, h - 120)
 	_home_level_btn.position = Vector2(w - 330 - 24, h - 250)
-	_home_panda.position = Vector2(4, h - 120 - _home_panda.custom_minimum_size.y + 10)
+	_repair_btn.position = Vector2(24, h - 250)
+	_home_panda.position = Vector2(4, h - 250 - _home_panda.custom_minimum_size.y + 10)
 
 
 func _avatar() -> Control:
@@ -360,8 +383,22 @@ func _stars_pill() -> Control:
 	return pill
 
 
+## Главный экран — карта зоопарка; режим ремонта — текущая зона с местами под задания.
+func _set_repair_mode(on: bool) -> void:
+	_repair_mode = on
+	_clear_overlay()
+	_refresh_home()
+
+
 func _refresh_home() -> void:
 	_layout_home()
+	_map.visible = not _repair_mode and _map.texture != null
+	_zoo.visible = _repair_mode or _map.texture == null
+	_zoo.mouse_filter = Control.MOUSE_FILTER_PASS if _zoo.visible else Control.MOUSE_FILTER_IGNORE
+	_home_panda.visible = _repair_mode
+	_zone_title.visible = _repair_mode
+	_zone_box.visible = _repair_mode
+	_repair_btn.text = "← Назад" if _repair_mode else "Ремонт ★%d" % Save.stars
 	_refresh_coins()
 	_refresh_hearts()
 	if _stars_label:
@@ -1462,6 +1499,9 @@ func _run_shots(dir: String) -> void:
 	_show_home()
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "1_home")
+	_set_repair_mode(true)
+	await get_tree().create_timer(0.3).timeout
+	await _snap(dir, "1a_repair")
 	_on_spot(0)
 	await get_tree().create_timer(0.5).timeout
 	await _snap(dir, "1b_design")
