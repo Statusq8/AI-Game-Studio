@@ -75,6 +75,7 @@ jobs:
             echo "::error::Match-3 GDScript errors found"; exit 1
           fi
           grep -q "BOT done" build/m3-run.log
+          if grep -q "HOLES" build/m3-run.log; then echo "::error::Empty cells after a move"; exit 1; fi
           # Ввод как на телефоне: свайп, два тапа и мышь должны делать ход.
           timeout 120 godot --headless --path match3 -- --inputtest 2>&1 | tee build/m3-input.log || true
           grep -q "INPUT TEST OK" build/m3-input.log

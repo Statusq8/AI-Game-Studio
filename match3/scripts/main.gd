@@ -6,7 +6,7 @@ const Levels := preload("res://scripts/levels.gd")
 const Board := preload("res://scripts/board.gd")
 const Gem := preload("res://scripts/gem.gd")
 
-const VERSION := "0.3.0"
+const VERSION := "0.3.1"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -616,6 +616,8 @@ func _goals_done() -> bool:
 
 
 func _on_settled() -> void:
+	if _board.holes() > 0:
+		push_error("HOLES after settle: %d" % _board.holes())
 	match _state:
 		"play":
 			if _goals_done():

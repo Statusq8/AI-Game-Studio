@@ -620,6 +620,8 @@ func _animate_swap(ga: Node2D, gb: Node2D, a: Vector2i, b: Vector2i) -> void:
 
 func _cascade(prefer: Array) -> void:
 	var wave := 0
+	# после взрыва особой фишки дырки надо заполнить, даже если новых совпадений нет
+	await _gravity()
 	while true:
 		if await _collect_items():
 			await _gravity()
@@ -667,6 +669,16 @@ func _cascade(prefer: Array) -> void:
 		await _shuffle()
 	busy = false
 	settled.emit()
+
+
+## Пустые клетки, куда должна была упасть фишка (для проверок ботом).
+func holes() -> int:
+	var n := 0
+	for x in W:
+		for y in H:
+			if _fillable(Vector2i(x, y)) and gem_at(Vector2i(x, y)) == null:
+				n += 1
+	return n
 
 
 func _special_for(group: Dictionary) -> int:
