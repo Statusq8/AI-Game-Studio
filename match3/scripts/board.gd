@@ -46,6 +46,7 @@ var block_kind: Array = []   # B_NONE / B_CRATE / B_VASE
 var block_hp: Array = []
 var block_max: Array = []
 var ice: Array = []          # слой льда под фишкой
+var hole: Array = []         # дыра в фигурном поле (клетки нет)
 var honey: Array = []        # мёд на фишке (растекается)
 var _honey_hit := false
 var _player_move := false
@@ -88,6 +89,7 @@ func setup(level: Dictionary) -> void:
 	block_hp = []
 	block_max = []
 	ice = []
+	hole = []
 	honey = []
 	chain = []
 	grass = []
@@ -98,6 +100,7 @@ func setup(level: Dictionary) -> void:
 		block_hp.append([])
 		block_max.append([])
 		ice.append([])
+		hole.append([])
 		honey.append([])
 		chain.append([])
 		grass.append([])
@@ -110,6 +113,7 @@ func setup(level: Dictionary) -> void:
 			block_hp[x].append(int(b.get("hp", 0)))
 			block_max[x].append(int(b.get("hp", 0)))
 			ice[x].append(int(level.get("ice", {}).get(c, 0)))
+			hole[x].append(c in level.get("holes", []))
 			honey[x].append(c in level.get("honey", []))
 			chain[x].append(int(level.chains.get(c, 0)))
 			grass[x].append(c in level.grass_start)
@@ -305,10 +309,15 @@ func _tile_box(col: Color) -> StyleBoxFlat:
 ## Поле: объёмные плитки — тёмный обод, светлая середина с градиентом, блик сверху, тень снизу.
 func _draw() -> void:
 	var r := Rect2(Vector2.ZERO, board_size())
-	draw_rect(r, Color("#123247", 0.6))
 	var gap := 2.5
 	for x in W:
 		for y in H:
+			if not hole[x][y]:
+				draw_rect(Rect2(Vector2(x, y) * CELL - Vector2(1, 1), Vector2(CELL, CELL) + Vector2(2, 2)), Color("#123247", 0.6))
+	for x in W:
+		for y in H:
+			if hole[x][y]:
+				continue
 			var rect := Rect2(Vector2(x, y) * CELL + Vector2(gap, gap), Vector2(CELL, CELL) - Vector2(gap, gap) * 2)
 			var even := (x + y) % 2 == 0
 			var top := Color("#e6f3fa") if even else Color("#d3e7f2")
@@ -368,7 +377,15 @@ func color_at(c: Vector2i) -> int:
 
 ## Клетка, куда может встать фишка (нет ящика/вазы).
 func _fillable(c: Vector2i) -> bool:
-	return inside(c) and block_kind[c.x][c.y] == B_NONE
+	return inside(c) and block_kind[c.x][c.y] == B_NONE and not hole[c.x][c.y]
+
+
+## Над клеткой только дыры (или край) — сюда падают новые фишки.
+func _spawn_cell(c: Vector2i) -> bool:
+	for y in range(c.y - 1, -1, -1):
+		if not hole[c.x][y]:
+			return false
+	return true
 
 
 ## Фишка не двигается: на ней лианы или мёд.
@@ -760,6 +777,12 @@ func _animate_swap(ga: Node2D, gb: Node2D, a: Vector2i, b: Vector2i) -> void:
 	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tw.tween_property(ga, "position", cell_pos(b), 0.16)
 	tw.tween_property(gb, "position", cell_pos(a), 0.16)
+	var horiz := a.y == b.y
+	var squash := Vector2(1.18, 0.85) if horiz else Vector2(0.85, 1.18)
+	for g in [ga, gb]:
+		var st := create_tween()
+		st.tween_property(g, "scale", squash, 0.08)
+		st.tween_property(g, "scale", Vector2.ONE, 0.1).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	ga.z_index = 2
 	await tw.finished
 	ga.z_index = 0
@@ -1261,11 +1284,11 @@ func _gravity() -> void:
 				var c := Vector2i(x, y)
 				if not _fillable(c) or gem_at(c) != null:
 					continue
-				if y == 0:
+				if _spawn_cell(c):
 					var g := _new_gem(rng.randi_range(0, colors - 1))
 					spawned[x] += 1
-					g.position = cell_pos(Vector2i(x, -spawned[x]))
-					tiles[x][0] = g
+					g.position = cell_pos(Vector2i(x, y - spawned[x]))
+					tiles[x][y] = g
 					g.cell = c
 					moved[g] = true
 					changed = true

@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "0.8.0"
+const VERSION := "0.9.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -717,7 +717,10 @@ func _build_level_screen() -> void:
 		if Save.shake:
 			_shake = maxf(_shake, 6.0 + p * 4.0)
 		if p >= 2.0:
-			Save.vibrate(int(20 + p * 10)))
+			Save.vibrate(int(20 + p * 10))
+			_flash(clampf(0.15 + p * 0.06, 0.2, 0.5))
+		if p >= 3.0 and not _bot:
+			_slowmo())
 	_booster_bar = HBoxContainer.new()
 	_booster_bar.alignment = BoxContainer.ALIGNMENT_CENTER
 	_booster_bar.add_theme_constant_override("separation", 14)
@@ -1240,6 +1243,25 @@ func _banner(l: Label) -> void:
 
 # ---------- игровые события ----------
 
+## Белая вспышка экрана на мощных взрывах.
+func _flash(strength: float) -> void:
+	var f := ColorRect.new()
+	f.color = Color(1, 1, 0.92, strength)
+	f.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	f.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_overlay.add_child(f)
+	var t := f.create_tween()
+	t.tween_property(f, "color:a", 0.0, 0.25)
+	t.tween_callback(f.queue_free)
+
+
+## Замедление на секунду для больших комбо.
+func _slowmo() -> void:
+	Engine.time_scale = 0.45
+	await get_tree().create_timer(0.35, true, false, true).timeout
+	Engine.time_scale = 1.0
+
+
 func _on_combo(n: int) -> void:
 	if n < 2 or _state != "play":
 		return
@@ -1394,12 +1416,44 @@ func _begin_bonus() -> void:
 	await get_tree().create_timer(1.0).timeout
 	var bonus := _moves
 	_level["bonus_coins"] = bonus * COINS_PER_MOVE
-	if bonus > 0:
-		var n := mini(bonus, 12)
-		_moves = 0
+	# праздник: каждый оставшийся ход вылетает ракетой из счётчика и превращает фишку в ракету
+	var n := mini(bonus, 12)
+	var from := _moves_label.get_global_rect().get_center()
+	var rtex: Texture2D = Gem.tex("rocket")
+	for i in n:
+		var cells: Array = []
+		for x in 8:
+			for y in 8:
+				var g: Node2D = _board.gem_at(Vector2i(x, y))
+				if g and g.special == Gem.NONE and not _board._chained(Vector2i(x, y)):
+					cells.append(Vector2i(x, y))
+		if cells.is_empty():
+			break
+		var cell: Vector2i = cells.pick_random()
+		_moves -= 1
 		_update_moves()
-		_board.spawn_bonus_rockets(n)
-		await get_tree().create_timer(0.5).timeout
+		var spr := Sprite2D.new()
+		spr.texture = rtex
+		if rtex:
+			var k := 60.0 / maxf(rtex.get_width(), rtex.get_height())
+			spr.scale = Vector2(k, k)
+		spr.position = _fx.to_local(from)
+		_fx.add_child(spr)
+		var to := _fx.to_local(_board.get_global_transform_with_canvas() * _board.cell_pos(cell))
+		spr.rotation = (to - spr.position).angle()
+		var tw := spr.create_tween()
+		tw.tween_property(spr, "position", to, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_callback(func() -> void:
+			spr.queue_free()
+			var g: Node2D = _board.gem_at(cell)
+			if g and g.special == Gem.NONE:
+				g.set_special(Gem.ROCKET_H if randf() < 0.5 else Gem.ROCKET_V)
+				g.scale = Vector2(1.5, 1.5)
+				g.create_tween().tween_property(g, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK))
+		await get_tree().create_timer(0.09).timeout
+	_moves = 0
+	_update_moves()
+	await get_tree().create_timer(0.35).timeout
 	_board.detonate_all_specials()
 
 

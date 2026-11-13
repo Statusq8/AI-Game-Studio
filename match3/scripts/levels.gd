@@ -4,6 +4,15 @@ extends RefCounted
 
 const W := 8
 const H := 8
+## Фигурные поля: клетки-дыры (поле не квадратное).
+const SHAPES := [
+	[Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(7, 0), Vector2i(6, 0), Vector2i(7, 1)],
+	[Vector2i(3, 3), Vector2i(4, 3), Vector2i(3, 4), Vector2i(4, 4)],
+	[Vector2i(0, 3), Vector2i(0, 4), Vector2i(7, 3), Vector2i(7, 4)],
+	[Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(5, 0), Vector2i(6, 0), Vector2i(7, 0), Vector2i(0, 1), Vector2i(7, 1)],
+	[Vector2i(3, 2), Vector2i(4, 2), Vector2i(3, 5), Vector2i(4, 5)],
+	[Vector2i(0, 2), Vector2i(7, 2), Vector2i(0, 5), Vector2i(7, 5), Vector2i(0, 6), Vector2i(7, 6)],
+]
 const OBSTACLES := ["crate", "grass", "item", "chain", "vase", "ice", "balloon", "honey", "jar", "flower", "cage", "bush", "shell", "safe"]
 ## Блоки на поле: номер вида (как в board.gd) и прочность.
 const BLOCK := {"crate": [1, 1], "vase": [2, 1], "safe": [3, 3], "jar": [4, 1], "cage": [5, 2], "balloon": [6, 1], "flower": [7, 2], "bush": [8, 2], "shell": [9, 2]}
@@ -45,6 +54,11 @@ static func make(n: int) -> Dictionary:
 
 	for k in kinds:
 		_add_obstacle(lv, k, n, rng)
+	# фигурное поле с 6-го уровня, каждый 2-й уровень
+	if n >= 6 and n % 2 == 0:
+		var holes: Array = SHAPES[(n / 2) % SHAPES.size()]
+		lv["holes"] = holes
+		_cut_holes(lv, holes)
 	# сложные уровни: каждый 10-й «Сложный», каждый 30-й «Очень сложный» (меньше ходов, больше монет)
 	if n % 30 == 0:
 		lv["hard"] = 2
@@ -129,3 +143,35 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 				lv.chains[c] = 2 if (n >= 20 and rng.randf() < 0.3) else 1
 			lv.goals.append({"kind": "chain", "left": cells.size()})
 			lv.moves += 3
+
+
+## Убираем препятствия из дыр и пересчитываем цели.
+static func _cut_holes(lv: Dictionary, holes: Array) -> void:
+	for c in holes:
+		lv.blocks.erase(c)
+		lv.chains.erase(c)
+		lv.ice.erase(c)
+		lv.honey.erase(c)
+		lv.grass_target.erase(c)
+		lv.grass_start.erase(c)
+	var block_goal := {1: "crate", 2: "vase", 3: "safe", 4: "jar", 5: "cage", 6: "balloon", 7: "flower", 8: "bush", 9: "shell"}
+	for g in lv.goals:
+		match g.kind:
+			"chain":
+				g.left = lv.chains.size()
+			"ice":
+				g.left = lv.ice.size()
+			"honey":
+				g.left = lv.honey.size()
+			"grass":
+				g.left = lv.grass_target.size() - lv.grass_start.size()
+			"color", "item":
+				pass
+			_:
+				var cnt := 0
+				for c in lv.blocks:
+					if block_goal.get(lv.blocks[c].kind, "") == g.kind:
+						cnt += 1
+				g.left = cnt
+	# лёд/трава могли закончиться — в цель ставим хотя бы что-то разумное
+	lv.goals = lv.goals.filter(func(g: Dictionary) -> bool: return g.left > 0)
