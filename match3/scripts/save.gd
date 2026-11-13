@@ -10,6 +10,14 @@ const HEART_SECONDS := 30 * 60
 var level := 1
 var coins := 0
 var sound := true
+var music := true
+var vibration := true
+var shake := true
+var particles := true
+var stars := 0
+var zone := 0
+var built := {}  # индекс задания текущей зоны -> вариант дизайна
+var streak := 0
 var hearts := MAX_HEARTS
 var heart_at := 0.0
 ## Бустеры: на уровне (молот, ряд, столбец, перемешать) и до уровня (ракета, бомба, шар).
@@ -24,6 +32,17 @@ func _ready() -> void:
 		level = maxi(1, int(data.get("level", 1)))
 		coins = maxi(0, int(data.get("coins", 0)))
 		sound = bool(data.get("sound", true))
+		music = bool(data.get("music", true))
+		vibration = bool(data.get("vibration", true))
+		shake = bool(data.get("shake", true))
+		particles = bool(data.get("particles", true))
+		stars = maxi(0, int(data.get("stars", 0)))
+		zone = maxi(0, int(data.get("zone", 0)))
+		streak = maxi(0, int(data.get("streak", 0)))
+		var bl: Variant = data.get("built", {})
+		if bl is Dictionary:
+			for k in bl:
+				built[int(k)] = int(bl[k])
 		hearts = clampi(int(data.get("hearts", MAX_HEARTS)), 0, MAX_HEARTS)
 		heart_at = float(data.get("heart_at", 0.0))
 		var b: Variant = data.get("boosters", {})
@@ -36,7 +55,7 @@ func _ready() -> void:
 func store() -> void:
 	var f := FileAccess.open(PATH, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"level": level, "coins": coins, "sound": sound, "hearts": hearts, "heart_at": heart_at, "boosters": boosters}))
+		f.store_string(JSON.stringify({"level": level, "coins": coins, "sound": sound, "hearts": hearts, "heart_at": heart_at, "boosters": boosters, "music": music, "vibration": vibration, "shake": shake, "particles": particles, "stars": stars, "zone": zone, "built": built, "streak": streak}))
 	changed.emit()
 
 
@@ -101,3 +120,8 @@ func use_booster(kind: String) -> bool:
 func add_booster(kind: String, n: int = 1) -> void:
 	boosters[kind] = int(boosters.get(kind, 0)) + n
 	store()
+
+
+func vibrate(ms: int) -> void:
+	if vibration:
+		Input.vibrate_handheld(ms)

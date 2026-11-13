@@ -43,6 +43,13 @@ static func make(n: int) -> Dictionary:
 
 	for k in kinds:
 		_add_obstacle(lv, k, n, rng)
+	# сложные уровни: каждый 10-й «Сложный», каждый 30-й «Очень сложный» (меньше ходов, больше монет)
+	if n % 30 == 0:
+		lv["hard"] = 2
+		lv.moves -= 5
+	elif n % 10 == 0:
+		lv["hard"] = 1
+		lv.moves -= 3
 	lv["seed"] = rng.randi()
 	return lv
 

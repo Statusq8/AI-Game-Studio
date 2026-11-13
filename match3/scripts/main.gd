@@ -5,8 +5,10 @@ const UiTheme := preload("res://scripts/ui_theme.gd")
 const Levels := preload("res://scripts/levels.gd")
 const Board := preload("res://scripts/board.gd")
 const Gem := preload("res://scripts/gem.gd")
+const Zones := preload("res://scripts/zones.gd")
+const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "0.4.0"
+const VERSION := "0.5.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -21,6 +23,12 @@ var _level_screen: Control
 var _overlay: Control
 var _fx: Node2D
 var _home_level_btn: Button
+var _zoo: Control
+var _zone_title: Label
+var _zone_bar: ProgressBar
+var _tabbar: HBoxContainer
+var _stars_label: Label
+var _avatar_node: Control
 var _coin_labels: Array[Label] = []
 var _hearts_label: Label
 var _hearts_timer: Label
@@ -191,60 +199,389 @@ func _build_home() -> void:
 	_home.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_home.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_home)
+
+	# текущая зона зоопарка с местами ремонта
+	_zoo = Zoo.new()
+	_zoo.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_zoo.spot_pressed.connect(_on_spot)
+	_home.add_child(_zoo)
+
+	# верхняя панель: аватар + уровень игрока, жизни, монеты, звёзды
 	var top := MarginContainer.new()
 	top.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	top.add_theme_constant_override("margin_left", 24)
-	top.add_theme_constant_override("margin_top", 36)
-	top.add_theme_constant_override("margin_right", 24)
+	for side in ["left", "right"]:
+		top.add_theme_constant_override("margin_" + side, 14)
+	top.add_theme_constant_override("margin_top", 28)
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_home.add_child(top)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 10)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(col)
 	var row := HBoxContainer.new()
-	top.add_child(row)
-	row.add_theme_constant_override("separation", 16)
+	row.add_theme_constant_override("separation", 10)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(row)
+	row.add_child(_avatar())
 	row.add_child(_hearts_pill())
 	row.add_child(_coin_pill())
+	row.add_child(_stars_pill())
+	_zone_title = Label.new()
+	_zone_title.theme_type_variation = "TitleLabel"
+	_zone_title.add_theme_font_size_override("font_size", 30)
+	_zone_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(_zone_title)
+	_zone_bar = ProgressBar.new()
+	_zone_bar.custom_minimum_size = Vector2(0, 22)
+	_zone_bar.show_percentage = false
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color("#3fb85a")
+	fill.set_corner_radius_all(11)
+	var back := StyleBoxFlat.new()
+	back.bg_color = Color(0, 0, 0, 0.35)
+	back.set_corner_radius_all(11)
+	_zone_bar.add_theme_stylebox_override("fill", fill)
+	_zone_bar.add_theme_stylebox_override("background", back)
+	var bar_box := CenterContainer.new()
+	bar_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_zone_bar.custom_minimum_size = Vector2(360, 22)
+	bar_box.add_child(_zone_bar)
+	col.add_child(bar_box)
 
-	var center := VBoxContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	center.alignment = BoxContainer.ALIGNMENT_CENTER
-	center.add_theme_constant_override("separation", 30)
-	_home.add_child(center)
+	# кнопки сбоку: почта, друзья, рейтинг, настройки
+	var side := VBoxContainer.new()
+	side.add_theme_constant_override("separation", 12)
+	side.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	side.position = Vector2(-110, -40)
+	side.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_home.add_child(side)
+	for b in [["Почта", _show_soon.bind("Почта")], ["Друзья", _show_soon.bind("Друзья")], ["Рейтинг", _show_soon.bind("Рейтинг")], ["Опции", _show_settings]]:
+		var btn := Button.new()
+		btn.text = b[0]
+		btn.theme_type_variation = "PurpleButton"
+		btn.custom_minimum_size = Vector2(96, 64)
+		btn.add_theme_font_size_override("font_size", 18)
+		btn.pressed.connect(b[1])
+		side.add_child(btn)
+	_home.resized.connect(func() -> void: side.position = Vector2(_home.size.x - 108, _home.size.y * 0.30))
 
-	var panda_box := CenterContainer.new()
-	panda_box.custom_minimum_size = Vector2(0, 400)
-	center.add_child(panda_box)
-	_home_panda = _make_panda(380.0)
-	panda_box.add_child(_home_panda)
+	# панда в левом нижнем углу
+	_home_panda = _make_panda(250.0)
+	_home.add_child(_home_panda)
 
-	var title := Label.new()
-	title.text = "ТРИ В РЯД"
-	title.theme_type_variation = "TitleLabel"
-	title.add_theme_font_size_override("font_size", 92)
-	title.add_theme_constant_override("outline_size", 14)
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	center.add_child(title)
-	var sub := Label.new()
-	sub.text = "рабочее название · версия %s" % VERSION
-	sub.add_theme_font_size_override("font_size", 24)
-	sub.modulate = Color(1, 1, 1, 0.8)
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	center.add_child(sub)
-
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(0, 120)
-	center.add_child(spacer)
-
-	var holder := CenterContainer.new()
-	center.add_child(holder)
+	# кнопки уровня и ремонта над нижней панелью
 	_home_level_btn = Button.new()
 	_home_level_btn.theme_type_variation = "GreenButton"
-	_home_level_btn.custom_minimum_size = Vector2(420, 120)
-	_home_level_btn.add_theme_font_size_override("font_size", 46)
+	_home_level_btn.custom_minimum_size = Vector2(330, 110)
+	_home_level_btn.add_theme_font_size_override("font_size", 40)
 	_home_level_btn.pressed.connect(_try_play)
-	holder.add_child(_home_level_btn)
+	_home.add_child(_home_level_btn)
 	var pulse := _home_level_btn.create_tween().set_loops()
-	_home_level_btn.pivot_offset = Vector2(210, 60)
+	_home_level_btn.pivot_offset = Vector2(165, 55)
 	pulse.tween_property(_home_level_btn, "scale", Vector2(1.05, 1.05), 0.6).set_trans(Tween.TRANS_SINE)
 	pulse.tween_property(_home_level_btn, "scale", Vector2.ONE, 0.6).set_trans(Tween.TRANS_SINE)
+
+	# нижняя панель: 5 вкладок
+	_tabbar = HBoxContainer.new()
+	_tabbar.alignment = BoxContainer.ALIGNMENT_CENTER
+	_tabbar.add_theme_constant_override("separation", 4)
+	_home.add_child(_tabbar)
+	for t in [["Магазин", _show_shop], ["События", _show_soon.bind("События")], ["Главная", func() -> void: _clear_overlay()], ["Команда", _show_soon.bind("Команда")], ["Коллекция", _show_collection]]:
+		var btn := Button.new()
+		btn.text = t[0]
+		btn.theme_type_variation = "GreenButton" if t[0] == "Главная" else "Button"
+		btn.custom_minimum_size = Vector2(136, 92)
+		btn.clip_text = true
+		var base := Color("#3fc25a") if t[0] == "Главная" else Color("#3f8cff")
+		for st in [["normal", base, 8, 0], ["hover", base.lightened(0.08), 8, 0], ["pressed", base.darkened(0.1), 3, 5]]:
+			var sb: StyleBoxFlat = UiTheme._button_box(st[1], st[2], st[3])
+			sb.content_margin_left = 4
+			sb.content_margin_right = 4
+			btn.add_theme_stylebox_override(st[0], sb)
+		btn.add_theme_font_size_override("font_size", 19 if t[0] != "Главная" else 21)
+		btn.pressed.connect(t[1])
+		_tabbar.add_child(btn)
+	_home.resized.connect(_layout_home)
+
+	var ver := Label.new()
+	ver.text = "Зоопарк мечты · %s" % VERSION
+	ver.add_theme_font_size_override("font_size", 16)
+	ver.modulate = Color(1, 1, 1, 0.7)
+	ver.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	ver.position = Vector2(10, -24)
+	ver.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_home.add_child(ver)
+	_home.resized.connect(func() -> void: ver.position = Vector2(10, _home.size.y - 22))
+
+
+func _layout_home() -> void:
+	var w := _home.size.x if _home.size.x > 0 else size.x
+	var h := _home.size.y if _home.size.y > 0 else size.y
+	_tabbar.size = Vector2(w, 100)
+	_tabbar.position = Vector2(0, h - 120)
+	_home_level_btn.position = Vector2(w - 330 - 24, h - 250)
+	_home_panda.position = Vector2(4, h - 120 - _home_panda.custom_minimum_size.y + 10)
+
+
+func _avatar() -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(64, 64)
+	c.draw.connect(func() -> void:
+		var m := c.size / 2
+		c.draw_circle(m, 31, Color("#f0b34a"))
+		c.draw_circle(m, 27, Color.WHITE)
+		for dx in [-14, 14]:
+			c.draw_circle(m + Vector2(dx, -16), 8, Color("#2b2b33"))
+			c.draw_circle(m + Vector2(dx * 0.6, -2), 7, Color("#2b2b33"))
+			c.draw_circle(m + Vector2(dx * 0.6, -3), 2.5, Color.WHITE)
+		c.draw_circle(m + Vector2(0, 8), 4, Color("#2b2b33"))
+		var f: Font = ThemeDB.fallback_font
+		c.draw_circle(m + Vector2(22, 22), 13, Color("#3fb85a"))
+		var lvl := str(Save.level)
+		c.draw_string(f, m + Vector2(22 - 5 * lvl.length(), 29), lvl, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE))
+	_avatar_node = c
+	return c
+
+
+func _stars_pill() -> Control:
+	var pill := PanelContainer.new()
+	pill.theme_type_variation = "PillPanel"
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	pill.add_child(row)
+	var icon := Control.new()
+	icon.custom_minimum_size = Vector2(36, 40)
+	icon.draw.connect(func() -> void: Zoo.draw_star(icon, icon.size / 2, 17.0))
+	row.add_child(icon)
+	_stars_label = Label.new()
+	_stars_label.theme_type_variation = "TitleLabel"
+	_stars_label.add_theme_font_size_override("font_size", 30)
+	row.add_child(_stars_label)
+	return pill
+
+
+func _refresh_home() -> void:
+	_layout_home()
+	_refresh_coins()
+	_refresh_hearts()
+	if _stars_label:
+		_stars_label.text = str(Save.stars)
+	if _avatar_node:
+		_avatar_node.queue_redraw()
+	var z := mini(Save.zone, Zones.ZONES.size() - 1)
+	var zone: Dictionary = Zones.ZONES[z]
+	_zoo.setup(z, Save.built)
+	_zone_title.text = "Зона %d: %s" % [z + 1, zone.name]
+	_zone_bar.max_value = zone.tasks.size()
+	_zone_bar.value = Save.built.size()
+	var lv := Levels.make(Save.level)
+	_home_level_btn.text = "Уровень %d" % Save.level
+	_home_level_btn.theme_type_variation = "RedButton" if lv.get("hard", 0) > 0 else "GreenButton"
+
+
+# ---------- ремонт ----------
+
+func _on_spot(i: int) -> void:
+	var task: Dictionary = Zones.ZONES[Save.zone].tasks[i]
+	if Save.stars < int(task.cost):
+		_dialog(task.name, ["Нужно звёзд: %d (у тебя %d)" % [task.cost, Save.stars], "Проходи уровни — за каждый дают звезду!"], [
+			["▶ Играть", "GreenButton", _try_play],
+			["Закрыть", "Button", _clear_overlay],
+		])
+		return
+	# выбор дизайна из трёх вариантов
+	var v := _dialog(task.name, ["Выбери дизайн (можно перекрасить потом)"], [["Отмена", "Button", _clear_overlay]])
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 12)
+	v.add_child(row)
+	v.move_child(row, v.get_child_count() - 2)
+	for d in Zones.DESIGNS.size():
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(150, 170)
+		b.theme_type_variation = "Button"
+		var kind: String = task.kind
+		var col: Color = Zones.DESIGNS[d]
+		var pic := Control.new()
+		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pic.set_anchors_preset(Control.PRESET_FULL_RECT)
+		pic.draw.connect(func() -> void: Zoo.draw_item(pic, kind, col, pic.size / 2 + Vector2(0, 10), 0.6))
+		b.add_child(pic)
+		b.pressed.connect(_build_task.bind(i, d))
+		row.add_child(b)
+
+
+func _build_task(i: int, design: int) -> void:
+	var task: Dictionary = Zones.ZONES[Save.zone].tasks[i]
+	_clear_overlay()
+	Save.stars -= int(task.cost)
+	Save.built[i] = design
+	Save.store()
+	# камера летит к месту, панда стучит молотком, предмет падает с пылью
+	var c: Vector2 = _zoo.spot_center(i)
+	_zoo.pivot_offset = c
+	var tw := _zoo.create_tween()
+	tw.tween_property(_zoo, "scale", Vector2(1.25, 1.25), 0.35).set_trans(Tween.TRANS_SINE)
+	await tw.finished
+	var img: Control = _home_panda.get_node("Img")
+	var hop := img.create_tween()
+	for k in 3:
+		hop.tween_property(img, "rotation", -0.18, 0.09)
+		hop.tween_property(img, "rotation", 0.05, 0.09)
+	hop.tween_property(img, "rotation", 0.0, 0.08)
+	await get_tree().create_timer(0.3).timeout
+	_zoo.build(i, design)
+	_dust(_zoo.get_global_transform_with_canvas() * c)
+	Save.vibrate(40)
+	await get_tree().create_timer(0.8).timeout
+	var back := _zoo.create_tween()
+	back.tween_property(_zoo, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_SINE)
+	await back.finished
+	_refresh_home()
+	_say(["Ух ты, как красиво!", "Вот это да!", "Зверям понравится!", "Ещё чуть-чуть — и будет как новенький!"].pick_random())
+	if Save.built.size() >= Zones.ZONES[Save.zone].tasks.size():
+		await get_tree().create_timer(0.8).timeout
+		_zone_complete()
+
+
+func _zone_complete() -> void:
+	var zone: Dictionary = Zones.ZONES[Save.zone]
+	Save.add_coins(300)
+	for k in ["pre_rocket", "pre_bomb", "pre_orb"]:
+		Save.add_booster(k)
+	var next := Save.zone + 1
+	var lines := ["Сундук: +300 монет и бустеры!", "В зоопарке поселился: %s" % zone.animal]
+	if next < Zones.ZONES.size():
+		lines.append("Дальше: «%s»" % Zones.ZONES[next].name)
+	else:
+		lines.append("Новые зоны появятся в обновлениях!")
+	_dialog("Зона готова!", lines, [["Ура!", "GreenButton", func() -> void:
+		if next < Zones.ZONES.size():
+			Save.zone = next
+			Save.built = {}
+			Save.store()
+		_clear_overlay()
+		_refresh_home()]])
+
+
+func _dust(at: Vector2) -> void:
+	var p := CPUParticles2D.new()
+	p.position = _fx.to_local(at)
+	p.one_shot = true
+	p.explosiveness = 0.9
+	p.amount = 40
+	p.lifetime = 0.8
+	p.spread = 180.0
+	p.initial_velocity_min = 80.0
+	p.initial_velocity_max = 260.0
+	p.gravity = Vector2(0, 200)
+	p.scale_amount_min = 8.0
+	p.scale_amount_max = 18.0
+	p.color = Color(0.95, 0.88, 0.7, 0.9)
+	_fx.add_child(p)
+	p.emitting = true
+	p.finished.connect(p.queue_free)
+	var s := CPUParticles2D.new()
+	s.position = p.position
+	s.one_shot = true
+	s.explosiveness = 1.0
+	s.amount = 20
+	s.lifetime = 0.7
+	s.spread = 180.0
+	s.initial_velocity_min = 150.0
+	s.initial_velocity_max = 320.0
+	s.scale_amount_min = 4.0
+	s.scale_amount_max = 7.0
+	s.color = Color("#ffe14d")
+	_fx.add_child(s)
+	s.emitting = true
+	s.finished.connect(s.queue_free)
+
+
+## Пузырь с текстом над пандой на главном экране.
+func _say(text: String) -> void:
+	var l := Label.new()
+	l.text = text
+	l.theme_type_variation = "InkLabel"
+	l.add_theme_font_size_override("font_size", 24)
+	var bubble := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color.WHITE
+	sb.set_corner_radius_all(18)
+	sb.set_content_margin_all(12)
+	bubble.add_theme_stylebox_override("panel", sb)
+	bubble.add_child(l)
+	bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_home.add_child(bubble)
+	bubble.position = _home_panda.position + Vector2(120, -40)
+	bubble.modulate.a = 0.0
+	var tw := bubble.create_tween()
+	tw.tween_property(bubble, "modulate:a", 1.0, 0.2)
+	tw.tween_interval(2.2)
+	tw.tween_property(bubble, "modulate:a", 0.0, 0.3)
+	tw.tween_callback(bubble.queue_free)
+
+
+# ---------- вкладки ----------
+
+func _show_soon(what: String) -> void:
+	_dialog(what, ["Скоро!", "Панда уже работает над этим."], [["Закрыть", "Button", _clear_overlay]])
+
+
+func _show_shop() -> void:
+	var buttons: Array = []
+	for b in IN_BOOSTERS + PRE_BOOSTERS:
+		var kind: String = b[0]
+		buttons.append(["%s (×%d) — %d монет" % [b[1], int(Save.boosters.get(kind, 0)), BOOSTER_PRICE], "OrangeButton", func() -> void:
+			if Save.spend(BOOSTER_PRICE):
+				Save.add_booster(kind)
+			_show_shop(), Save.coins < BOOSTER_PRICE])
+	buttons.append(["Закрыть", "Button", func() -> void:
+		_clear_overlay()
+		_refresh_home()])
+	var v := _dialog("Магазин", ["Монеты: %d" % Save.coins], buttons)
+	for c in v.get_children():
+		if c is Button:
+			c.custom_minimum_size.y = 64
+			c.add_theme_font_size_override("font_size", 22)
+
+
+func _show_collection() -> void:
+	var lines: Array = []
+	for i in Zones.ZONES.size():
+		var z: Dictionary = Zones.ZONES[i]
+		var status: String = "✓ " + z.animal if i < Save.zone else ("ремонт: %d/%d" % [Save.built.size(), z.tasks.size()] if i == Save.zone else "закрыта")
+		lines.append("%d. %s — %s" % [i + 1, z.name, status])
+	_dialog("Коллекция", lines, [["Закрыть", "Button", _clear_overlay]])
+
+
+func _show_settings() -> void:
+	var v := _dialog("Настройки", ["Язык: русский"], [["Закрыть", "Button", _clear_overlay]])
+	for it in [["Звук", "sound"], ["Музыка", "music"], ["Вибрация", "vibration"], ["Тряска экрана", "shake"], ["Много частиц", "particles"]]:
+		var key: String = it[1]
+		var name: String = it[0]
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(0, 64)
+		btn.add_theme_font_size_override("font_size", 24)
+		var paint := func() -> void:
+			var on := bool(Save.get(key))
+			btn.text = "%s: %s" % [name, "вкл" if on else "выкл"]
+			btn.theme_type_variation = "GreenButton" if on else "RedButton"
+		paint.call()
+		btn.pressed.connect(func() -> void:
+			Save.set(key, not bool(Save.get(key)))
+			Save.store()
+			paint.call())
+		v.add_child(btn)
+		v.move_child(btn, v.get_child_count() - 2)
+	var pol := Label.new()
+	pol.text = "Политика конфиденциальности — в описании игры"
+	pol.theme_type_variation = "InkLabel"
+	pol.add_theme_font_size_override("font_size", 18)
+	pol.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	pol.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(pol)
+	v.move_child(pol, v.get_child_count() - 2)
 
 
 func _build_level_screen() -> void:
@@ -318,13 +655,41 @@ func _build_level_screen() -> void:
 	clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	clip.custom_minimum_size = Vector2(8, 8) * Board.CELL
 	_board_frame.add_child(clip)
+	# лианы на деревянной рамке
+	var vines := Control.new()
+	vines.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vines.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vines.draw.connect(func() -> void:
+		var w := vines.size.x
+		var h := vines.size.y
+		var pts := PackedVector2Array()
+		for i in 41:
+			var x := w * i / 40.0
+			pts.append(Vector2(x, -4 + sin(i * 0.9) * 7))
+		vines.draw_polyline(pts, Color("#2e7d32"), 5.0, true)
+		for i in 20:
+			var p := pts[i * 2 + 1]
+			var a := 0.6 if i % 2 == 0 else -0.6
+			vines.draw_set_transform(p, a, Vector2.ONE)
+			vines.draw_colored_polygon(PackedVector2Array([Vector2(0, 0), Vector2(9, -7), Vector2(20, 0), Vector2(9, 7)]), Color("#43a047") if i % 3 else Color("#66bb6a"))
+		vines.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		for c in [Vector2(-2, h * 0.3), Vector2(w + 2, h * 0.55)]:
+			for k in 6:
+				vines.draw_circle(c + Vector2(sin(k) * 5, k * 22), 7, Color("#43a047"))
+		vines.draw_circle(Vector2(w * 0.18, -4), 9, Color("#ff6b9d"))
+		vines.draw_circle(Vector2(w * 0.72, -2), 9, Color("#ffe14d")))
+	_board_frame.add_child(vines)
 	_board = Board.new()
 	clip.add_child(_board)
 	_board.move_made.connect(_on_move)
 	_board.gem_cleared.connect(_on_gem_cleared)
 	_board.goal_hit.connect(_on_goal_hit)
 	_board.settled.connect(_on_settled)
-	_board.big_hit.connect(func(p: float) -> void: _shake = maxf(_shake, 6.0 + p * 4.0))
+	_board.big_hit.connect(func(p: float) -> void:
+		if Save.shake:
+			_shake = maxf(_shake, 6.0 + p * 4.0)
+		if p >= 2.0:
+			Save.vibrate(int(20 + p * 10)))
 	_booster_bar = HBoxContainer.new()
 	_booster_bar.alignment = BoxContainer.ALIGNMENT_CENTER
 	_booster_bar.add_theme_constant_override("separation", 14)
@@ -340,7 +705,7 @@ func _build_level_screen() -> void:
 	_panda = _make_panda(200.0)
 	_level_screen.add_child(_panda)
 	_level_screen.move_child(_panda, _board_frame.get_index())
-	_board.combo_made.connect(func(n: int) -> void: if n >= 2: _panda_react("combo"))
+	_board.combo_made.connect(_on_combo)
 	_level_screen.resized.connect(func() -> void:
 		_board_frame.position = _board_rest()
 		_panda.position = _panda_rest()
@@ -474,9 +839,7 @@ func _show_home() -> void:
 	_home.visible = true
 	_level_screen.visible = false
 	_board.input_enabled = false
-	_home_level_btn.text = "Уровень %d" % Save.level
-	_refresh_coins()
-	_refresh_hearts()
+	_refresh_home()
 
 
 func _try_play() -> void:
@@ -503,8 +866,10 @@ func _show_prelevel(n: int) -> void:
 	var goals: Array = []
 	for g in lv.goals:
 		goals.append({"color": "фишки", "crate": "ящики", "vase": "вазы", "chain": "цепи", "grass": "трава", "item": "яйца"}[g.kind] + " " + str(g.left))
-	var v := _dialog("Уровень %d" % n, ["Цели: " + ", ".join(goals), "Бустеры на старт:"], [
-		["▶ Играть", "GreenButton", func() -> void: _start_level(n)],
+	var diff: String = ["Обычный", "Сложный", "Очень сложный"][int(lv.get("hard", 0))]
+	var streak_line := "Серия побед: %d — бонус на старте!" % Save.streak if Save.streak > 0 else "Серия побед: 0"
+	var v := _dialog("Уровень %d" % n, ["Сложность: " + diff, "Цели: " + ", ".join(goals), streak_line, "Бустеры на старт:"], [
+		["▶ Играть", "GreenButton", func() -> void: _transition(_start_level.bind(n))],
 		["Закрыть", "Button", _show_home],
 	])
 	# ряд переключателей бустеров перед кнопкой «Играть»
@@ -532,6 +897,8 @@ func _show_prelevel(n: int) -> void:
 ## Выход из уровня без победы стоит жизнь.
 func _quit_level(then: Callable) -> void:
 	Save.lose_heart()
+	Save.streak = 0
+	Save.store()
 	then.call()
 
 
@@ -550,7 +917,10 @@ func _start_level(n: int) -> void:
 	_board.fx = _fx
 	_board.setup(_level)
 	_board.input_enabled = true
-	_board_frame.position = _board_rest()
+	_board_frame.position = _board_rest() + Vector2(0, size.y)
+	var fly := _board_frame.create_tween()
+	fly.tween_property(_board_frame, "position", _board_rest(), 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_board.drop_in()
 	_panda.position = _panda_rest()
 	_panda_react("reset")
 	_build_goals()
@@ -560,6 +930,10 @@ func _start_level(n: int) -> void:
 	for b in PRE_BOOSTERS:
 		if _pre_selected.get(b[0], false) and Save.use_booster(b[0]):
 			_board.spawn_specials(1, b[2])
+	# серия побед: 1 — ракета, 2 — ракета и бомба, 3+ — ракета, бомба и шар
+	var bonus := [1, 3, 4]
+	for i in mini(Save.streak, 3):
+		_board.spawn_specials(1, bonus[i])
 	_pre_selected.clear()
 	_refresh_boosters()
 	_layout_bar()
@@ -654,6 +1028,32 @@ func _banner(l: Label) -> void:
 
 
 # ---------- игровые события ----------
+
+func _on_combo(n: int) -> void:
+	if n < 2 or _state != "play":
+		return
+	_panda_react("combo")
+	var l := Label.new()
+	l.text = ["Отлично!", "Супер!", "Невероятно!"][mini(n - 2, 2)]
+	l.theme_type_variation = "TitleLabel"
+	l.add_theme_font_size_override("font_size", 64 + mini(n, 5) * 6)
+	l.add_theme_constant_override("outline_size", 14)
+	l.add_theme_color_override("font_color", [Color("#ffe14d"), Color("#7dff8a"), Color("#ff9ad5")][mini(n - 2, 2)])
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_overlay.add_child(l)
+	l.size = Vector2(size.x, 100)
+	l.position = Vector2(0, _board_rest().y + 240)
+	l.pivot_offset = l.size / 2
+	l.scale = Vector2(0.4, 0.4)
+	var tw := l.create_tween()
+	tw.tween_property(l, "scale", Vector2(1.1, 1.1), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(l, "scale", Vector2.ONE, 0.1)
+	tw.tween_interval(0.35)
+	tw.parallel().tween_property(l, "position:y", l.position.y - 40, 0.5)
+	tw.tween_property(l, "modulate:a", 0.0, 0.2)
+	tw.tween_callback(l.queue_free)
+
 
 func _on_move() -> void:
 	if _state != "play":
@@ -778,6 +1178,30 @@ func _begin_bonus() -> void:
 
 # ---------- окна ----------
 
+## Переход между экранами: шторка из листьев с отпечатком лапы.
+func _transition(then: Callable) -> void:
+	var cur := Control.new()
+	cur.mouse_filter = Control.MOUSE_FILTER_STOP
+	cur.size = size
+	cur.position = Vector2(-size.x, 0)
+	cur.draw.connect(func() -> void:
+		cur.draw_rect(Rect2(Vector2.ZERO, cur.size), Color("#3fb85a"))
+		for i in 18:
+			var p := Vector2(fmod(i * 173.0, cur.size.x), fmod(i * 291.0, cur.size.y))
+			cur.draw_circle(p, 70, Color("#56c96c"))
+		var m := cur.size / 2
+		cur.draw_circle(m + Vector2(0, 30), 60, Color("#2b8a41"))
+		for d in [Vector2(-60, -40), Vector2(-22, -78), Vector2(22, -78), Vector2(60, -40)]:
+			cur.draw_circle(m + d, 26, Color("#2b8a41")))
+	add_child(cur)
+	var tw := cur.create_tween()
+	tw.tween_property(cur, "position:x", 0.0, 0.25).set_trans(Tween.TRANS_SINE)
+	tw.tween_callback(then)
+	tw.tween_interval(0.1)
+	tw.tween_property(cur, "position:x", size.x, 0.25).set_trans(Tween.TRANS_SINE)
+	tw.tween_callback(cur.queue_free)
+
+
 func _clear_overlay() -> void:
 	for c in _overlay.get_children():
 		c.queue_free()
@@ -830,19 +1254,53 @@ func _dialog(title_text: String, lines: Array, buttons: Array) -> VBoxContainer:
 
 
 func _show_win() -> void:
-	var coins := WIN_COINS + int(_level.get("bonus_coins", 0))
+	var mult := 1 + int(_level.get("hard", 0))
+	var coins := WIN_COINS * mult + int(_level.get("bonus_coins", 0))
 	Save.level = _level.n + 1
+	Save.stars += 1
+	Save.streak += 1
 	Save.add_coins(coins)
-	_dialog("Уровень пройден!", ["+%d монет" % coins], [
-		["Дальше", "GreenButton", func() -> void: _start_level(Save.level)],
-		["Домой", "Button", _show_home],
+	Save.vibrate(60)
+	var v := _dialog("Уровень пройден!", ["+1 ★   +%d монет" % coins, "Серия побед: %d" % Save.streak], [
+		["Дальше", "GreenButton", func() -> void: _transition(_show_home)],
+		["▶ Удвоить монеты за рекламу", "PurpleButton", func() -> void:
+			Ads.show_rewarded(func() -> void: Save.add_coins(coins))
+			_transition(_show_home), not Ads.is_ready()],
 	])
+	# звезда и монеты летят вверх, конфетти
+	var c := size / 2
+	for i in 24:
+		var conf := ColorRect.new()
+		conf.color = [Color("#ffe14d"), Color("#ff6b9d"), Color("#5fc4ff"), Color("#7dff8a")][i % 4]
+		conf.size = Vector2(12, 18)
+		conf.position = Vector2(randf() * size.x, -30)
+		conf.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_overlay.add_child(conf)
+		var tw := conf.create_tween().set_parallel(true)
+		tw.tween_property(conf, "position:y", size.y + 40, randf_range(1.4, 2.4))
+		tw.tween_property(conf, "rotation", randf_range(-8, 8), 2.0)
+		tw.chain().tween_callback(conf.queue_free)
+	var star := Control.new()
+	star.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	star.draw.connect(func() -> void: Zoo.draw_star(star, Vector2.ZERO, 60.0))
+	star.position = c - Vector2(0, 260)
+	_overlay.add_child(star)
+	star.scale = Vector2(0.2, 0.2)
+	var st := star.create_tween()
+	st.tween_property(star, "scale", Vector2(1.2, 1.2), 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	st.tween_property(star, "rotation", TAU, 0.6)
+	v.get_parent().get_parent().move_to_front()
 
 
 func _show_lose() -> void:
 	if _state != "done":
 		return
-	_dialog("Ходы кончились", ["Осталось собрать совсем немного!", "+%d ходов, чтобы доиграть?" % EXTRA_MOVES], [
+	var left: Array = []
+	for g in _level.goals:
+		if g.left > 0:
+			left.append({"color": "фишки", "crate": "ящики", "vase": "вазы", "chain": "цепи", "grass": "трава", "item": "детёныши"}[g.kind] + " " + str(g.left))
+	var warn := "Сдашься — потеряешь серию побед (%d)!" % Save.streak if Save.streak > 0 else "Ещё чуть-чуть!"
+	_dialog("Ходы кончились", ["Осталось: " + ", ".join(left), warn, "+%d ходов, чтобы доиграть?" % EXTRA_MOVES], [
 		["▶ Реклама: +%d ходов" % EXTRA_MOVES, "PurpleButton", func() -> void:
 			Ads.show_rewarded(_add_moves), not Ads.is_ready()],
 		["%d монет: +%d ходов" % [EXTRA_MOVES_PRICE, EXTRA_MOVES], "OrangeButton", func() -> void:
@@ -999,11 +1457,25 @@ func _run_shots(dir: String) -> void:
 	DirAccess.make_dir_recursive_absolute(dir)
 	Save.hearts = 3
 	Save.heart_at = Save.now() + 754
+	Save.stars = 6
+	Save.built = {2: 0}
+	_show_home()
+	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "1_home")
+	_on_spot(0)
+	await get_tree().create_timer(0.5).timeout
+	await _snap(dir, "1b_design")
+	_build_task(0, 2)
+	await get_tree().create_timer(2.6).timeout
+	await _snap(dir, "1c_built")
+	_show_settings()
+	await get_tree().create_timer(0.5).timeout
+	await _snap(dir, "1d_settings")
+	_clear_overlay()
 	# уровни с разными препятствиями: 4 ящики, 5 трава, 6 предметы, 7 цепи, 8 вазы
-	for n in [4, 5, 6, 7, 8]:
+	for n in [4, 5, 6, 7, 10]:
 		_start_level(n)
-		await get_tree().create_timer(1.4).timeout
+		await get_tree().create_timer(1.6).timeout
 		await _snap(dir, "2_level_%d" % n)
 	_start_level(5)
 	await get_tree().create_timer(1.4).timeout

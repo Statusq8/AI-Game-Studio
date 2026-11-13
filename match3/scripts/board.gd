@@ -233,7 +233,7 @@ func _draw() -> void:
 	for x in W:
 		for y in H:
 			var rect := Rect2(Vector2(x, y) * CELL, Vector2(CELL, CELL))
-			var c := Color(1, 1, 1, 0.16) if (x + y) % 2 == 0 else Color(1, 1, 1, 0.08)
+			var c := Color("#fffaf0", 0.92) if (x + y) % 2 == 0 else Color("#efe4c9", 0.92)
 			if grass[x][y]:
 				c = Color("#5fd35a") if (x + y) % 2 == 0 else Color("#4cc24c")
 			elif grass_target[x][y]:
@@ -245,7 +245,7 @@ func _draw() -> void:
 					var by := rect.position.y + rect.size.y - 6
 					draw_line(Vector2(bx, by), Vector2(bx - 4, by - 14), Color("#3a9a3a"), 3.0)
 					draw_line(Vector2(bx + 4, by), Vector2(bx + 8, by - 12), Color("#3a9a3a"), 3.0)
-	draw_rect(r, Color(1, 1, 1, 0.35), false, 2.0)
+	draw_rect(r, Color("#6b4423", 0.6), false, 2.0)
 
 
 # ---------- запросы к полю ----------
@@ -597,6 +597,12 @@ func try_swap(a: Vector2i, b: Vector2i) -> void:
 	if find_groups().is_empty():
 		await _animate_swap(ga, gb, b, a)
 		_swap_data(a, b)
+		var tw := create_tween()
+		for k in 3:
+			tw.tween_property(ga, "position:x", cell_pos(a).x + 7.0, 0.04)
+			tw.tween_property(ga, "position:x", cell_pos(a).x - 7.0, 0.04)
+		tw.tween_property(ga, "position:x", cell_pos(a).x, 0.04)
+		Save.vibrate(25)
 		busy = false
 		return
 	move_made.emit()
@@ -1125,6 +1131,15 @@ func _gravity() -> void:
 							moved[gem_at(c)] = true
 							changed = true
 							break
+	# клетки, до которых фишке не дотечь (под цепями без соседей) — фишка появляется на месте
+	for x in W:
+		for y in H:
+			var c := Vector2i(x, y)
+			if _fillable(c) and gem_at(c) == null:
+				var g := _new_gem(rng.randi_range(0, colors - 1))
+				_place(g, c)
+				g.scale = Vector2(0.1, 0.1)
+				create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT).tween_property(g, "scale", Vector2.ONE, 0.25)
 	if moved.is_empty():
 		return
 	var longest := 0.0
@@ -1135,9 +1150,27 @@ func _gravity() -> void:
 		longest = maxf(longest, t)
 		var tw := create_tween()
 		tw.tween_property(g, "position", target, t).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		tw.tween_property(g, "scale", Vector2(1.08, 0.9), 0.05)
-		tw.tween_property(g, "scale", Vector2.ONE, 0.07)
-	await get_tree().create_timer(longest + 0.1).timeout
+		# «желе»: сплющивается при приземлении и пружинит
+		tw.tween_property(g, "scale", Vector2(1.18, 0.8), 0.06)
+		tw.tween_property(g, "scale", Vector2(0.92, 1.1), 0.08)
+		tw.tween_property(g, "scale", Vector2.ONE, 0.08)
+	await get_tree().create_timer(longest + 0.12).timeout
+
+
+## Начало уровня: фишки падают сверху ряд за рядом.
+func drop_in() -> void:
+	for x in W:
+		for y in H:
+			var g: Node2D = tiles[x][y]
+			if g == null:
+				continue
+			var target := cell_pos(Vector2i(x, y))
+			g.position = target - Vector2(0, (H + 1) * CELL)
+			var tw := create_tween()
+			tw.tween_interval(0.25 + (H - y) * 0.04 + x * 0.01)
+			tw.tween_property(g, "position", target, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+			tw.tween_property(g, "scale", Vector2(1.18, 0.8), 0.06)
+			tw.tween_property(g, "scale", Vector2.ONE, 0.1)
 
 
 func _move_gem(from: Vector2i, to: Vector2i) -> void:
@@ -1220,7 +1253,7 @@ func _burst(pos: Vector2, color: Color, amount: int) -> void:
 	p.position = fx.to_local(to_global(pos))
 	p.one_shot = true
 	p.explosiveness = 1.0
-	p.amount = amount
+	p.amount = amount if Save.particles else maxi(2, amount / 3)
 	p.lifetime = 0.5
 	p.direction = Vector2.UP
 	p.spread = 180.0

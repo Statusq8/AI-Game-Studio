@@ -49,7 +49,9 @@ static func build() -> Theme:
 	t.set_type_variation("GoalSlot", "PanelContainer")
 	t.set_stylebox("panel", "GoalSlot", _panel(Color("#ffffff", 0.18), Color("#ffffff", 0.35), 2, 18, 6))
 	t.set_type_variation("BoardPanel", "PanelContainer")
-	t.set_stylebox("panel", "BoardPanel", _panel(Color("#2c2a7a", 0.78), Color("#ffffff", 0.85), 5, 26, 12))
+	# рамка поля: дерево (лианы рисует main.gd поверх)
+	var wood := _panel(Color("#a8703d"), Color("#6b4423"), 6, 26, 12)
+	t.set_stylebox("panel", "BoardPanel", wood)
 	return t
 
 
