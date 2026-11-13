@@ -76,7 +76,7 @@ func _draw() -> void:
 		ROCKET_H, ROCKET_V:
 			t = tex("rocket")
 			if t:
-				_draw_tex(t, box * 1.05, PI / 2.0 if special == ROCKET_V else 0.0, pulse)
+				_draw_tex(t, box * 1.3, PI / 2.0 if special == ROCKET_V else 0.0, pulse)
 				return
 		BOMB, ORB, PROPELLER:
 			t = tex({BOMB: "bomb", ORB: "orb", PROPELLER: "propeller"}[special])
@@ -89,7 +89,7 @@ func _draw() -> void:
 					draw_texture(t, -sz / 2)
 					draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 				else:
-					_draw_tex(t, box, 0.0, pulse)
+					_draw_tex(t, box * 1.08, 0.0, pulse)
 				return
 	match special:
 		NONE:
