@@ -18,6 +18,9 @@ var _overlay: Control
 var _fx: Node2D
 var _home_level_btn: Button
 var _coin_labels: Array[Label] = []
+var _hearts_label: Label
+var _hearts_timer: Label
+var _ui_tick := 0.0
 
 var _board: Board
 var _board_frame: Control
@@ -57,6 +60,10 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	_ui_tick -= delta
+	if _ui_tick <= 0.0:
+		_ui_tick = 1.0
+		_refresh_hearts()
 	if _board_frame == null:
 		return
 	if _shake > 0.0:
@@ -121,6 +128,50 @@ func _coin_pill() -> Control:
 	return pill
 
 
+func _hearts_pill() -> Control:
+	var pill := PanelContainer.new()
+	pill.theme_type_variation = "PillPanel"
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	pill.add_child(row)
+	var icon := Control.new()
+	icon.custom_minimum_size = Vector2(40, 40)
+	icon.draw.connect(func() -> void: draw_heart(icon, icon.size / 2, 18.0))
+	row.add_child(icon)
+	_hearts_label = Label.new()
+	_hearts_label.theme_type_variation = "TitleLabel"
+	_hearts_label.add_theme_font_size_override("font_size", 30)
+	row.add_child(_hearts_label)
+	_hearts_timer = Label.new()
+	_hearts_timer.add_theme_font_size_override("font_size", 22)
+	row.add_child(_hearts_timer)
+	return pill
+
+
+static func draw_heart(ci: CanvasItem, c: Vector2, r: float) -> void:
+	var pts := PackedVector2Array()
+	for i in 40:
+		var t := TAU * i / 40.0
+		var x := 16.0 * pow(sin(t), 3)
+		var y := -(13.0 * cos(t) - 5.0 * cos(2 * t) - 2.0 * cos(3 * t) - cos(4 * t))
+		pts.append(c + Vector2(x, y) * r / 16.0)
+	ci.draw_colored_polygon(pts, Color("#c2183a"))
+	var inner := PackedVector2Array()
+	for p in pts:
+		inner.append(c + (p - c) * 0.8 + Vector2(0, -1))
+	ci.draw_colored_polygon(inner, Color("#ff4f63"))
+	ci.draw_circle(c + Vector2(-r * 0.4, -r * 0.35), r * 0.15, Color(1, 1, 1, 0.8))
+
+
+func _refresh_hearts() -> void:
+	if _hearts_label == null:
+		return
+	Save.update_hearts()
+	_hearts_label.text = str(Save.hearts)
+	var sec := Save.seconds_to_heart()
+	_hearts_timer.text = "" if sec <= 0 else "%d:%02d" % [sec / 60, sec % 60]
+
+
 func _build_home() -> void:
 	_home = Control.new()
 	_home.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -133,6 +184,8 @@ func _build_home() -> void:
 	_home.add_child(top)
 	var row := HBoxContainer.new()
 	top.add_child(row)
+	row.add_theme_constant_override("separation", 16)
+	row.add_child(_hearts_pill())
 	row.add_child(_coin_pill())
 
 	var center := VBoxContainer.new()
@@ -183,7 +236,7 @@ func _build_home() -> void:
 	_home_level_btn.theme_type_variation = "GreenButton"
 	_home_level_btn.custom_minimum_size = Vector2(420, 120)
 	_home_level_btn.add_theme_font_size_override("font_size", 46)
-	_home_level_btn.pressed.connect(func() -> void: _start_level(Save.level))
+	_home_level_btn.pressed.connect(_try_play)
 	holder.add_child(_home_level_btn)
 	var pulse := _home_level_btn.create_tween().set_loops()
 	_home_level_btn.pivot_offset = Vector2(210, 60)
@@ -263,7 +316,7 @@ func _build_level_screen() -> void:
 	clip.add_child(_board)
 	_board.move_made.connect(_on_move)
 	_board.gem_cleared.connect(_on_gem_cleared)
-	_board.crate_broken.connect(_on_crate_broken)
+	_board.goal_hit.connect(_on_goal_hit)
 	_board.settled.connect(_on_settled)
 	_board.big_hit.connect(func(p: float) -> void: _shake = maxf(_shake, 6.0 + p * 4.0))
 	_level_screen.resized.connect(func() -> void: _board_frame.position = _board_rest())
@@ -286,6 +339,28 @@ func _show_home() -> void:
 	_board.input_enabled = false
 	_home_level_btn.text = "Уровень %d" % Save.level
 	_refresh_coins()
+	_refresh_hearts()
+
+
+func _try_play() -> void:
+	Save.update_hearts()
+	if Save.hearts > 0:
+		_start_level(Save.level)
+		return
+	var sec := Save.seconds_to_heart()
+	_dialog("Нет жизней", ["Новая жизнь через %d:%02d" % [sec / 60, sec % 60]], [
+		["▶ Реклама: +1 жизнь", "PurpleButton", func() -> void:
+			Ads.show_rewarded(func() -> void:
+				Save.add_heart()
+				_show_home()), not Ads.is_ready()],
+		["Закрыть", "Button", _show_home],
+	])
+
+
+## Выход из уровня без победы стоит жизнь.
+func _quit_level(then: Callable) -> void:
+	Save.lose_heart()
+	then.call()
 
 
 func _refresh_coins() -> void:
@@ -323,14 +398,17 @@ func _build_goals() -> void:
 		var icon := Control.new()
 		icon.custom_minimum_size = Vector2(70, 62)
 		v.add_child(icon)
-		if goal.kind == "color":
+		if goal.kind == "color" or goal.kind == "item":
 			var g: Node2D = Gem.new()
-			g.color = goal.color
+			g.color = goal.get("color", -1)
 			g.size = 66.0
 			g.position = Vector2(35, 31)
 			icon.add_child(g)
+			if goal.kind == "item":
+				g.set_special(Gem.ITEM)
 		else:
-			icon.draw.connect(func() -> void: _draw_mini_crate(icon, Vector2(35, 31), 26.0))
+			var kind: String = goal.kind
+			icon.draw.connect(func() -> void: _draw_goal_icon(icon, kind, Vector2(35, 31)))
 		var l := Label.new()
 		l.theme_type_variation = "TitleLabel"
 		l.add_theme_font_size_override("font_size", 30)
@@ -341,10 +419,20 @@ func _build_goals() -> void:
 		_goal_views.append({"goal": goal, "label": l, "icon": icon, "shown": int(goal.left)})
 
 
-func _draw_mini_crate(ci: CanvasItem, c: Vector2, s: float) -> void:
-	ci.draw_rect(Rect2(c - Vector2(s, s), Vector2(s, s) * 2), Color("#83552c"))
-	ci.draw_rect(Rect2(c - Vector2(s - 4, s - 4), Vector2(s - 4, s - 4) * 2), Color("#c98a4b"))
-	ci.draw_line(c - Vector2(s - 5, s - 5), c + Vector2(s - 5, s - 5), Color("#83552c"), 5)
+func _draw_goal_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
+	match kind:
+		"crate":
+			Board.draw_crate(ci, c, 24.0, 1)
+		"vase":
+			Board.draw_vase(ci, c, 26.0, 1)
+		"chain":
+			Board.draw_chain(ci, c, 30.0)
+		"grass":
+			ci.draw_rect(Rect2(c - Vector2(24, 24), Vector2(48, 48)), Color("#4cc24c"))
+			for k in 3:
+				var bx := c.x - 16 + k * 16
+				ci.draw_line(Vector2(bx, c.y + 20), Vector2(bx - 5, c.y - 6), Color("#2e7d2e"), 4.0)
+				ci.draw_line(Vector2(bx + 3, c.y + 20), Vector2(bx + 8, c.y - 2), Color("#2e7d2e"), 4.0)
 
 
 func _update_moves() -> void:
@@ -404,16 +492,16 @@ func _on_gem_cleared(color: int, at: Vector2) -> void:
 			return
 
 
-func _on_crate_broken(at: Vector2) -> void:
+func _on_goal_hit(kind: String, at: Vector2) -> void:
 	for gv in _goal_views:
 		var goal: Dictionary = gv.goal
-		if goal.kind == "crate" and goal.left > 0:
+		if goal.kind == kind and goal.left > 0:
 			goal.left -= 1
-			_fly_to_goal(gv, at, -1)
+			_fly_to_goal(gv, at, -1, kind)
 			return
 
 
-func _fly_to_goal(gv: Dictionary, from: Vector2, color: int) -> void:
+func _fly_to_goal(gv: Dictionary, from: Vector2, color: int, kind: String = "color") -> void:
 	var icon: Control = gv.icon
 	var target := icon.get_global_rect().get_center()
 	if _flying > 14 or _bot:
@@ -421,15 +509,17 @@ func _fly_to_goal(gv: Dictionary, from: Vector2, color: int) -> void:
 		return
 	_flying += 1
 	var n: Node2D
-	if color >= 0:
+	if color >= 0 or kind == "item":
 		n = Gem.new()
 		n.color = color
 		n.size = 70.0
 	else:
 		n = Node2D.new()
-		n.draw.connect(func() -> void: _draw_mini_crate(n, Vector2.ZERO, 26.0))
+		n.draw.connect(func() -> void: _draw_goal_icon(n, kind, Vector2.ZERO))
 	n.position = _fx.to_local(from)
 	_fx.add_child(n)
+	if kind == "item":
+		n.set_special(Gem.ITEM)
 	var mid := n.position.lerp(_fx.to_local(target), 0.5) + Vector2(randf_range(-120, 120), -80)
 	var tw := n.create_tween()
 	tw.tween_property(n, "position", mid, 0.22).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
@@ -571,7 +661,7 @@ func _show_lose() -> void:
 		["%d монет: +%d ходов" % [EXTRA_MOVES_PRICE, EXTRA_MOVES], "OrangeButton", func() -> void:
 			if Save.spend(EXTRA_MOVES_PRICE):
 				_add_moves(), Save.coins < EXTRA_MOVES_PRICE],
-		["Сдаться", "RedButton", _show_home],
+		["Сдаться (−1 жизнь)", "RedButton", func() -> void: _quit_level(_show_home)],
 	])
 
 
@@ -591,8 +681,8 @@ func _show_pause() -> void:
 		["Продолжить", "GreenButton", func() -> void:
 			_clear_overlay()
 			_board.input_enabled = true],
-		["Заново", "OrangeButton", func() -> void: _start_level(_level.n)],
-		["Домой", "Button", _show_home],
+		["Заново (−1 жизнь)", "OrangeButton", func() -> void: _quit_level(_try_play)],
+		["Домой (−1 жизнь)", "Button", func() -> void: _quit_level(_show_home)],
 	])
 
 
@@ -637,6 +727,7 @@ func _run_bot(levels: int) -> void:
 		print("BOT level %d: %s, goals left %s" % [n, "WIN" if won else "LOSE", ", ".join(rest)])
 		Save.level = 1
 		Save.coins = 0
+		Save.hearts = Save.MAX_HEARTS
 		_clear_overlay()
 	print("BOT done: %d/%d wins" % [wins, levels])
 	get_tree().quit()
@@ -644,22 +735,26 @@ func _run_bot(levels: int) -> void:
 
 func _run_shots(dir: String) -> void:
 	DirAccess.make_dir_recursive_absolute(dir)
+	Save.hearts = 3
+	Save.heart_at = Save.now() + 754
 	await _snap(dir, "1_home")
-	_start_level(6)
-	await get_tree().create_timer(1.5).timeout
-	await _snap(dir, "2_level")
-	for i in 3:
+	# уровни с разными препятствиями: 4 ящики, 5 трава, 6 предметы, 7 цепи, 8 вазы
+	for n in [4, 5, 6, 7, 8]:
+		_start_level(n)
+		await get_tree().create_timer(1.4).timeout
+		await _snap(dir, "2_level_%d" % n)
+	_start_level(5)
+	await get_tree().create_timer(1.4).timeout
+	for i in 4:
 		var m: Array = _board.find_move()
 		if m.size() == 2 and m[0] != m[1]:
 			_board.try_swap(m[0], m[1])
-		await get_tree().create_timer(0.25).timeout
-	await _snap(dir, "3_action")
-	while _board.busy:
-		await get_tree().process_frame
-	# показать все виды особых фишек
-	var kinds := [Gem.ROCKET_H, Gem.ROCKET_V, Gem.BOMB, Gem.ORB]
+		while _board.busy:
+			await get_tree().process_frame
+	await _snap(dir, "3_after_moves")
+	var kinds := [Gem.ROCKET_H, Gem.ROCKET_V, Gem.BOMB, Gem.ORB, Gem.PROPELLER]
 	for i in kinds.size():
-		var g: Node2D = _board.gem_at(Vector2i(2 + i, 3))
+		var g: Node2D = _board.gem_at(Vector2i(1 + i, 2))
 		if g:
 			g.set_special(kinds[i])
 	await get_tree().create_timer(0.3).timeout
@@ -672,6 +767,11 @@ func _run_shots(dir: String) -> void:
 	_show_win()
 	await get_tree().create_timer(0.5).timeout
 	await _snap(dir, "6_win")
+	Save.hearts = 0
+	_show_home()
+	_try_play()
+	await get_tree().create_timer(0.5).timeout
+	await _snap(dir, "7_no_hearts")
 	get_tree().quit()
 
 

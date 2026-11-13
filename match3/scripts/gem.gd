@@ -2,7 +2,7 @@ extends Node2D
 ## Одна фишка на поле. Рисуется кодом (заглушка до ИИ-графики): у каждого цвета своя форма,
 ## чтобы фишки различались и без цвета.
 
-enum { NONE, ROCKET_H, ROCKET_V, BOMB, ORB }
+enum { NONE, ROCKET_H, ROCKET_V, BOMB, ORB, PROPELLER, ITEM }
 
 const COLORS := [
 	Color("#ff4f63"),  # 0 красный — рубин
@@ -24,9 +24,14 @@ func _ready() -> void:
 	set_process(special != NONE)
 
 
+## Особая фишка, которая взрывается (предмет «спустить вниз» — не взрывается).
+func is_power() -> bool:
+	return special != NONE and special != ITEM
+
+
 func set_special(kind: int) -> void:
 	special = kind
-	if kind == ORB:
+	if kind == ORB or kind == ITEM:
 		color = -1
 	set_process(kind != NONE)
 	queue_redraw()
@@ -48,6 +53,10 @@ func _draw() -> void:
 			_draw_bomb(r)
 		ORB:
 			_draw_orb(r)
+		PROPELLER:
+			_draw_propeller(r)
+		ITEM:
+			_draw_item(r)
 
 
 static func shape(c: int, r: float) -> PackedVector2Array:
@@ -162,3 +171,43 @@ func _draw_orb(r: float) -> void:
 	draw_circle(Vector2.ZERO, r * 0.3, Color(1, 1, 1, 0.95))
 	draw_arc(Vector2.ZERO, r * 0.92, 0, TAU, 40, Color(1, 1, 1, 0.9), 3.0, true)
 	draw_circle(Vector2(-r * 0.35, -r * 0.4), r * 0.12, Color(1, 1, 1, 0.9))
+
+
+func _draw_propeller(r: float) -> void:
+	var base: Color = COLORS[clampi(color, 0, COLORS.size() - 1)]
+	draw_circle(Vector2(0, r * 0.12), r * 0.8, Color(0, 0, 0, 0.2))
+	draw_circle(Vector2.ZERO, r * 0.78, base.darkened(0.25))
+	draw_circle(Vector2.ZERO, r * 0.66, base)
+	var a0 := _t * 9.0
+	for i in 3:
+		var a := a0 + TAU * i / 3.0
+		var dir := Vector2(cos(a), sin(a))
+		var side := Vector2(-dir.y, dir.x)
+		var blade := PackedVector2Array([
+			dir * r * 0.12 + side * r * 0.1,
+			dir * r * 0.95 + side * r * 0.2,
+			dir * r * 1.02,
+			dir * r * 0.95 - side * r * 0.08,
+			dir * r * 0.12 - side * r * 0.08,
+		])
+		draw_colored_polygon(blade, Color("#ffe14d"))
+		draw_polyline(PackedVector2Array([blade[0], blade[1], blade[2], blade[3], blade[4], blade[0]]), Color("#b8860b"), 2.0, true)
+	draw_circle(Vector2.ZERO, r * 0.2, Color("#ff4f63"))
+	draw_circle(Vector2(-r * 0.06, -r * 0.07), r * 0.07, Color(1, 1, 1, 0.8))
+
+
+## Предмет, который нужно спустить на нижний ряд (заглушка: золотое яйцо).
+func _draw_item(r: float) -> void:
+	var egg := PackedVector2Array()
+	for i in 32:
+		var a := TAU * i / 32.0
+		var v := Vector2(cos(a) * 0.72, sin(a) * 0.92) * r
+		if v.y < 0:
+			v.x *= 1.0 - 0.25 * (-v.y / r)
+		egg.append(v)
+	draw_colored_polygon(_scaled(egg, 1.0, Vector2(0, r * 0.1)), Color(0, 0, 0, 0.22))
+	draw_colored_polygon(egg, Color("#c98a12"))
+	draw_colored_polygon(_scaled(egg, 0.86, Vector2(0, -r * 0.04)), Color("#ffd23f"))
+	for d in [Vector2(-0.25, 0.1), Vector2(0.22, 0.32), Vector2(0.12, -0.3), Vector2(-0.1, 0.55)]:
+		draw_circle(d * r, r * 0.09, Color("#fff3b0"))
+	draw_circle(Vector2(-r * 0.25, -r * 0.4), r * 0.12, Color(1, 1, 1, 0.85))
