@@ -20,11 +20,10 @@ var _gate_label: Label
 var _area: Control
 var _monster_name: Label
 var _monster_body: Panel
+var _monster_art: TextureRect
 var _monster_style: StyleBoxFlat
 var _hp_bar: ProgressBar
 var _hp_label: Label
-var _timer_label: Label
-var _dps_label: Label
 var _buff_button: Button
 var _boss_button: Button
 var _tap_row: Dictionary
@@ -102,6 +101,13 @@ func _spawn_monster() -> void:
 	_monster_style.bg_color = biome["color"].darkened(0.25) if boss else biome["color"]
 	_monster_body.custom_minimum_size = Vector2(300, 300) if boss else Vector2(230, 230)
 	_monster_body.pivot_offset = _monster_body.custom_minimum_size / 2.0
+	var mart: String = biome.get("boss_art" if boss else "monster_art", "")
+	_monster_art.texture = load(mart) if mart != "" else null
+	_monster_art.custom_minimum_size = Vector2(380, 340) if boss else Vector2(300, 270)
+	_monster_art.pivot_offset = _monster_art.custom_minimum_size * Vector2(0.5, 1.0)
+	_monster_art.visible = _monster_art.texture != null
+	_monster_body.visible = not _monster_art.visible
+	_monster_art.modulate = Color(1, 1, 1)
 	_boss_time = B.BOSS_TIME
 	_boss_extra_used = false
 	_update_monster_ui()
@@ -110,9 +116,12 @@ func _spawn_monster() -> void:
 func _tap(local_pos: Vector2) -> void:
 	var dmg := GameState.tap_damage()
 	_popup(local_pos, B.format_num(dmg), Color(1, 1, 1))
-	var t := create_tween()
-	_monster_body.scale = Vector2(0.92, 0.92)
-	t.tween_property(_monster_body, "scale", Vector2.ONE, 0.12)
+	var target: Control = _monster_art if _monster_art.visible else _monster_body
+	var t := create_tween().set_parallel(true)
+	target.scale = Vector2(0.94, 0.94)
+	target.modulate = Color(1.6, 1.3, 1.3)
+	t.tween_property(target, "scale", Vector2.ONE, 0.12)
+	t.tween_property(target, "modulate", Color(1, 1, 1), 0.15)
 	_damage(dmg)
 
 
@@ -184,9 +193,10 @@ func _update_monster_ui() -> void:
 	_hp_bar.value = maxf(_monster_hp, 0.0)
 	_hp_label.text = "%s / %s" % [B.format_num(maxf(_monster_hp, 0.0)), B.format_num(_monster_max)]
 	if B.is_boss(GameState.wave):
-		_timer_label.text = "Осталось: %.1f с" % maxf(_boss_time, 0.0)
+		_hp_label.text += "   ·   %.1f с" % maxf(_boss_time, 0.0)
+		_hp_label.add_theme_color_override("font_color", Color(1, 0.55, 0.5))
 	else:
-		_timer_label.text = ""
+		_hp_label.add_theme_color_override("font_color", Color(1, 1, 1))
 
 
 func _refresh() -> void:
@@ -197,8 +207,7 @@ func _refresh() -> void:
 	var wave_text := "БОСС" if B.is_boss(gs.wave) else "Волна %d/%d" % [gs.wave, B.WAVES_PER_GATE]
 	if gs.farm:
 		wave_text = "Охота (босс не побеждён)"
-	_gate_label.text = "%s · Врата %d · %s" % [biome["name"], gs.gate, wave_text]
-	_dps_label.text = "Отряд: %s урона/сек" % B.format_num(gs.total_dps())
+	_gate_label.text = "%s · Врата %d · %s\nОтряд: %s урона/сек" % [biome["name"], gs.gate, wave_text, B.format_num(gs.total_dps())]
 
 	var left := gs.buff_left()
 	if left > 0.0:
@@ -275,7 +284,7 @@ func _build_ui() -> void:
 	# Зона боя: тап по любой её точке бьёт монстра.
 	_area = Control.new()
 	_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_area.custom_minimum_size = Vector2(0, 520)
+	_area.custom_minimum_size = Vector2(0, 0)
 	_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_area.clip_contents = true
 	root.add_child(_area)
@@ -296,10 +305,10 @@ func _build_ui() -> void:
 	for h in B.HUNTERS:
 		var sprite := TextureRect.new()
 		sprite.texture = load(h["sprite"])
-		sprite.custom_minimum_size = Vector2(230, 240)
+		sprite.custom_minimum_size = Vector2(175, 180)
 		sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		sprite.pivot_offset = Vector2(115, 240)
+		sprite.pivot_offset = Vector2(87, 180)
 		sprite.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		squad_box.add_child(sprite)
 		_squad.append(sprite)
@@ -321,6 +330,12 @@ func _build_ui() -> void:
 	_monster_style.border_color = Color(0, 0, 0, 0.5)
 	_monster_body.add_theme_stylebox_override("panel", _monster_style)
 	mbox.add_child(_monster_body)
+	_monster_art = TextureRect.new()
+	_monster_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_monster_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_monster_art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_monster_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mbox.add_child(_monster_art)
 
 	_hp_bar = ProgressBar.new()
 	_hp_bar.custom_minimum_size = Vector2(440, 30)
@@ -330,13 +345,7 @@ func _build_ui() -> void:
 	_hp_label = _label("", 22)
 	_hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	mbox.add_child(_hp_label)
-	_timer_label = _label("", 28, Color(1, 0.45, 0.4))
-	_timer_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	mbox.add_child(_timer_label)
 
-	_dps_label = _label("", 24, Color(0.8, 0.9, 1))
-	_dps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	root.add_child(_dps_label)
 
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 12)
@@ -374,13 +383,13 @@ func _upgrade_row(parent: Container, icon_tex: Texture2D, on_buy: Callable) -> D
 		var cr := ColorRect.new()
 		cr.color = Color(0.95, 0.95, 1.0, 0.85)
 		icon = cr
-	icon.custom_minimum_size = Vector2(76, 76)
+	icon.custom_minimum_size = Vector2(66, 66)
 	row.add_child(icon)
 	var info := _label("", 24)
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(info)
 	var buy := _button("", 26, on_buy)
-	buy.custom_minimum_size = Vector2(220, 76)
+	buy.custom_minimum_size = Vector2(220, 68)
 	row.add_child(buy)
 	return {"icon": icon, "info": info, "buy": buy}
 

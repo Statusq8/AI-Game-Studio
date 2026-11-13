@@ -1,12 +1,8 @@
 name: Android debug APK
 
 on:
+  # APK собирается только вручную (финальная проверка на телефоне). Для быстрых тестов — веб-версия (web.yml).
   workflow_dispatch:
-  push:
-    paths:
-      - 'godot/**'
-      - 'android-plugins/**'
-      - '.github/workflows/android-debug.yml'
 
 permissions:
   contents: write

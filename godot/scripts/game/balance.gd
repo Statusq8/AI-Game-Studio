@@ -9,7 +9,7 @@ const OFFLINE_CAP_SECONDS := 8 * 3600
 const OFFLINE_MIN_SECONDS := 60
 
 const BIOMES := [
-	{"name": "Лесные Врата", "bg": Color(0.07, 0.15, 0.11), "art": "res://assets/art/bg_forest.webp", "monster": "Корнеед", "boss": "Древний Корень", "color": Color(0.35, 0.72, 0.42)},
+	{"name": "Лесные Врата", "bg": Color(0.07, 0.15, 0.11), "art": "res://assets/art/bg_forest.webp", "monster_art": "res://assets/art/rootling.png", "boss_art": "res://assets/art/ancient_root.png", "monster": "Корнеед", "boss": "Древний Корень", "color": Color(0.35, 0.72, 0.42)},
 	{"name": "Пещерные Врата", "bg": Color(0.11, 0.10, 0.16), "monster": "Каменный клык", "boss": "Король Сталактитов", "color": Color(0.62, 0.56, 0.74)},
 	{"name": "Песчаные Врата", "bg": Color(0.21, 0.15, 0.07), "monster": "Дюнный скорпион", "boss": "Пожиратель Барханов", "color": Color(0.92, 0.72, 0.36)},
 	{"name": "Ледяные Врата", "bg": Color(0.06, 0.12, 0.21), "monster": "Морозный волк", "boss": "Владыка Метели", "color": Color(0.56, 0.82, 1.0)},
