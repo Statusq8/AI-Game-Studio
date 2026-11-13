@@ -24,7 +24,19 @@ signal combo_made(size: int)
 
 const Gem := preload("res://scripts/gem.gd")
 const CELL := 84.0
-enum { B_NONE, B_CRATE, B_VASE }
+enum { B_NONE, B_CRATE, B_VASE, B_SAFE, B_JAR, B_CAGE, B_BALLOON, B_FLOWER, B_BUSH, B_SHELL }
+## Препятствия-блоки: цель уровня, бьёт ли совпадение рядом, картинки по стадиям поломки.
+const BLOCKS := {
+	B_CRATE: {"goal": "crate", "adj": true, "tex": ["ob_crate_0", "ob_crate_1", "ob_crate_2"], "fx": Color("#c98a4b")},
+	B_VASE: {"goal": "vase", "adj": false, "tex": ["ob_pot_0", "ob_pot_1"], "fx": Color("#e0663a")},
+	B_SAFE: {"goal": "safe", "adj": true, "tex": ["ob_safe"], "fx": Color("#8a96b0")},
+	B_JAR: {"goal": "jar", "adj": true, "tex": ["ob_jar"], "fx": Color("#ffd23f")},
+	B_CAGE: {"goal": "cage", "adj": true, "tex": ["ob_cage"], "fx": Color("#ffcf5a")},
+	B_BALLOON: {"goal": "balloon", "adj": true, "tex": ["ob_balloon"], "fx": Color("#ff3b3b")},
+	B_FLOWER: {"goal": "flower", "adj": true, "tex": ["ob_flower_0", "ob_flower_1"], "fx": Color("#ff6bb0")},
+	B_BUSH: {"goal": "bush", "adj": true, "tex": ["ob_bush"], "fx": Color("#4cc81e")},
+	B_SHELL: {"goal": "shell", "adj": true, "tex": ["ob_shell_0", "ob_shell_1"], "fx": Color("#ff6bb0")},
+}
 
 var W := 8
 var H := 8
@@ -32,6 +44,11 @@ var colors := 5
 var tiles: Array = []        # tiles[x][y] -> Gem | null
 var block_kind: Array = []   # B_NONE / B_CRATE / B_VASE
 var block_hp: Array = []
+var block_max: Array = []
+var ice: Array = []          # слой льда под фишкой
+var honey: Array = []        # мёд на фишке (растекается)
+var _honey_hit := false
+var _player_move := false
 var chain: Array = []        # прочность цепи на фишке
 var grass: Array = []        # bool
 var grass_target: Array = [] # bool — клетки, которые надо покрыть травой
@@ -69,6 +86,9 @@ func setup(level: Dictionary) -> void:
 	tiles = []
 	block_kind = []
 	block_hp = []
+	block_max = []
+	ice = []
+	honey = []
 	chain = []
 	grass = []
 	grass_target = []
@@ -76,6 +96,9 @@ func setup(level: Dictionary) -> void:
 		tiles.append([])
 		block_kind.append([])
 		block_hp.append([])
+		block_max.append([])
+		ice.append([])
+		honey.append([])
 		chain.append([])
 		grass.append([])
 		grass_target.append([])
@@ -85,6 +108,9 @@ func setup(level: Dictionary) -> void:
 			tiles[x].append(null)
 			block_kind[x].append(int(b.get("kind", B_NONE)))
 			block_hp[x].append(int(b.get("hp", 0)))
+			block_max[x].append(int(b.get("hp", 0)))
+			ice[x].append(int(level.get("ice", {}).get(c, 0)))
+			honey[x].append(c in level.get("honey", []))
 			chain[x].append(int(level.chains.get(c, 0)))
 			grass[x].append(c in level.grass_start)
 			grass_target[x].append(c in level.grass_target)
@@ -163,10 +189,31 @@ func _make_block_node(cell: Vector2i) -> void:
 
 func _draw_block(n: Node2D, cell: Vector2i) -> void:
 	var hp: int = block_hp[cell.x][cell.y]
-	if block_kind[cell.x][cell.y] == B_VASE:
+	var kind: int = block_kind[cell.x][cell.y]
+	var t := block_tex(kind, block_max[cell.x][cell.y] - hp)
+	if t:
+		var sz := t.get_size()
+		var k := CELL * 0.92 / maxf(sz.x, sz.y)
+		n.draw_set_transform(Vector2(0, 2), 0.0, Vector2(k, k))
+		n.draw_texture(t, -sz / 2)
+		n.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		if hp >= 2 and BLOCKS[kind].tex.size() == 1:
+			# прочность цифрой, если у картинки нет стадий
+			var f: Font = ThemeDB.fallback_font
+			n.draw_circle(Vector2(CELL * 0.3, CELL * 0.3), 13, Color("#2b2350"))
+			n.draw_string(f, Vector2(CELL * 0.3 - 6, CELL * 0.3 + 7), str(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
+		return
+	if kind == B_VASE:
 		draw_vase(n, Vector2.ZERO, CELL * 0.44, hp)
 	else:
 		draw_crate(n, Vector2.ZERO, CELL * 0.46, hp)
+
+
+static func block_tex(kind: int, stage: int) -> Texture2D:
+	if not BLOCKS.has(kind):
+		return null
+	var names: Array = BLOCKS[kind].tex
+	return Gem.tex(names[clampi(stage, 0, names.size() - 1)])
 
 
 static func draw_crate(n: CanvasItem, o: Vector2, s: float, hp: int) -> void:
@@ -212,8 +259,26 @@ static func draw_chain(n: CanvasItem, o: Vector2, s: float) -> void:
 
 
 func _draw_overlay() -> void:
+	var vt := Gem.tex("ob_vines")
+	var ht := Gem.tex("ob_honey")
 	for x in W:
 		for y in H:
+			var cp := cell_pos(Vector2i(x, y))
+			if honey[x][y] and ht:
+				var hs := ht.get_size()
+				var hk := CELL * 0.98 / maxf(hs.x, hs.y)
+				_overlay.draw_set_transform(cp, 0.0, Vector2(hk, hk))
+				_overlay.draw_texture(ht, -hs / 2, Color(1, 1, 1, 0.82))
+				_overlay.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			if chain[x][y] > 0 and vt:
+				var vs := vt.get_size()
+				var vk := CELL * 0.95 / maxf(vs.x, vs.y)
+				_overlay.draw_set_transform(cp, 0.0, Vector2(vk, vk))
+				_overlay.draw_texture(vt, -vs / 2)
+				_overlay.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+				if chain[x][y] >= 2:
+					_overlay.draw_circle(cp + Vector2(CELL * 0.3, CELL * 0.3), 11, Color("#2e7d32"))
+				continue
 			if chain[x][y] > 0:
 				draw_chain(_overlay, cell_pos(Vector2i(x, y)), CELL * 0.5)
 				if chain[x][y] >= 2:
@@ -267,7 +332,14 @@ func _draw() -> void:
 			face.set_corner_radius_all(12)
 			draw_style_box(face, Rect2(rect.position + Vector2(3, 3), rect.size - Vector2(6, 11)))
 			draw_rect(Rect2(rect.position + Vector2(12, 6), Vector2(rect.size.x - 24, 4)), Color(1, 1, 1, 0.55))
-			if grass[x][y]:
+			var gt := Gem.tex("ob_tile_grass") if grass[x][y] else null
+			if gt:
+				draw_texture_rect(gt, rect.grow(1.0), false)
+			if ice[x][y] > 0:
+				var it := Gem.tex("ob_tile_ice")
+				if it:
+					draw_texture_rect(it, rect.grow(1.0), false, Color(1, 1, 1, 0.85 if ice[x][y] >= 2 else 0.65))
+			if grass[x][y] and gt == null:
 				for k in 3:
 					var bx := rect.position.x + 14 + k * 22
 					var by := rect.position.y + rect.size.y - 10
@@ -299,8 +371,9 @@ func _fillable(c: Vector2i) -> bool:
 	return inside(c) and block_kind[c.x][c.y] == B_NONE
 
 
+## Фишка не двигается: на ней лианы или мёд.
 func _chained(c: Vector2i) -> bool:
-	return inside(c) and chain[c.x][c.y] > 0
+	return inside(c) and (chain[c.x][c.y] > 0 or honey[c.x][c.y])
 
 
 func _movable(c: Vector2i) -> bool:
@@ -596,6 +669,7 @@ func try_swap(a: Vector2i, b: Vector2i) -> void:
 	busy = true
 	_idle = 0.0
 	_hits.clear()
+	_player_move = true
 	await _animate_swap(ga, gb, a, b)
 	_swap_data(a, b)
 	# теперь ga стоит в b, gb — в a
@@ -724,7 +798,7 @@ func _cascade(prefer: Array) -> void:
 		for c: Vector2i in to_clear:
 			for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 				var n: Vector2i = c + d
-				if inside(n) and block_kind[n.x][n.y] == B_CRATE:
+				if inside(n) and block_kind[n.x][n.y] != B_NONE and BLOCKS[block_kind[n.x][n.y]].adj:
 					_hit_block(n)
 		if wave >= 2:
 			combo_made.emit(wave)
@@ -738,10 +812,35 @@ func _cascade(prefer: Array) -> void:
 				create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT).tween_property(ng, "scale", Vector2.ONE, 0.25)
 		await _gravity()
 		prefer = []
+	if _player_move:
+		_player_move = false
+		if not _honey_hit:
+			_spread_honey()
+	_honey_hit = false
 	if find_move().is_empty():
 		await _shuffle()
 	busy = false
 	settled.emit()
+
+
+## Мёд растекается на соседнюю фишку, если за ход его ни разу не задели.
+func _spread_honey() -> void:
+	var cand: Array = []
+	for x in W:
+		for y in H:
+			if not honey[x][y]:
+				continue
+			for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+				var n: Vector2i = Vector2i(x, y) + d
+				var g := gem_at(n)
+				if g and g.special == Gem.NONE and not _chained(n):
+					cand.append(n)
+	if cand.is_empty():
+		return
+	var c: Vector2i = cand[rng.randi_range(0, cand.size() - 1)]
+	honey[c.x][c.y] = true
+	goal_hit.emit("honey_more", to_global(cell_pos(c)))
+	_overlay.queue_redraw()
 
 
 ## Пустые клетки, куда должна была упасть фишка (для проверок ботом).
@@ -805,7 +904,7 @@ func _hit_block(c: Vector2i) -> void:
 	var kind: int = block_kind[c.x][c.y]
 	block_hp[c.x][c.y] -= 1
 	var n: Node2D = block_nodes.get(c)
-	_burst(cell_pos(c), Color("#c98a4b") if kind == B_CRATE else Color("#4fb3d9"), 10)
+	_burst(cell_pos(c), BLOCKS[kind].fx if BLOCKS.has(kind) else Color.WHITE, 12)
 	if block_hp[c.x][c.y] <= 0:
 		block_kind[c.x][c.y] = B_NONE
 		block_nodes.erase(c)
@@ -814,7 +913,7 @@ func _hit_block(c: Vector2i) -> void:
 			tw.tween_property(n, "scale", Vector2(1.3, 1.3), 0.15)
 			tw.tween_property(n, "modulate:a", 0.0, 0.15)
 			tw.chain().tween_callback(n.queue_free)
-		goal_hit.emit("crate" if kind == B_CRATE else "vase", to_global(cell_pos(c)))
+		goal_hit.emit(BLOCKS[kind].goal if BLOCKS.has(kind) else "crate", to_global(cell_pos(c)))
 	elif n:
 		n.queue_redraw()
 		var tw := create_tween()
@@ -826,6 +925,13 @@ func _break_chain(c: Vector2i) -> void:
 	if _hits.has(c):
 		return
 	_hits[c] = true
+	if honey[c.x][c.y] and chain[c.x][c.y] <= 0:
+		honey[c.x][c.y] = false
+		_honey_hit = true
+		_overlay.queue_redraw()
+		_burst(cell_pos(c), Color("#ffb020"), 12)
+		goal_hit.emit("honey", to_global(cell_pos(c)))
+		return
 	chain[c.x][c.y] -= 1
 	_overlay.queue_redraw()
 	_burst(cell_pos(c), Color("#b8bcc8"), 10)
@@ -867,6 +973,12 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 			_break_chain(c)
 			continue
 		cleared[c] = true
+		if ice[c.x][c.y] > 0:
+			ice[c.x][c.y] -= 1
+			_burst(cell_pos(c), Color("#bfe9ff"), 10)
+			if ice[c.x][c.y] <= 0:
+				goal_hit.emit("ice", to_global(cell_pos(c)))
+			queue_redraw()
 		if g.is_power():
 			var area := _area(g.special, c)
 			if g.special == Gem.PROPELLER:

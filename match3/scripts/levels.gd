@@ -4,9 +4,9 @@ extends RefCounted
 
 const W := 8
 const H := 8
-const B_CRATE := 1
-const B_VASE := 2
-const OBSTACLES := ["crate", "grass", "item", "chain", "vase"]
+const OBSTACLES := ["crate", "grass", "item", "chain", "vase", "ice", "balloon", "honey", "jar", "flower", "cage", "bush", "shell", "safe"]
+## Блоки на поле: номер вида (как в board.gd) и прочность.
+const BLOCK := {"crate": [1, 1], "vase": [2, 1], "safe": [3, 3], "jar": [4, 1], "cage": [5, 2], "balloon": [6, 1], "flower": [7, 2], "bush": [8, 2], "shell": [9, 2]}
 
 
 static func make(n: int) -> Dictionary:
@@ -14,14 +14,16 @@ static func make(n: int) -> Dictionary:
 	rng.seed = n * 7919 + 17
 	var lv := {
 		"n": n, "colors": 5, "moves": clampi(26 - n / 6, 18, 26), "goals": [],
-		"blocks": {}, "chains": {}, "grass_start": [], "grass_target": [], "items": 0,
+		"blocks": {}, "chains": {}, "grass_start": [], "grass_target": [], "items": 0, "ice": {}, "honey": [],
 	}
 
 	var kinds: Array = []
+	# новые препятствия открываются постепенно: к 31-му уровню — все 14
+	var unlocked := clampi(5 + (n - 4) / 3, 5, OBSTACLES.size())
 	if n >= 4:
-		kinds.append(OBSTACLES[(n - 4) % OBSTACLES.size()])
+		kinds.append(OBSTACLES[(n - 4) % unlocked])
 	if n >= 14 and n % 3 == 0:
-		var extra: String = OBSTACLES[(n + 1) % OBSTACLES.size()]
+		var extra: String = OBSTACLES[(n + 1) % unlocked]
 		if extra not in kinds:
 			kinds.append(extra)
 
@@ -56,20 +58,41 @@ static func make(n: int) -> Dictionary:
 
 static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumberGenerator) -> void:
 	match kind:
-		"crate", "vase":
-			var width := mini(4 + n / 8, W)
+		"crate", "vase", "safe", "jar", "cage", "balloon", "flower", "bush", "shell":
+			var info: Array = BLOCK[kind]
+			var width := mini(4 + n / 10, W) if kind in ["crate", "vase", "balloon"] else mini(3 + n / 15, 6)
 			var x0 := (W - width) / 2
-			var hp2 := n >= 12
 			var count := 0
 			for x in range(x0, x0 + width):
 				var c := Vector2i(x, H - 1)
 				if lv.blocks.has(c):
 					continue
-				var hp := 2 if (hp2 and rng.randf() < 0.35) else 1
-				lv.blocks[c] = {"kind": B_CRATE if kind == "crate" else B_VASE, "hp": hp}
+				var hp: int = info[1]
+				if kind == "crate" and n >= 12:
+					hp = rng.randi_range(1, 3)
+				elif kind == "vase" and n >= 12 and rng.randf() < 0.4:
+					hp = 2
+				lv.blocks[c] = {"kind": info[0], "hp": hp}
 				count += 1
 			lv.goals.append({"kind": kind, "left": count})
-			lv.moves += 4 if kind == "crate" else 8
+			lv.moves += 8 if kind in ["vase", "safe"] else 5
+		"ice":
+			var count := 0
+			for y in range(H - 3, H):
+				for x in W:
+					var c := Vector2i(x, y)
+					if not lv.blocks.has(c):
+						lv.ice[c] = 2 if (n >= 20 and rng.randf() < 0.3) else 1
+						count += 1
+			lv.goals.append({"kind": "ice", "left": count})
+			lv.moves += 6
+		"honey":
+			while lv.honey.size() < 3:
+				var c := Vector2i(rng.randi_range(1, W - 2), rng.randi_range(2, 5))
+				if c not in lv.honey and not lv.chains.has(c):
+					lv.honey.append(c)
+			lv.goals.append({"kind": "honey", "left": 3})
+			lv.moves += 4
 		"grass":
 			var rows := 3
 			for y in range(H - rows, H):

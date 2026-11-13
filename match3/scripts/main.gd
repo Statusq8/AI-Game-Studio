@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "0.7.0"
+const VERSION := "0.8.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -82,7 +82,11 @@ func _ready() -> void:
 		elif arg == "--inputtest":
 			_run_input_test.call_deferred()
 		elif arg.begins_with("--bot"):
-			_run_bot.call_deferred(int(arg.trim_prefix("--bot=")) if "=" in arg else 10)
+			var spec := arg.trim_prefix("--bot=") if "=" in arg else "10"
+			if ":" in spec:
+				_run_bot.call_deferred(int(spec.split(":")[1]), int(spec.split(":")[0]))
+			else:
+				_run_bot.call_deferred(int(spec))
 
 
 func _process(delta: float) -> void:
@@ -1063,7 +1067,7 @@ func _show_prelevel(n: int) -> void:
 	var lv := Levels.make(n)
 	var goals: Array = []
 	for g in lv.goals:
-		goals.append({"color": "фишки", "crate": "ящики", "vase": "вазы", "chain": "цепи", "grass": "трава", "item": "яйца"}[g.kind] + " " + str(g.left))
+		goals.append(GOAL_NAMES.get(g.kind, g.kind) + " " + str(g.left))
 	var diff: String = ["Обычный", "Сложный", "Очень сложный"][int(lv.get("hard", 0))]
 	var streak_line := "Серия побед: %d — бонус на старте!" % Save.streak if Save.streak > 0 else "Серия побед: 0"
 	var v := _dialog("Уровень %d" % n, ["Сложность: " + diff, "Цели: " + ", ".join(goals), streak_line, "Бустеры на старт:"], [
@@ -1174,6 +1178,15 @@ func _build_goals() -> void:
 
 
 func _draw_goal_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
+	if GOAL_TEX.has(kind):
+		var t: Texture2D = Gem.tex(GOAL_TEX[kind])
+		if t:
+			var sz := t.get_size()
+			var k := 54.0 / maxf(sz.x, sz.y)
+			ci.draw_set_transform(c, 0.0, Vector2(k, k))
+			ci.draw_texture(t, -sz / 2)
+			ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			return
 	match kind:
 		"crate":
 			Board.draw_crate(ci, c, 24.0, 1)
@@ -1272,7 +1285,23 @@ func _on_gem_cleared(color: int, at: Vector2) -> void:
 			return
 
 
+const GOAL_NAMES := {"color": "фишки", "crate": "ящики", "vase": "горшки", "chain": "лианы", "grass": "газон", "item": "яйца",
+	"ice": "лёд", "honey": "мёд", "safe": "сейфы", "jar": "банки", "cage": "клетки", "balloon": "шарики", "flower": "цветы", "bush": "кусты", "shell": "ракушки"}
+const GOAL_TEX := {"crate": "ob_crate_0", "vase": "ob_pot_0", "chain": "ob_vines", "grass": "ob_tile_grass", "ice": "ob_tile_ice",
+	"honey": "ob_honey", "safe": "ob_safe", "jar": "ob_jar", "cage": "ob_cage", "balloon": "ob_balloon", "flower": "ob_flower_0", "bush": "ob_bush", "shell": "ob_shell_0"}
+
+
 func _on_goal_hit(kind: String, at: Vector2) -> void:
+	if kind == "honey_more":
+		# мёд растёкся — цель «мёд» стала больше
+		for gv in _goal_views:
+			if gv.goal.kind == "honey":
+				gv.goal.left += 1
+				gv.shown = int(gv.shown) + 1
+				(gv.label as Label).text = str(gv.shown)
+		return
+	if kind == "jar":
+		Save.add_coins(25)
 	for gv in _goal_views:
 		var goal: Dictionary = gv.goal
 		if goal.kind == kind and goal.left > 0:
@@ -1506,7 +1535,7 @@ func _show_lose() -> void:
 	var left: Array = []
 	for g in _level.goals:
 		if g.left > 0:
-			left.append({"color": "фишки", "crate": "ящики", "vase": "вазы", "chain": "цепи", "grass": "трава", "item": "детёныши"}[g.kind] + " " + str(g.left))
+			left.append(GOAL_NAMES.get(g.kind, g.kind) + " " + str(g.left))
 	var warn := "Сдашься — потеряешь серию побед (%d)!" % Save.streak if Save.streak > 0 else "Ещё чуть-чуть!"
 	_dialog("Ходы кончились", ["Осталось: " + ", ".join(left), warn, "+%d ходов, чтобы доиграть?" % EXTRA_MOVES], [
 		["▶ Реклама: +%d ходов" % EXTRA_MOVES, "PurpleButton", func() -> void:
@@ -1543,11 +1572,11 @@ func _show_pause() -> void:
 # ---------- проверки в CI ----------
 
 ## Бот: проходит N уровней случайными ходами на ускорении. Ловит ошибки логики.
-func _run_bot(levels: int) -> void:
+func _run_bot(levels: int, first: int = 1) -> void:
 	_bot = true
 	Engine.time_scale = 8.0
 	var wins := 0
-	for n in range(1, levels + 1):
+	for n in range(first, levels + 1):
 		_start_level(n)
 		await get_tree().create_timer(1.2).timeout
 		var guard := 0
@@ -1587,7 +1616,7 @@ func _run_bot(levels: int) -> void:
 		Save.coins = 0
 		Save.hearts = Save.MAX_HEARTS
 		_clear_overlay()
-	print("BOT done: %d/%d wins" % [wins, levels])
+	print("BOT done: %d/%d wins" % [wins, levels - first + 1])
 	get_tree().quit()
 
 
@@ -1684,7 +1713,7 @@ func _run_shots(dir: String) -> void:
 	await _snap(dir, "1d_settings")
 	_clear_overlay()
 	# уровни с разными препятствиями: 4 ящики, 5 трава, 6 предметы, 7 цепи, 8 вазы
-	for n in [4, 5, 6, 7, 10]:
+	for n in [4, 5, 7, 9, 21, 23, 24, 26, 27, 29, 31]:
 		_start_level(n)
 		await get_tree().create_timer(1.6).timeout
 		await _snap(dir, "2_level_%d" % n)
