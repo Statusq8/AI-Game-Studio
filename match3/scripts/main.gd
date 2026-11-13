@@ -6,6 +6,7 @@ const Levels := preload("res://scripts/levels.gd")
 const Board := preload("res://scripts/board.gd")
 const Gem := preload("res://scripts/gem.gd")
 
+const VERSION := "0.2.1"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -224,7 +225,7 @@ func _build_home() -> void:
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	center.add_child(title)
 	var sub := Label.new()
-	sub.text = "рабочее название"
+	sub.text = "рабочее название · версия %s" % VERSION
 	sub.add_theme_font_size_override("font_size", 24)
 	sub.modulate = Color(1, 1, 1, 0.8)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
