@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "0.9.3"
+const VERSION := "1.0.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -654,7 +654,7 @@ func _build_level_screen() -> void:
 	_goals_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	_goals_box.add_theme_constant_override("separation", 4)
 	goal_card.get_node("Body").add_child(_goals_box)
-	_portrait_node = _portrait()
+	_portrait_node = _hud_panda()
 	hud.add_child(_portrait_node)
 	var moves_card := _hud_card("Ходы")
 	moves_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -681,7 +681,7 @@ func _build_level_screen() -> void:
 	var clip := Control.new()
 	clip.clip_contents = true
 	clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	clip.custom_minimum_size = Vector2(8, 8) * Board.CELL
+	clip.custom_minimum_size = Vector2(8, 10) * Board.CELL
 	_board_frame.add_child(clip)
 	# лианы на деревянной рамке
 	var vines := Control.new()
@@ -738,6 +738,10 @@ func _build_level_screen() -> void:
 	_level_screen.add_child(_panda)
 	_level_screen.move_child(_panda, _board_frame.get_index())
 	_board.combo_made.connect(_on_combo)
+	_board.idle_hint.connect(func() -> void: _panda_react("yawn"))
+	_board.special_fired.connect(func() -> void:
+		if _state == "play":
+			_panda_react("special"))
 	_board.shake.connect(func(a: float) -> void:
 		if Save.shake:
 			_shake = maxf(_shake, a)
@@ -772,43 +776,50 @@ func _make_panda(height: float) -> Control:
 
 ## Реакция панды: "combo" — подпрыгнуть, "win" — прыгать от радости, "sad" — поникнуть.
 func _panda_react(kind: String) -> void:
-	if _portrait_node:
-		var p := _portrait_node
-		p.pivot_offset = p.size / 2
-		var pt := p.create_tween()
-		match kind:
-			"combo", "win":
-				pt.tween_property(p, "scale", Vector2(1.15, 1.15), 0.12).set_trans(Tween.TRANS_BACK)
-				pt.tween_property(p, "scale", Vector2.ONE, 0.2)
-				if kind == "win":
-					pt.tween_property(p, "rotation", 0.12, 0.1)
-					pt.tween_property(p, "rotation", -0.12, 0.15)
-					pt.tween_property(p, "rotation", 0.0, 0.1)
-			"sad":
-				pt.tween_property(p, "modulate", Color(0.7, 0.7, 0.8), 0.3)
-			_:
-				p.modulate = Color.WHITE
-				pt.kill()
-	if _panda == null:
+	if _portrait_node == null:
 		return
-	var img: Control = _panda.get_node("Img")
+	var img: Control = _portrait_node.get_node("Img")
+	if _portrait_node.has_meta("react"):
+		var old: Tween = _portrait_node.get_meta("react")
+		if old and old.is_valid():
+			old.kill()
+	img.rotation = 0.0
+	img.position = Vector2(-10, -14)
 	if kind == "reset":
-		img.rotation = 0.0
-		_panda.modulate = Color.WHITE
+		img.modulate = Color.WHITE
 		return
-	var tw := _panda.create_tween()
+	var t := img.create_tween()
+	_portrait_node.set_meta("react", t)
 	match kind:
 		"combo":
-			tw.tween_property(_panda, "position:y", _panda_rest().y - 40, 0.15).set_ease(Tween.EASE_OUT)
-			tw.tween_property(_panda, "position:y", _panda_rest().y, 0.2).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_BOUNCE)
+			# подпрыгивает от радости
+			t.tween_property(img, "position:y", -44.0, 0.14).set_ease(Tween.EASE_OUT)
+			t.tween_property(img, "position:y", -14.0, 0.22).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_BOUNCE)
+		"special":
+			# удивление: вытягивается и наклоняется
+			t.tween_property(img, "rotation", -0.15, 0.08)
+			t.tween_property(img, "rotation", 0.15, 0.12)
+			t.tween_property(img, "rotation", 0.0, 0.1)
+		"nervous":
+			# мало ходов: дрожит
+			for i in 6:
+				t.tween_property(img, "position:x", -4.0, 0.04)
+				t.tween_property(img, "position:x", -16.0, 0.04)
+			t.tween_property(img, "position:x", -10.0, 0.04)
 		"win":
+			# танец
 			for i in 3:
-				tw.tween_property(_panda, "position:y", _panda_rest().y - 60, 0.18).set_ease(Tween.EASE_OUT)
-				tw.tween_property(_panda, "position:y", _panda_rest().y, 0.18).set_ease(Tween.EASE_IN)
+				t.tween_property(img, "rotation", 0.2, 0.12)
+				t.parallel().tween_property(img, "position:y", -40.0, 0.12)
+				t.tween_property(img, "rotation", -0.2, 0.12)
+				t.parallel().tween_property(img, "position:y", -14.0, 0.12)
+			t.tween_property(img, "rotation", 0.0, 0.1)
 		"sad":
-			tw.tween_property(img, "rotation", -0.12, 0.3)
-			tw.tween_property(_panda, "modulate", Color(0.75, 0.75, 0.85), 0.3)
-
+			t.tween_property(img, "rotation", -0.1, 0.4)
+			t.parallel().tween_property(img, "modulate", Color(0.7, 0.72, 0.85), 0.4)
+		"yawn":
+			t.tween_property(img, "scale", Vector2(1.08, 0.92), 0.4)
+			t.tween_property(img, "scale", Vector2.ONE, 0.5)
 
 func _panda_rest() -> Vector2:
 	var top := _board_rest().y
@@ -867,6 +878,28 @@ func _hud_card(title: String) -> PanelContainer:
 		ribbon.draw_string_outline(font, tp, title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, 6, Color("#1e5a2a"))
 		ribbon.draw_string(font, tp, title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE))
 	return outer
+
+
+## Живая панда в шапке (без рамки): дышит, моргает-подпрыгивает, реагирует на игру.
+func _hud_panda() -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(190, 200)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var img := TextureRect.new()
+	img.name = "Img"
+	img.texture = load("res://assets/art/panda.png")
+	img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
+	img.size = Vector2(210, 240)
+	img.position = Vector2(-10, -14)
+	img.pivot_offset = Vector2(105, 240)
+	img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.add_child(img)
+	var idle := img.create_tween().set_loops()
+	idle.tween_property(img, "scale", Vector2(1.03, 0.97), 0.8).set_trans(Tween.TRANS_SINE)
+	idle.tween_property(img, "scale", Vector2(0.98, 1.03), 0.8).set_trans(Tween.TRANS_SINE)
+	c.set_meta("idle", idle)
+	return c
 
 
 ## Портрет панды в арке с золотой рамкой (вырезаем голову из общей картинки).
@@ -978,7 +1011,7 @@ func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 
 func _layout_bar() -> void:
 	var r := _board_rest()
-	var bottom := r.y + _board_frame.get_combined_minimum_size().y
+	var bottom := r.y + _board_frame.get_combined_minimum_size().y * _board_frame.scale.y
 	_booster_bar.size = Vector2(_level_screen.size.x, 124)
 	_booster_bar.position = Vector2(0, bottom + maxf(10.0, (_level_screen.size.y - bottom - 124.0) * 0.4))
 
@@ -1033,10 +1066,21 @@ func _close_dialog() -> void:
 		_board.input_enabled = true
 
 
-func _board_rest() -> Vector2:
+## Поле масштабируется под экран: занимает всю ширину и свободную высоту между шапкой и бустерами.
+func _board_scale() -> float:
 	var s := _board_frame.get_combined_minimum_size()
-	var free_top := 290.0
-	var y := free_top + maxf(0.0, (_level_screen.size.y - free_top - 140.0 - s.y) * 0.5)
+	var free_top := 245.0
+	var free_bottom := 140.0
+	var k := minf((_level_screen.size.x - 8.0) / s.x, (_level_screen.size.y - free_top - free_bottom) / s.y)
+	return clampf(k, 0.6, 1.35)
+
+
+func _board_rest() -> Vector2:
+	var k := _board_scale()
+	_board_frame.scale = Vector2(k, k)
+	var s := _board_frame.get_combined_minimum_size() * k
+	var free_top := 245.0
+	var y := free_top + maxf(0.0, (_level_screen.size.y - free_top - 140.0 - s.y) * 0.3)
 	return Vector2((_level_screen.size.x - s.x) / 2.0, y)
 
 
@@ -1247,6 +1291,34 @@ func _banner(l: Label) -> void:
 
 # ---------- игровые события ----------
 
+## Объёмная надпись: «выдавленная» тень вниз, толстый тёмный контур, светлая заливка сверху и тёмная снизу, блик.
+func _big_text(text: String, fsize: int, top: Color, bottom: Color) -> Control:
+	var c := Control.new()
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	c.draw.connect(func() -> void:
+		var ts := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize)
+		var p := Vector2(c.size.x / 2 - ts.x / 2, c.size.y / 2 + fsize * 0.35)
+		var ink := Color("#2a1440")
+		# объём: слои вниз
+		for d in range(10, 0, -2):
+			c.draw_string_outline(font, p + Vector2(0, d), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, 16, ink)
+			c.draw_string(font, p + Vector2(0, d), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, bottom.darkened(0.35))
+		c.draw_string_outline(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, 16, ink)
+		c.draw_string_outline(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, 6, Color.WHITE)
+		c.draw_string(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, bottom)
+		# верхняя половина светлее (градиент): рисуем заливку ещё раз, обрезав сверху
+		c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		var clip_h := fsize * 0.5
+		var rect := Rect2(Vector2(0, p.y - fsize * 0.85), Vector2(c.size.x, clip_h))
+		c.draw_rect(rect, Color(0, 0, 0, 0), false)
+		c.draw_string(font, p + Vector2(0, -2), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, Color(top, 0.75))
+		# блик
+		c.draw_string(font, p + Vector2(-2, -5), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, Color(1, 1, 1, 0.22)))
+	c.resized.connect(c.queue_redraw)
+	return c
+
+
 ## Белая вспышка экрана на мощных взрывах.
 func _flash(strength: float) -> void:
 	var f := ColorRect.new()
@@ -1270,17 +1342,13 @@ func _on_combo(n: int) -> void:
 	if n < 2 or _state != "play":
 		return
 	_panda_react("combo")
-	var l := Label.new()
-	l.text = ["Отлично!", "Супер!", "Невероятно!"][mini(n - 2, 2)]
-	l.theme_type_variation = "TitleLabel"
-	l.add_theme_font_size_override("font_size", 64 + mini(n, 5) * 6)
-	l.add_theme_constant_override("outline_size", 14)
-	l.add_theme_color_override("font_color", [Color("#ffe14d"), Color("#7dff8a"), Color("#ff9ad5")][mini(n - 2, 2)])
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var i := mini(n - 2, 3)
+	var l := _big_text(["Отлично!", "Супер!", "Невероятно!", "Потрясающе!"][i], 78 + mini(n, 6) * 5,
+		[Color("#ffe14d"), Color("#8dff6a"), Color("#ff8ad8"), Color("#7fe3ff")][i],
+		[Color("#ff9a1a"), Color("#21a83a"), Color("#c0359a"), Color("#2a7bd8")][i])
 	_overlay.add_child(l)
-	l.size = Vector2(size.x, 100)
-	l.position = Vector2(0, _board_rest().y + 240)
+	l.size = Vector2(size.x, 140)
+	l.position = Vector2(0, _board_rest().y + 260)
 	l.pivot_offset = l.size / 2
 	l.scale = Vector2(0.4, 0.4)
 	var tw := l.create_tween()
@@ -1297,6 +1365,8 @@ func _on_move() -> void:
 		return
 	_moves = maxi(0, _moves - 1)
 	_update_moves()
+	if _moves == 5 or _moves == 3 or _moves == 1:
+		_panda_react("nervous")
 	var tw := _moves_label.create_tween()
 	tw.tween_property(_moves_label, "scale", Vector2(1.25, 1.25), 0.07)
 	tw.tween_property(_moves_label, "scale", Vector2.ONE, 0.12)
@@ -1410,13 +1480,16 @@ func _begin_bonus() -> void:
 	_state = "bonus"
 	_panda_react("win")
 	_board.input_enabled = false
-	var l := Label.new()
-	l.text = "Отлично!"
-	l.theme_type_variation = "TitleLabel"
-	l.add_theme_font_size_override("font_size", 96)
-	l.add_theme_constant_override("outline_size", 16)
-	l.add_theme_color_override("font_color", Color("#ffe14d"))
-	_banner(l)
+	var l := _big_text("Уровень пройден!", 76, Color("#ffe14d"), Color("#ff9a1a"))
+	_overlay.add_child(l)
+	l.size = size
+	l.pivot_offset = size / 2
+	l.scale = Vector2(0.3, 0.3)
+	var bt := l.create_tween()
+	bt.tween_property(l, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	bt.tween_interval(0.6)
+	bt.tween_property(l, "modulate:a", 0.0, 0.25)
+	bt.tween_callback(l.queue_free)
 	await get_tree().create_timer(1.0).timeout
 	var bonus := _moves
 	_level["bonus_coins"] = bonus * COINS_PER_MOVE
@@ -1426,8 +1499,8 @@ func _begin_bonus() -> void:
 	var rtex: Texture2D = Gem.tex("rocket")
 	for i in n:
 		var cells: Array = []
-		for x in 8:
-			for y in 8:
+		for x in _board.W:
+			for y in _board.H:
 				var g: Node2D = _board.gem_at(Vector2i(x, y))
 				if g and g.special == Gem.NONE and not _board._chained(Vector2i(x, y)):
 					cells.append(Vector2i(x, y))
@@ -1775,6 +1848,11 @@ func _run_shots(dir: String) -> void:
 		_start_level(n)
 		await get_tree().create_timer(1.6).timeout
 		await _snap(dir, "2_level_%d" % n)
+	_start_level(23)
+	await get_tree().create_timer(1.6).timeout
+	_on_combo(4)
+	await get_tree().create_timer(0.3).timeout
+	await _snap(dir, "2z_combo")
 	_start_level(5)
 	await get_tree().create_timer(1.4).timeout
 	for i in 4:

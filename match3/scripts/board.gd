@@ -22,6 +22,8 @@ signal settled
 signal big_hit(power: float)
 signal combo_made(size: int)
 signal shake(amount: float)
+signal idle_hint
+signal special_fired
 
 const Gem := preload("res://scripts/gem.gd")
 const CELL := 84.0
@@ -42,7 +44,7 @@ const BLOCKS := {
 }
 
 var W := 8
-var H := 8
+var H := 10
 var colors := 5
 var tiles: Array = []        # tiles[x][y] -> Gem | null
 var block_kind: Array = []   # B_NONE / B_CRATE / B_VASE
@@ -640,6 +642,7 @@ func _process(delta: float) -> void:
 	if _idle > 5.0:
 		_idle = -3.0
 		show_hint()
+		idle_hint.emit()
 
 
 func show_hint() -> void:
@@ -1048,6 +1051,7 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 		wait = maxf(wait, PROPELLER_TIME + 0.15)
 	if power > 0.0:
 		big_hit.emit(power)
+		special_fired.emit()
 		await get_tree().create_timer(maxf(wait, 0.08)).timeout
 	var last: Tween = null
 	for c: Vector2i in cleared:
