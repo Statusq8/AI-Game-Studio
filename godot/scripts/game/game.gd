@@ -502,7 +502,7 @@ func _banner(text: String, color: Color, size: int, hold: float = 0.7) -> void:
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.size = Vector2(_area.size.x, 220)
-	l.position = Vector2(0, _area.size.y * 0.35 - 110)
+	l.position = Vector2(0, 0)
 	l.pivot_offset = l.size / 2.0
 	_area.add_child(l)
 	l.scale = Vector2(1.8, 1.8)
