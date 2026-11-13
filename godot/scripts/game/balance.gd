@@ -9,7 +9,7 @@ const OFFLINE_CAP_SECONDS := 8 * 3600
 const OFFLINE_MIN_SECONDS := 60
 
 const BIOMES := [
-	{"name": "Лесные Врата", "bg": Color(0.07, 0.15, 0.11), "monster": "Корнеед", "boss": "Древний Корень", "color": Color(0.35, 0.72, 0.42)},
+	{"name": "Лесные Врата", "bg": Color(0.07, 0.15, 0.11), "art": "res://assets/art/bg_forest.webp", "monster": "Корнеед", "boss": "Древний Корень", "color": Color(0.35, 0.72, 0.42)},
 	{"name": "Пещерные Врата", "bg": Color(0.11, 0.10, 0.16), "monster": "Каменный клык", "boss": "Король Сталактитов", "color": Color(0.62, 0.56, 0.74)},
 	{"name": "Песчаные Врата", "bg": Color(0.21, 0.15, 0.07), "monster": "Дюнный скорпион", "boss": "Пожиратель Барханов", "color": Color(0.92, 0.72, 0.36)},
 	{"name": "Ледяные Врата", "bg": Color(0.06, 0.12, 0.21), "monster": "Морозный волк", "boss": "Владыка Метели", "color": Color(0.56, 0.82, 1.0)},
@@ -17,9 +17,9 @@ const BIOMES := [
 ]
 
 const HUNTERS := [
-	{"name": "Мечник Рэн", "base_dps": 2.0, "base_cost": 25.0, "color": Color(0.32, 0.52, 1.0)},
-	{"name": "Лучница Мира", "base_dps": 9.0, "base_cost": 300.0, "color": Color(1.0, 0.62, 0.22)},
-	{"name": "Маг Сэй", "base_dps": 40.0, "base_cost": 3500.0, "color": Color(0.72, 0.42, 1.0)},
+	{"name": "Мечник Рэн", "base_dps": 2.0, "base_cost": 25.0, "color": Color(0.32, 0.52, 1.0), "sprite": "res://assets/art/ren.png", "icon": "res://assets/art/ren_icon.png"},
+	{"name": "Лучница Мира", "base_dps": 9.0, "base_cost": 300.0, "color": Color(1.0, 0.62, 0.22), "sprite": "res://assets/art/mira.png", "icon": "res://assets/art/mira_icon.png"},
+	{"name": "Маг Сэй", "base_dps": 40.0, "base_cost": 3500.0, "color": Color(0.72, 0.42, 1.0), "sprite": "res://assets/art/sei.png", "icon": "res://assets/art/sei_icon.png"},
 ]
 
 const RANKS := ["E", "D", "C"]
