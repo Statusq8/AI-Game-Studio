@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "0.5.0"
+const VERSION := "0.5.1"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -405,7 +405,7 @@ func _on_spot(i: int) -> void:
 		var pic := Control.new()
 		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		pic.set_anchors_preset(Control.PRESET_FULL_RECT)
-		pic.draw.connect(func() -> void: Zoo.draw_item(pic, kind, col, pic.size / 2 + Vector2(0, 10), 0.6))
+		pic.draw.connect(func() -> void: Zoo.draw_item(pic, kind, col, pic.size / 2 + Vector2(0, 40), 0.6, d))
 		b.add_child(pic)
 		b.pressed.connect(_build_task.bind(i, d))
 		row.add_child(b)
@@ -1458,7 +1458,7 @@ func _run_shots(dir: String) -> void:
 	Save.hearts = 3
 	Save.heart_at = Save.now() + 754
 	Save.stars = 6
-	Save.built = {2: 0}
+	Save.built = {2: 0, 3: 1, 4: 2}
 	_show_home()
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "1_home")

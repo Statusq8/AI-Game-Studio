@@ -60,9 +60,7 @@ func _draw() -> void:
 		if done.has(i):
 			var k: float = _pop.get(i, 1.0)
 			var off := Vector2(0, -(1.0 - k) * 220.0)
-			draw_set_transform(c + off, 0.0, Vector2.ONE * (0.6 + 0.4 * k))
-			draw_item(self, task.kind, Zones.DESIGNS[int(done[i])], Vector2.ZERO, 1.0)
-			draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			draw_item(self, task.kind, Zones.DESIGNS[int(done[i])], c + off, 0.6 + 0.4 * k, int(done[i]))
 		else:
 			var pulse := 1.0 + sin(_t * 3.0 + i) * 0.06
 			draw_circle(c + Vector2(0, 6), 46 * pulse, Color(0, 0, 0, 0.18))
@@ -99,7 +97,33 @@ static func draw_star(ci: CanvasItem, c: Vector2, r: float) -> void:
 
 
 ## Предметы ремонта (заглушки): k — масштаб.
-static func draw_item(ci: CanvasItem, kind: String, col: Color, o: Vector2, k: float) -> void:
+static var _tex := {}
+
+
+## ИИ-картинка предмета (assets/art/item_<kind>_<вариант>.png), если есть.
+static func item_tex(kind: String, variant: int) -> Texture2D:
+	var key := "%s_%d" % [kind, variant]
+	if not _tex.has(key):
+		var path := "res://assets/art/item_%s.png" % key
+		_tex[key] = load(path) if ResourceLoader.exists(path) else null
+	return _tex[key]
+
+
+const ITEM_SIZE := {"gate": 240.0, "booth": 190.0, "fence": 200.0, "lamp": 170.0, "flowers": 150.0}
+
+
+static func draw_item(ci: CanvasItem, kind: String, col: Color, o: Vector2, k: float, variant: int = -1) -> void:
+	if variant < 0:
+		variant = maxi(0, Zones.DESIGNS.find(col))
+	var t := item_tex(kind, variant)
+	if t:
+		var sz := t.get_size()
+		var box: float = ITEM_SIZE.get(kind, 180.0) * k
+		var sc := box / maxf(sz.x, sz.y)
+		ci.draw_set_transform(o + Vector2(0, -sz.y * sc * 0.35), 0.0, Vector2(sc, sc))
+		ci.draw_texture(t, -sz / 2)
+		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		return
 	var dark := col.darkened(0.35)
 	var light := col.lightened(0.3)
 	var sh := Color(0, 0, 0, 0.2)
