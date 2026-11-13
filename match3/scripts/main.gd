@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "0.9.1"
+const VERSION := "0.9.2"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -738,6 +738,10 @@ func _build_level_screen() -> void:
 	_level_screen.add_child(_panda)
 	_level_screen.move_child(_panda, _board_frame.get_index())
 	_board.combo_made.connect(_on_combo)
+	_board.shake.connect(func(a: float) -> void:
+		if Save.shake:
+			_shake = maxf(_shake, a)
+		Save.vibrate(40))
 	_level_screen.resized.connect(func() -> void:
 		_board_frame.position = _board_rest()
 		_panda.position = _panda_rest()
@@ -1788,8 +1792,16 @@ func _run_shots(dir: String) -> void:
 	await get_tree().create_timer(0.3).timeout
 	await _snap(dir, "4_specials")
 	_board.activate_single(Vector2i(1, 2))
-	await get_tree().create_timer(0.12).timeout
+	await get_tree().create_timer(0.2).timeout
 	await _snap(dir, "4b_rocket")
+	while _board.busy:
+		await get_tree().process_frame
+	var pg: Node2D = _board.gem_at(Vector2i(6, 2))
+	if pg:
+		pg.set_special(Gem.PROPELLER)
+		_board.activate_single(Vector2i(6, 2))
+		await get_tree().create_timer(0.45).timeout
+		await _snap(dir, "4f_butterfly")
 	while _board.busy:
 		await get_tree().process_frame
 	var bc := Vector2i(3, 2)

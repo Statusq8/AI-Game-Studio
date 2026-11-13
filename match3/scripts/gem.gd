@@ -91,7 +91,7 @@ func _draw() -> void:
 					# бабочка машет крыльями
 					var sz := t.get_size()
 					var k := box / maxf(sz.x, sz.y)
-					draw_set_transform(Vector2(0, sin(_t * 4.0) * 3.0), 0.0, Vector2(k * (0.8 + 0.2 * absf(sin(_t * 9.0))), k))
+					draw_set_transform(Vector2(0, sin(_t * 4.0) * 3.0), 0.0, Vector2(k * (0.55 + 0.45 * absf(sin(_t * 12.0))), k))
 					draw_texture(t, -sz / 2)
 					draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 				else:

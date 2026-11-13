@@ -21,9 +21,12 @@ signal goal_hit(kind: String, global_pos: Vector2)
 signal settled
 signal big_hit(power: float)
 signal combo_made(size: int)
+signal shake(amount: float)
 
 const Gem := preload("res://scripts/gem.gd")
 const CELL := 84.0
+const PROPELLER_TIME := 0.75  # полёт бабочки к цели
+const ROCKET_CELL_TIME := 0.045  # ракета пролетает клетку за столько секунд
 enum { B_NONE, B_CRATE, B_VASE, B_SAFE, B_JAR, B_CAGE, B_BALLOON, B_FLOWER, B_BUSH, B_SHELL }
 ## Препятствия-блоки: цель уровня, бьёт ли совпадение рядом, картинки по стадиям поломки.
 const BLOCKS := {
@@ -982,6 +985,7 @@ func _grow_grass(cells: Dictionary) -> void:
 func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 	var pending: Array = initial.keys()
 	var cleared := {}
+	var delay_of := {}  # клетка -> задержка исчезновения (ракета долетает не сразу)
 	var power := 0.0
 	var effects: Array = []
 	var flights: Array = []
@@ -1007,6 +1011,12 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 			queue_redraw()
 		if g.is_power():
 			var area := _area(g.special, c)
+			if g.special == Gem.ROCKET_H or g.special == Gem.ROCKET_V:
+				var base_d: float = delay_of.get(c, 0.0)
+				for a2 in area:
+					var d: float = base_d + Vector2(a2 - c).length() * ROCKET_CELL_TIME
+					if not delay_of.has(a2) or d < delay_of[a2]:
+						delay_of[a2] = d
 			if g.special == Gem.PROPELLER:
 				var target := _pick_target(cleared, area)
 				if target != Vector2i(-1, -1):
@@ -1022,8 +1032,8 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 	for e in effects:
 		match e.kind:
 			Gem.ROCKET_H, Gem.ROCKET_V:
-				_rocket_fx(e.cell, e.kind == Gem.ROCKET_V)
-				wait = maxf(wait, 0.22)
+				_rocket_fx(e.cell, e.kind == Gem.ROCKET_V, delay_of.get(e.cell, 0.0))
+				wait = maxf(wait, 0.05)
 			Gem.BOMB:
 				_bomb_fx(e.cell, 1.0)
 				wait = maxf(wait, 0.16)
@@ -1035,7 +1045,7 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 				await _chain_lightning(e.cell, orb_targets, color_at(orb_targets[0]) if not orb_targets.is_empty() else -1)
 	for f in flights:
 		_propeller_fx(f.from, f.to, f.color)
-		wait = maxf(wait, 0.38)
+		wait = maxf(wait, PROPELLER_TIME + 0.15)
 	if power > 0.0:
 		big_hit.emit(power)
 		await get_tree().create_timer(maxf(wait, 0.08)).timeout
@@ -1046,9 +1056,16 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 		var col: int = g.color
 		if col >= 0:
 			gem_cleared.emit(col, to_global(cell_pos(c)))
-		_pop_fx(c, col, 5 if cleared.size() <= 12 else 2)
+		var dl: float = delay_of.get(c, 0.0)
+		if dl > 0.0:
+			get_tree().create_timer(dl).timeout.connect(_pop_fx.bind(c, col, 3))
+		else:
+			_pop_fx(c, col, 5 if cleared.size() <= 12 else 2)
 		g.z_index = 3
 		var tw := create_tween().set_parallel(true)
+		if dl > 0.0:
+			tw.tween_interval(dl)
+			tw.chain()
 		tw.tween_property(g, "scale", Vector2(1.3, 1.3), 0.08).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		tw.tween_property(g, "modulate", Color(1.6, 1.6, 1.6), 0.08)
 		tw.chain().tween_property(g, "scale", Vector2(0.0, 0.0), 0.14).set_ease(Tween.EASE_IN)
@@ -1201,7 +1218,7 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 					k = Gem.ROCKET_H if rng.randf() < 0.5 else Gem.ROCKET_V
 				for a in _area(k, target):
 					area[a] = true
-		await get_tree().create_timer(0.4).timeout
+		await get_tree().create_timer(PROPELLER_TIME + 0.1).timeout
 		if carried != Gem.PROPELLER:
 			for t in targets:
 				if carried == Gem.BOMB:
@@ -1585,9 +1602,11 @@ func _sparkles(at: Vector2, color: Color, n: int) -> void:
 
 
 ## Ракета: две ракеты разлетаются в стороны с огненным следом, по линии бьёт молния.
-func _rocket_fx(cell: Vector2i, vertical: bool) -> void:
+func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 	if fx == null:
 		return
+	if delay > 0.0:
+		await get_tree().create_timer(delay).timeout
 	var c := cell_pos(cell)
 	var tex: Texture2D = Gem.tex("rocket")
 	for sgn in [-1.0, 1.0]:
@@ -1621,38 +1640,71 @@ func _rocket_fx(cell: Vector2i, vertical: bool) -> void:
 		r.add_child(trail)
 		trail.emitting = true
 		var t := r.create_tween()
-		t.tween_property(r, "position", fx.to_local(to_global(end)), 0.35).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		t.tween_property(r, "position", fx.to_local(to_global(end)), ROCKET_CELL_TIME * (H if vertical else W))
 		t.tween_callback(r.queue_free)
 	# молния вдоль линии
 	var a := Vector2(0, c.y) if not vertical else Vector2(c.x, 0)
 	var b := Vector2(W * CELL, c.y) if not vertical else Vector2(c.x, H * CELL)
-	_lightning(fx.to_local(to_global(a)), fx.to_local(to_global(b)), Color("#9fe8ff"), 10)
+	pass
 
 
+## Объёмная молния: широкое свечение, цветное тело, белая сердцевина, вспышки на изломах.
 func _lightning(a: Vector2, b: Vector2, color: Color, width: float) -> void:
-	for layer in 2:
+	var pts := PackedVector2Array()
+	var n := maxi(6, int(a.distance_to(b) / 26.0))
+	var nrm := (b - a).orthogonal().normalized()
+	for i in n + 1:
+		var p := a.lerp(b, float(i) / n)
+		if i > 0 and i < n:
+			p += nrm * randf_range(-16, 16)
+		pts.append(p)
+	var w := width * 2.2
+	var layers := [[w * 2.6, Color(color, 0.28)], [w * 1.5, Color(color, 0.6)], [w, color], [w * 0.45, Color(1, 1, 1, 0.95)]]
+	for L in layers:
 		var line := Line2D.new()
-		var pts := PackedVector2Array()
-		var n := 14
-		var nrm := (b - a).orthogonal().normalized()
-		for i in n + 1:
-			var p := a.lerp(b, float(i) / n)
-			if i > 0 and i < n:
-				p += nrm * randf_range(-14, 14)
-			pts.append(p)
 		line.points = pts
-		line.width = width if layer == 0 else width * 0.35
-		line.default_color = color if layer == 0 else Color.WHITE
+		line.width = L[0]
+		line.default_color = L[1]
 		line.joint_mode = Line2D.LINE_JOINT_ROUND
+		line.begin_cap_mode = Line2D.LINE_CAP_ROUND
+		line.end_cap_mode = Line2D.LINE_CAP_ROUND
 		line.z_index = 4
 		fx.add_child(line)
 		var t := line.create_tween()
-		t.tween_property(line, "modulate:a", 0.0, 0.3).set_delay(0.06)
+		t.tween_property(line, "width", float(L[0]) * 0.3, 0.32).set_delay(0.05)
+		t.parallel().tween_property(line, "modulate:a", 0.0, 0.32).set_delay(0.05)
 		t.tween_callback(line.queue_free)
+	# светящиеся «узлы» на концах
+	for p in [a, b]:
+		var dot := Node2D.new()
+		dot.position = p
+		dot.z_index = 5
+		dot.draw.connect(func() -> void:
+			dot.draw_circle(Vector2.ZERO, w * 1.6, Color(color, 0.35))
+			dot.draw_circle(Vector2.ZERO, w * 0.8, Color(1, 1, 1, 0.9)))
+		fx.add_child(dot)
+		var dt := dot.create_tween()
+		dt.tween_property(dot, "scale", Vector2(0.2, 0.2), 0.3)
+		dt.parallel().tween_property(dot, "modulate:a", 0.0, 0.3)
+		dt.tween_callback(dot.queue_free)
 
 
 ## Бомба: вспышка, ударная волна, огонь и обломки.
 func _bomb_fx(cell: Vector2i, power: float) -> void:
+	shake.emit(16.0 * power)
+	# ударная волна отталкивает фишки вокруг
+	for dx in range(-3, 4):
+		for dy in range(-3, 4):
+			var c := cell + Vector2i(dx, dy)
+			var g := gem_at(c)
+			if g == null or (dx == 0 and dy == 0):
+				continue
+			var dir := Vector2(dx, dy).normalized()
+			var dist := Vector2(dx, dy).length()
+			var base := cell_pos(c)
+			var t := create_tween()
+			t.tween_property(g, "position", base + dir * 14.0 / dist, 0.06).set_ease(Tween.EASE_OUT)
+			t.tween_property(g, "position", base, 0.2).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 	if fx == null:
 		return
 	var at := fx.to_local(to_global(cell_pos(cell)))
@@ -1700,18 +1752,27 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int) -> void:
 	var p: Node2D = Gem.new()
 	p.color = col
 	p.size = CELL
+	p.z_index = 6
 	fx.add_child(p)
 	p.set_special(Gem.PROPELLER)
 	var a := fx.to_local(to_global(cell_pos(from)))
 	var b := fx.to_local(to_global(cell_pos(to)))
 	p.position = a
-	var mid := (a + b) / 2 + Vector2(0, -CELL * 1.5)
+	var up := Vector2(0, -CELL * 1.8)
+	var side := (b - a).orthogonal().normalized() * CELL * 0.6
+	var c1 := a + up + side
+	var c2 := b + up * 0.6 - side
 	var tw := p.create_tween()
+	tw.tween_property(p, "scale", Vector2(1.25, 1.25), 0.12).set_trans(Tween.TRANS_BACK)
 	tw.tween_method(func(t: float) -> void:
-		p.position = a.lerp(mid, t).lerp(mid.lerp(b, t), t), 0.0, 1.0, 0.36)
-	tw.parallel().tween_property(p, "scale", Vector2(1.3, 1.3), 0.18)
-	tw.tween_callback(func() -> void: _burst(cell_pos(to), Color("#ffe14d"), 14))
-	tw.tween_property(p, "modulate:a", 0.0, 0.1)
+		var q := a.bezier_interpolate(c1, c2, b, t)
+		p.rotation = sin(t * TAU * 2.0) * 0.18
+		p.position = q + Vector2(0, sin(t * TAU * 3.0) * 6.0), 0.0, 1.0, PROPELLER_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_callback(func() -> void:
+		_burst(cell_pos(to), Color("#ffe14d"), 16)
+		_sparkles(b, Color("#ffb020"), 5))
+	tw.tween_property(p, "scale", Vector2(0.2, 0.2), 0.12)
+	tw.parallel().tween_property(p, "modulate:a", 0.0, 0.12)
 	tw.tween_callback(p.queue_free)
 
 
