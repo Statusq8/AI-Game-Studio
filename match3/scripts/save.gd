@@ -18,6 +18,7 @@ var stars := 0
 var zone := 0
 var built := {}  # индекс задания текущей зоны -> вариант дизайна
 var streak := 0
+var seen_tips: Array = []
 var hearts := MAX_HEARTS
 var heart_at := 0.0
 ## Бустеры: на уровне (молот, ряд, столбец, перемешать) и до уровня (ракета, бомба, шар).
@@ -39,6 +40,9 @@ func _ready() -> void:
 		stars = maxi(0, int(data.get("stars", 0)))
 		zone = maxi(0, int(data.get("zone", 0)))
 		streak = maxi(0, int(data.get("streak", 0)))
+		var st: Variant = data.get("seen_tips", [])
+		if st is Array:
+			seen_tips = st
 		var bl: Variant = data.get("built", {})
 		if bl is Dictionary:
 			for k in bl:
@@ -55,7 +59,7 @@ func _ready() -> void:
 func store() -> void:
 	var f := FileAccess.open(PATH, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"level": level, "coins": coins, "sound": sound, "hearts": hearts, "heart_at": heart_at, "boosters": boosters, "music": music, "vibration": vibration, "shake": shake, "particles": particles, "stars": stars, "zone": zone, "built": built, "streak": streak}))
+		f.store_string(JSON.stringify({"level": level, "coins": coins, "sound": sound, "hearts": hearts, "heart_at": heart_at, "boosters": boosters, "music": music, "vibration": vibration, "shake": shake, "particles": particles, "stars": stars, "zone": zone, "built": built, "streak": streak, "seen_tips": seen_tips}))
 	changed.emit()
 
 

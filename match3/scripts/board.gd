@@ -30,7 +30,7 @@ const CELL := 84.0
 const PROPELLER_TIME := 1.5  # полёт бабочки к цели
 const PROPELLER_DELAY := 0.25  # сначала взрываются соседи, потом бабочка взлетает
 const ROCKET_CELL_TIME := 0.045  # ракета пролетает клетку за столько секунд
-enum { B_NONE, B_CRATE, B_VASE, B_SAFE, B_JAR, B_CAGE, B_BALLOON, B_FLOWER, B_BUSH, B_SHELL }
+enum { B_NONE, B_CRATE, B_VASE, B_SAFE, B_JAR, B_CAGE, B_BALLOON, B_FLOWER, B_BUSH, B_SHELL, B_STONE, B_COLORBOX, B_BIRDHOUSE }
 ## Препятствия-блоки: цель уровня, бьёт ли совпадение рядом, картинки по стадиям поломки.
 const BLOCKS := {
 	B_CRATE: {"goal": "crate", "adj": true, "tex": ["ob_crate_0", "ob_crate_1", "ob_crate_2"], "fx": Color("#c98a4b")},
@@ -42,6 +42,10 @@ const BLOCKS := {
 	B_FLOWER: {"goal": "flower", "adj": true, "tex": ["ob_flower_0", "ob_flower_1"], "fx": Color("#ff6bb0")},
 	B_BUSH: {"goal": "bush", "adj": true, "tex": ["ob_bush"], "fx": Color("#4cc81e")},
 	B_SHELL: {"goal": "shell", "adj": true, "tex": ["ob_shell_0", "ob_shell_1"], "fx": Color("#ff6bb0")},
+	# камень — только усилителями; цветной ящик — совпадением своего цвета; скворечник выпускает птиц
+	B_STONE: {"goal": "stone", "adj": false, "tex": ["ob_stone"], "fx": Color("#9aa3b5")},
+	B_COLORBOX: {"goal": "colorbox", "adj": true, "tex": [], "fx": Color("#ffffff")},
+	B_BIRDHOUSE: {"goal": "birdhouse", "adj": true, "tex": ["ob_birdhouse"], "fx": Color("#c98a4b")},
 }
 
 var W := 8
@@ -51,6 +55,7 @@ var tiles: Array = []        # tiles[x][y] -> Gem | null
 var block_kind: Array = []   # B_NONE / B_CRATE / B_VASE
 var block_hp: Array = []
 var block_max: Array = []
+var block_color: Array = []  # цвет цветного ящика
 var ice: Array = []          # слой льда под фишкой
 var hole: Array = []         # дыра в фигурном поле (клетки нет)
 var honey: Array = []        # мёд на фишке (растекается)
@@ -95,6 +100,7 @@ func setup(level: Dictionary) -> void:
 	block_kind = []
 	block_hp = []
 	block_max = []
+	block_color = []
 	ice = []
 	hole = []
 	honey = []
@@ -106,6 +112,7 @@ func setup(level: Dictionary) -> void:
 		block_kind.append([])
 		block_hp.append([])
 		block_max.append([])
+		block_color.append([])
 		ice.append([])
 		hole.append([])
 		honey.append([])
@@ -119,6 +126,7 @@ func setup(level: Dictionary) -> void:
 			block_kind[x].append(int(b.get("kind", B_NONE)))
 			block_hp[x].append(int(b.get("hp", 0)))
 			block_max[x].append(int(b.get("hp", 0)))
+			block_color[x].append(int(b.get("color", -1)))
 			ice[x].append(int(level.get("ice", {}).get(c, 0)))
 			hole[x].append(c in level.get("holes", []))
 			honey[x].append(c in level.get("honey", []))
@@ -217,16 +225,72 @@ func _draw_block(n: Node2D, cell: Vector2i) -> void:
 			n.draw_circle(Vector2(CELL * 0.3, CELL * 0.3), 13, Color("#2b2350"))
 			n.draw_string(f, Vector2(CELL * 0.3 - 6, CELL * 0.3 + 7), str(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
 		return
-	if kind == B_VASE:
-		draw_vase(n, Vector2.ZERO, CELL * 0.44, hp)
-	else:
-		draw_crate(n, Vector2.ZERO, CELL * 0.46, hp)
+	match kind:
+		B_VASE:
+			draw_vase(n, Vector2.ZERO, CELL * 0.44, hp)
+		B_STONE:
+			draw_stone(n, Vector2.ZERO, CELL * 0.45, hp)
+		B_COLORBOX:
+			draw_colorbox(n, Vector2.ZERO, CELL * 0.46, block_color[cell.x][cell.y])
+		B_BIRDHOUSE:
+			draw_birdhouse(n, Vector2.ZERO, CELL * 0.46, hp)
+		_:
+			draw_crate(n, Vector2.ZERO, CELL * 0.46, hp)
+
+
+## Заглушки до ИИ-картинок: камень, цветной ящик, скворечник.
+static func draw_stone(n: CanvasItem, o: Vector2, s: float, hp: int) -> void:
+	var pts := PackedVector2Array()
+	for i in 10:
+		var a := TAU * i / 10.0
+		pts.append(o + Vector2(cos(a), sin(a) * 0.85) * s * (0.92 + 0.08 * sin(i * 2.3)))
+	var sh := PackedVector2Array()
+	for p in pts:
+		sh.append(p + Vector2(0, 5))
+	n.draw_colored_polygon(sh, Color(0, 0, 0, 0.3))
+	n.draw_colored_polygon(pts, Color("#6f7787"))
+	var top := PackedVector2Array()
+	for p in pts:
+		top.append(o + (p - o) * 0.82 + Vector2(-2, -4))
+	n.draw_colored_polygon(top, Color("#a3abbb"))
+	n.draw_circle(o + Vector2(-s * 0.35, -s * 0.35), s * 0.14, Color(1, 1, 1, 0.5))
+	for i in 3 - hp:
+		n.draw_line(o + Vector2(-s * 0.5 + i * 18, -s * 0.2), o + Vector2(-s * 0.1 + i * 18, s * 0.4), Color("#3a4050"), 4.0)
+
+
+static func draw_colorbox(n: CanvasItem, o: Vector2, s: float, col: int) -> void:
+	var c: Color = Gem.COLORS[clampi(col, 0, Gem.COLORS.size() - 1)]
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = c.darkened(0.35)
+	sb.set_corner_radius_all(12)
+	n.draw_style_box(sb, Rect2(o - Vector2(s, s) + Vector2(0, 4), Vector2(s, s) * 2))
+	sb.bg_color = c
+	n.draw_style_box(sb, Rect2(o - Vector2(s, s), Vector2(s, s) * 2 - Vector2(0, 4)))
+	sb.bg_color = c.lightened(0.35)
+	n.draw_style_box(sb, Rect2(o - Vector2(s, s) * 0.62, Vector2(s, s) * 1.24))
+	var t := Gem.tex("gem_%d" % col)
+	if t:
+		n.draw_texture_rect(t, Rect2(o - Vector2(s, s) * 0.55, Vector2(s, s) * 1.1), false)
+	n.draw_rect(Rect2(o - Vector2(s, s), Vector2(s, s) * 2 - Vector2(0, 4)), Color("#ffcf3a"), false, 3.0)
+
+
+static func draw_birdhouse(n: CanvasItem, o: Vector2, s: float, hp: int) -> void:
+	n.draw_rect(Rect2(o + Vector2(-s * 0.75, -s * 0.2), Vector2(s * 1.5, s * 1.15)), Color("#c98a4b"))
+	n.draw_rect(Rect2(o + Vector2(-s * 0.75, -s * 0.2), Vector2(s * 1.5, s * 0.12)), Color("#8a5326"))
+	n.draw_colored_polygon(PackedVector2Array([o + Vector2(-s, -s * 0.15), o + Vector2(0, -s), o + Vector2(s, -s * 0.15)]), Color("#e0563a"))
+	n.draw_circle(o + Vector2(0, s * 0.3), s * 0.28, Color("#3a2410"))
+	n.draw_rect(Rect2(o + Vector2(-s * 0.1, s * 0.62), Vector2(s * 0.2, s * 0.1)), Color("#8a5326"))
+	var f: Font = ThemeDB.fallback_font
+	n.draw_circle(o + Vector2(s * 0.65, s * 0.7), 12, Color("#2b2350"))
+	n.draw_string(f, o + Vector2(s * 0.65 - 6, s * 0.7 + 7), str(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
 
 
 static func block_tex(kind: int, stage: int) -> Texture2D:
 	if not BLOCKS.has(kind):
 		return null
 	var names: Array = BLOCKS[kind].tex
+	if names.is_empty():
+		return null
 	return Gem.tex(names[clampi(stage, 0, names.size() - 1)])
 
 
@@ -841,11 +905,14 @@ func _cascade(prefer: Array) -> void:
 			if kind != Gem.NONE:
 				var at := _creation_cell(g, prefer, kind)
 				creations.append({"cell": at, "kind": kind, "color": color_at(at)})
-		# ящики рядом с совпадениями получают удар
+		# ящики рядом с совпадениями получают удар (цветной ящик — только от своего цвета)
 		for c: Vector2i in to_clear:
+			var mc := color_at(c)
 			for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 				var n: Vector2i = c + d
 				if inside(n) and block_kind[n.x][n.y] != B_NONE and BLOCKS[block_kind[n.x][n.y]].adj:
+					if block_kind[n.x][n.y] == B_COLORBOX and block_color[n.x][n.y] != mc:
+						continue
 					_hit_block(n)
 		if wave >= 2:
 			combo_made.emit(wave)
@@ -864,6 +931,12 @@ func _cascade(prefer: Array) -> void:
 		if not _honey_hit:
 			_spread_honey()
 	_honey_hit = false
+	# страховка: если что-то разрушилось с задержкой и осталась пустая клетка — досыпаем фишки
+	if holes() > 0:
+		await _gravity()
+		if not find_groups().is_empty():
+			await _cascade([])
+			return
 	if find_move().is_empty():
 		await _shuffle()
 	busy = false
@@ -895,9 +968,6 @@ func holes() -> int:
 	var n := 0
 	for x in W:
 		for y in H:
-			var bg := gem_at(Vector2i(x, y))
-			if bg and bg.special == Gem.NONE and bg.color < 0:
-				push_error("BADGEM at %s" % Vector2i(x, y))
 			if _fillable(Vector2i(x, y)) and gem_at(Vector2i(x, y)) == null:
 				n += 1
 	return n
@@ -964,11 +1034,45 @@ func _hit_block(c: Vector2i) -> void:
 			tw.tween_property(n, "modulate:a", 0.0, 0.15)
 			tw.chain().tween_callback(n.queue_free)
 		goal_hit.emit(BLOCKS[kind].goal if BLOCKS.has(kind) else "crate", to_global(cell_pos(c)))
+		_on_block_destroyed(kind, c)
 	elif n:
 		n.queue_redraw()
 		var tw := create_tween()
 		tw.tween_property(n, "scale", Vector2(1.12, 0.9), 0.06)
 		tw.tween_property(n, "scale", Vector2.ONE, 0.1)
+
+
+## Особое поведение после разрушения: куст и горшок раскидывают газон, скворечник выпускает птиц.
+func _on_block_destroyed(kind: int, c: Vector2i) -> void:
+	var has_grass_goal := false
+	for x in W:
+		for y in H:
+			if grass_target[x][y]:
+				has_grass_goal = true
+	if has_grass_goal and (kind == B_BUSH or kind == B_VASE):
+		var r := 2 if kind == B_BUSH else 1
+		var area := {}
+		for dx in range(-r, r + 1):
+			for dy in range(-r, r + 1):
+				if r == 2 and absi(dx) == 2 and absi(dy) == 2:
+					continue
+				area[c + Vector2i(dx, dy)] = true
+		_grow_grass(area)
+	if kind == B_BIRDHOUSE:
+		var pool: Array = []
+		for x in W:
+			for y in mini(4, H):
+				var g := gem_at(Vector2i(x, y))
+				if g and g.special == Gem.NONE and not _chained(Vector2i(x, y)):
+					pool.append(g)
+		pool.shuffle()
+		for i in mini(3, pool.size()):
+			var g: Node2D = pool[i]
+			g.set_special(Gem.ITEM)
+			g.scale = Vector2(0.2, 0.2)
+			create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT).tween_property(g, "scale", Vector2.ONE, 0.35)
+			if fx:
+				_sparkles(fx.to_local(to_global(g.position)), Color("#7fd0ff"), 4)
 
 
 func _break_chain(c: Vector2i) -> void:
@@ -1081,9 +1185,10 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 		special_fired.emit()
 		await get_tree().create_timer(maxf(wait, 0.08)).timeout
 	var last: Tween = null
+	# ждём самое позднее событие: и фишки, и препятствия, до которых долетает бабочка/ракета
 	var max_dl := 0.0
-	for c: Vector2i in cleared:
-		max_dl = maxf(max_dl, float(delay_of.get(c, 0.0)))
+	for c: Vector2i in delay_of:
+		max_dl = maxf(max_dl, float(delay_of[c]))
 	for c: Vector2i in cleared:
 		var g := gem_at(c)
 		tiles[c.x][c.y] = null

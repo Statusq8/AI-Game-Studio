@@ -29,28 +29,65 @@ const SHAPES := [
 	# зубцы сверху (как башня)
 	[Vector2i(1, 0), Vector2i(3, 0), Vector2i(5, 0), Vector2i(7, 0)],
 ]
-const OBSTACLES := ["crate", "grass", "item", "chain", "vase", "ice", "honey", "jar", "flower", "cage", "bush", "shell", "safe"]
+## Прогрессия по зонам (разбор жанра, раздел 11): каждая зона добавляет свои препятствия к прежним.
+const ZONE_POOLS := [
+	[1, ["crate", "grass", "vase"]],                   # 1–50 Вход в зоопарк
+	[51, ["chain", "bush", "flower"]],                 # 51–100 Тропические джунгли
+	[101, ["shell", "item"]],                          # 101–150 Озёрная зона
+	[151, ["ice", "stone"]],                           # 151–200 Ледяной вольер
+	[201, ["honey", "cage"]],                          # 201–275 Сафари
+	[276, ["birdhouse", "jar"]],                       # 276–375 Волшебный сад
+	[376, ["safe", "colorbox"]],                       # 376–500 Королевский зоопарк
+]
+const ZONE_NAMES := ["Вход в зоопарк", "Тропические джунгли", "Озёрная зона", "Ледяной вольер", "Сафари", "Волшебный сад", "Королевский зоопарк"]
+
+
+static func pool_for(n: int) -> Array:
+	var out: Array = []
+	for z in ZONE_POOLS:
+		if n >= z[0]:
+			out.append_array(z[1])
+	return out
+
+
+static func zone_of(n: int) -> int:
+	var z := 0
+	for i in ZONE_POOLS.size():
+		if n >= ZONE_POOLS[i][0]:
+			z = i
+	return z
+
+
+const OBSTACLES := ["crate", "grass", "vase", "chain", "bush", "flower", "shell", "item", "ice", "stone", "honey", "cage", "birdhouse", "jar", "safe", "colorbox"]
 ## Блоки на поле: номер вида (как в board.gd) и прочность.
-const BLOCK := {"crate": [1, 1], "vase": [2, 1], "safe": [3, 3], "jar": [4, 1], "cage": [5, 2], "balloon": [6, 1], "flower": [7, 2], "bush": [8, 2], "shell": [9, 2]}
+const BLOCK := {"crate": [1, 1], "vase": [2, 2], "safe": [3, 5], "jar": [4, 1], "cage": [5, 2], "balloon": [6, 1], "flower": [7, 2], "bush": [8, 2], "shell": [9, 2],
+	"stone": [10, 3], "colorbox": [11, 1], "birdhouse": [12, 3]}
 
 
 static func make(n: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = n * 7919 + 17
 	var lv := {
-		"n": n, "colors": 5, "moves": clampi(26 - n / 6, 18, 26), "goals": [],
+		"n": n, "colors": 5, "moves": clampi(26 - n / 15, 20, 26), "goals": [],
 		"blocks": {}, "chains": {}, "grass_start": [], "grass_target": [], "items": 0, "ice": {}, "honey": [],
 	}
 
 	var kinds: Array = []
 	# новые препятствия открываются постепенно: к 31-му уровню — все 14
-	var unlocked := clampi(5 + (n - 4) / 3, 5, OBSTACLES.size())
+	var pool := pool_for(n)
+	# новое препятствие зоны — на первых уровнях зоны чаще
+	var zstart: int = ZONE_POOLS[zone_of(n)][0]
+	var fresh: Array = ZONE_POOLS[zone_of(n)][1]
 	if n >= 4:
-		kinds.append(OBSTACLES[(n - 4) % unlocked])
+		if n - zstart < 12 and zstart > 1:
+			kinds.append(fresh[(n - zstart) % fresh.size()])
+		else:
+			kinds.append(pool[(n * 5 + 3) % pool.size()])
 	if n >= 14 and n % 3 == 0:
-		var extra: String = OBSTACLES[(n + 1) % unlocked]
+		var extra: String = pool[(n * 7 + 1) % pool.size()]
 		if extra not in kinds:
 			kinds.append(extra)
+	lv["zone"] = zone_of(n)
 
 	var color_goals := 1 if n <= 2 else 2
 	if n >= 15 and kinds.is_empty():
@@ -63,7 +100,8 @@ static func make(n: int) -> Dictionary:
 		if c not in picked:
 			picked.append(c)
 	for c in picked:
-		var amount := mini(10 + n + rng.randi_range(0, 3), 16 + n / 4)
+		# количество фишек в цели растёт до 26 и дальше не увеличивается
+		var amount := mini(10 + mini(n, 40) / 2 + rng.randi_range(0, 4), 26)
 		if color_goals == 3:
 			amount = int(amount * 0.8)
 		lv.goals.append({"kind": "color", "color": c, "left": amount})
@@ -89,9 +127,9 @@ static func make(n: int) -> Dictionary:
 
 static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumberGenerator) -> void:
 	match kind:
-		"crate", "vase", "safe", "jar", "cage", "balloon", "flower", "bush", "shell":
+		"crate", "vase", "safe", "jar", "cage", "balloon", "flower", "bush", "shell", "stone", "colorbox", "birdhouse":
 			var info: Array = BLOCK[kind]
-			var width := mini(4 + n / 10, W) if kind in ["crate", "vase", "balloon"] else mini(3 + n / 15, 6)
+			var width := mini(4 + n / 30, 6) if kind in ["crate", "vase", "balloon"] else (3 if kind in ["stone", "safe"] else mini(3 + n / 60, 5))
 			var x0 := (W - width) / 2
 			var count := 0
 			for x in range(x0, x0 + width):
@@ -103,10 +141,18 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 					hp = rng.randi_range(1, 3)
 				elif kind == "vase" and n >= 12 and rng.randf() < 0.4:
 					hp = 2
-				lv.blocks[c] = {"kind": info[0], "hp": hp}
+				lv.blocks[c] = {"kind": info[0], "hp": hp, "color": rng.randi_range(0, lv.colors - 1)}
 				count += 1
-			lv.goals.append({"kind": kind, "left": count})
-			lv.moves += 8 if kind in ["vase", "safe"] else 5
+				if kind == "birdhouse" and count >= 2:
+					break
+			if kind == "birdhouse":
+				lv["birdhouse"] = true
+				# цель — птицы: каждый скворечник выпускает 3 птицы, их надо спустить вниз
+				lv.goals.append({"kind": "item", "left": count * 3})
+				lv.moves += 10
+			else:
+				lv.goals.append({"kind": kind, "left": count})
+				lv.moves += 10 if kind in ["safe", "stone"] else (8 if kind == "vase" else 5)
 		"ice":
 			var count := 0
 			for y in range(H - 3, H):
@@ -171,7 +217,7 @@ static func _cut_holes(lv: Dictionary, holes: Array) -> void:
 		lv.honey.erase(c)
 		lv.grass_target.erase(c)
 		lv.grass_start.erase(c)
-	var block_goal := {1: "crate", 2: "vase", 3: "safe", 4: "jar", 5: "cage", 6: "balloon", 7: "flower", 8: "bush", 9: "shell"}
+	var block_goal := {1: "crate", 2: "vase", 3: "safe", 4: "jar", 5: "cage", 6: "balloon", 7: "flower", 8: "bush", 9: "shell", 10: "stone", 11: "colorbox"}
 	for g in lv.goals:
 		match g.kind:
 			"chain":

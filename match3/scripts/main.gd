@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.2.3"
+const VERSION := "1.3.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1347,6 +1347,10 @@ func _start_level(n: int) -> void:
 	var bonus := [1, 3, 4]
 	for i in mini(Save.streak, 3):
 		_board.spawn_specials(1, bonus[i])
+	# супер-бонус: 10 побед подряд — ещё один радужный шар и бабочка
+	if Save.streak >= 10:
+		_board.spawn_specials(1, 4)
+		_board.spawn_specials(1, 5)
 	_pre_selected.clear()
 	_refresh_boosters()
 	_layout_bar()
@@ -1389,6 +1393,29 @@ func _build_goals() -> void:
 
 
 func _draw_goal_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
+	match kind:
+		"stone":
+			if Gem.tex("ob_stone") == null:
+				Board.draw_stone(ci, c, 24.0, 3)
+				return
+		"colorbox":
+			Board.draw_colorbox(ci, c, 24.0, 0)
+			return
+		"birdhouse":
+			if Gem.tex("ob_birdhouse") == null:
+				Board.draw_birdhouse(ci, c, 24.0, 3)
+				return
+		"item":
+			var et := Gem.tex("ob_item")
+			if et == null:
+				var g := Gem.new()
+				g.size = 60.0
+				g.position = c
+				# рисуем яйцо-заглушку прямо в ci
+				ci.draw_circle(c + Vector2(0, 3), 20, Color("#c98a12"))
+				ci.draw_circle(c, 18, Color("#ffd23f"))
+				g.free()
+				return
 	if GOAL_TEX.has(kind):
 		var t: Texture2D = Gem.tex(GOAL_TEX[kind])
 		if t:
@@ -1429,6 +1456,56 @@ func _intro_banner() -> void:
 	await get_tree().create_timer(1.0).timeout
 	if _state == "play":
 		_board.input_enabled = true
+		_show_tip()
+
+
+const TIPS := {
+	"crate": "Ящик ломается, когда рядом собираешь фишки. Бывает в несколько слоёв.",
+	"grass": "Собирай фишки на газоне — газон расползается на соседние клетки. Покрой газоном все земляные клетки!",
+	"vase": "Горшок трескается от совпадений рядом. Разбитый горшок раскидывает газон вокруг.",
+	"chain": "Лианы держат фишку — её нельзя двигать. Собери её в ряд или взорви, чтобы освободить.",
+	"bush": "Куст ломается от совпадений рядом и раскидывает много газона вокруг.",
+	"flower": "Сначала бутон распускается, потом цветок собирается. Собирай фишки рядом.",
+	"shell": "Ракушка открывается от совпадений рядом, второй удар забирает жемчужину.",
+	"item": "Доведи золотые яйца и птиц до самого низа поля — убирай фишки под ними.",
+	"ice": "Лёд под фишками. Убери фишку над льдом — лёд растает.",
+	"stone": "Камень не боится обычных совпадений! Разбей его ракетой, бомбой, бабочкой или шаром.",
+	"honey": "Мёд склеивает фишку и растекается, если его не трогать. Собирай фишки под мёдом каждый ход!",
+	"cage": "В клетке птичка. Собирай фишки рядом, чтобы открыть клетку.",
+	"jar": "Разбей банку — получишь монеты!",
+	"safe": "Сейф прочный: нужно много ударов рядом или бустерами.",
+	"colorbox": "Цветной ящик ломается только от совпадения своего цвета рядом (или от бустеров).",
+	"birdhouse": "Скворечник: собирай фишки рядом. Сломаешь — вылетят 3 птицы, доведи их до низа!",
+	"honey_more": "",
+}
+
+
+## Подсказка при первом появлении препятствия (запоминается, показывается один раз).
+func _show_tip() -> void:
+	if _bot:
+		return
+	var seen: Array = Save.seen_tips
+	for g in _level.goals:
+		var k: String = g.kind
+		if _level.get("birdhouse", false) and k == "item":
+			k = "birdhouse"
+		if TIPS.has(k) and TIPS[k] != "" and k not in seen:
+			seen.append(k)
+			Save.seen_tips = seen
+			Save.store()
+			_board.input_enabled = false
+			var v := _dialog("Новое: " + GOAL_NAMES.get(k, k), [TIPS[k]], [["Понятно", "GreenButton", func() -> void:
+				_clear_overlay()
+				_board.input_enabled = true]])
+			var ic := Control.new()
+			ic.custom_minimum_size = Vector2(0, 110)
+			ic.draw.connect(func() -> void:
+				ic.draw_set_transform(Vector2(ic.size.x / 2, 55), 0.0, Vector2(1.7, 1.7))
+				_draw_goal_icon(ic, k, Vector2.ZERO)
+				ic.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE))
+			v.add_child(ic)
+			v.move_child(ic, 0)
+			return
 
 
 func _banner(l: Label) -> void:
@@ -1553,7 +1630,7 @@ func _on_gem_cleared(color: int, at: Vector2) -> void:
 			return
 
 
-const GOAL_NAMES := {"color": "фишки", "crate": "ящики", "vase": "горшки", "chain": "лианы", "grass": "газон", "item": "яйца",
+const GOAL_NAMES := {"stone": "камни", "colorbox": "цветные ящики", "birdhouse": "скворечник", "color": "фишки", "crate": "ящики", "vase": "горшки", "chain": "лианы", "grass": "газон", "item": "яйца",
 	"ice": "лёд", "honey": "мёд", "safe": "сейфы", "jar": "банки", "cage": "клетки", "balloon": "шарики", "flower": "цветы", "bush": "кусты", "shell": "ракушки"}
 const GOAL_TEX := {"crate": "ob_crate_0", "vase": "ob_pot_0", "chain": "ob_vines", "grass": "ob_tile_grass", "ice": "ob_tile_ice",
 	"honey": "ob_honey", "safe": "ob_safe", "jar": "ob_jar", "cage": "ob_cage", "balloon": "ob_balloon", "flower": "ob_flower_0", "bush": "ob_bush", "shell": "ob_shell_0"}
@@ -2316,7 +2393,7 @@ func _run_shots(dir: String) -> void:
 	await _snap(dir, "1d_settings")
 	_clear_overlay()
 	# уровни с разными препятствиями: 4 ящики, 5 трава, 6 предметы, 7 цепи, 8 вазы
-	for n in [9, 23, 26, 27]:
+	for n in [152, 278, 377]:
 		_start_level(n)
 		await get_tree().create_timer(1.6).timeout
 		await _snap(dir, "2_level_%d" % n)
