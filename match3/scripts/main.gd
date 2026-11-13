@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "0.6.1"
+const VERSION := "0.6.2"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -41,6 +41,7 @@ var _ui_tick := 0.0
 var _board: Board
 var _home_panda: Control
 var _panda: Control
+var _portrait_node: Control
 var _booster_bar: HBoxContainer
 var _booster_btns := {}
 var _aiming := ""
@@ -637,51 +638,37 @@ func _build_level_screen() -> void:
 	col.add_theme_constant_override("separation", 10)
 	top.add_child(col)
 
-	var row1 := HBoxContainer.new()
-	col.add_child(row1)
-	_level_label = Label.new()
-	_level_label.theme_type_variation = "TitleLabel"
-	_level_label.add_theme_font_size_override("font_size", 34)
-	_level_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row1.add_child(_level_label)
-	var menu := Button.new()
-	menu.text = "II"
-	menu.theme_type_variation = "PurpleButton"
-	menu.custom_minimum_size = Vector2(84, 76)
-	menu.pressed.connect(_show_pause)
-	row1.add_child(menu)
-
-	var hud := PanelContainer.new()
-	hud.theme_type_variation = "HudPanel"
+	# объёмная шапка: «Цель» слева, портрет панды в арке по центру, «Ходы» справа
+	var hud := HBoxContainer.new()
+	hud.add_theme_constant_override("separation", 10)
+	hud.alignment = BoxContainer.ALIGNMENT_CENTER
 	col.add_child(hud)
-	var hrow := HBoxContainer.new()
-	hrow.add_theme_constant_override("separation", 14)
-	hud.add_child(hrow)
-	var moves_box := VBoxContainer.new()
-	moves_box.custom_minimum_size = Vector2(150, 0)
-	moves_box.add_theme_constant_override("separation", -6)
-	hrow.add_child(moves_box)
-	var ml := Label.new()
-	ml.text = "ХОДЫ"
-	ml.add_theme_font_size_override("font_size", 22)
-	ml.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	moves_box.add_child(ml)
-	_moves_label = Label.new()
-	_moves_label.theme_type_variation = "TitleLabel"
-	_moves_label.add_theme_font_size_override("font_size", 64)
-	_moves_label.add_theme_constant_override("outline_size", 10)
-	_moves_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_moves_label.pivot_offset = Vector2(75, 40)
-	moves_box.add_child(_moves_label)
-	var sep := ColorRect.new()
-	sep.color = Color(1, 1, 1, 0.3)
-	sep.custom_minimum_size = Vector2(3, 0)
-	hrow.add_child(sep)
+	var goal_card := _hud_card("Цель")
+	goal_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hud.add_child(goal_card)
 	_goals_box = HBoxContainer.new()
 	_goals_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	_goals_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_goals_box.add_theme_constant_override("separation", 12)
-	hrow.add_child(_goals_box)
+	_goals_box.add_theme_constant_override("separation", 4)
+	goal_card.get_node("Body").add_child(_goals_box)
+	_portrait_node = _portrait()
+	hud.add_child(_portrait_node)
+	var moves_card := _hud_card("Ходы")
+	moves_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hud.add_child(moves_card)
+	_moves_label = Label.new()
+	_moves_label.theme_type_variation = "TitleLabel"
+	_moves_label.add_theme_font_size_override("font_size", 66)
+	_moves_label.add_theme_constant_override("outline_size", 12)
+	_moves_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_moves_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_moves_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_moves_label.pivot_offset = Vector2(90, 45)
+	moves_card.get_node("Body").add_child(_moves_label)
+	_level_label = Label.new()
+	_level_label.theme_type_variation = "TitleLabel"
+	_level_label.add_theme_font_size_override("font_size", 26)
+	_level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(_level_label)
 
 	_board_frame = PanelContainer.new()
 	_board_frame.theme_type_variation = "BoardPanel"
@@ -732,14 +719,15 @@ func _build_level_screen() -> void:
 	_booster_bar.add_theme_constant_override("separation", 14)
 	_level_screen.add_child(_booster_bar)
 	for b in IN_BOOSTERS:
-		var btn := Button.new()
-		btn.theme_type_variation = "OrangeButton"
-		btn.custom_minimum_size = Vector2(150, 104)
-		btn.add_theme_font_size_override("font_size", 24)
+		var btn := _round_button(b[0], Color("#3fb85a"))
 		btn.pressed.connect(_on_booster.bind(b[0]))
 		_booster_bar.add_child(btn)
 		_booster_btns[b[0]] = btn
+	var pause := _round_button("pause", Color("#3f8cff"))
+	pause.pressed.connect(_show_pause)
+	_booster_bar.add_child(pause)
 	_panda = _make_panda(200.0)
+	_panda.visible = false  # на уровне панда — портрет в шапке
 	_level_screen.add_child(_panda)
 	_level_screen.move_child(_panda, _board_frame.get_index())
 	_board.combo_made.connect(_on_combo)
@@ -773,6 +761,23 @@ func _make_panda(height: float) -> Control:
 
 ## Реакция панды: "combo" — подпрыгнуть, "win" — прыгать от радости, "sad" — поникнуть.
 func _panda_react(kind: String) -> void:
+	if _portrait_node:
+		var p := _portrait_node
+		p.pivot_offset = p.size / 2
+		var pt := p.create_tween()
+		match kind:
+			"combo", "win":
+				pt.tween_property(p, "scale", Vector2(1.15, 1.15), 0.12).set_trans(Tween.TRANS_BACK)
+				pt.tween_property(p, "scale", Vector2.ONE, 0.2)
+				if kind == "win":
+					pt.tween_property(p, "rotation", 0.12, 0.1)
+					pt.tween_property(p, "rotation", -0.12, 0.15)
+					pt.tween_property(p, "rotation", 0.0, 0.1)
+			"sad":
+				pt.tween_property(p, "modulate", Color(0.7, 0.7, 0.8), 0.3)
+			_:
+				p.modulate = Color.WHITE
+				pt.kill()
 	if _panda == null:
 		return
 	var img: Control = _panda.get_node("Img")
@@ -804,19 +809,175 @@ func _panda_rest() -> Vector2:
 	return Vector2(_level_screen.size.x - h * 0.84 - 10, top - h + 18)
 
 
+## Объёмная карточка шапки: лента-заголовок сверху, кремовое «окно» внутри деревянной рамки.
+func _hud_card(title: String) -> PanelContainer:
+	var outer := PanelContainer.new()
+	var o := StyleBoxFlat.new()
+	o.bg_color = Color("#8a5326")
+	o.set_corner_radius_all(22)
+	o.border_color = Color("#5a3315")
+	o.set_border_width_all(4)
+	o.border_width_bottom = 10
+	o.set_content_margin_all(8)
+	o.content_margin_top = 34
+	o.shadow_color = Color(0, 0, 0, 0.35)
+	o.shadow_size = 8
+	o.shadow_offset = Vector2(0, 5)
+	outer.add_theme_stylebox_override("panel", o)
+	outer.custom_minimum_size = Vector2(0, 178)
+	var inner := PanelContainer.new()
+	inner.name = "Body"
+	var i := StyleBoxFlat.new()
+	i.bg_color = Color("#fff4dc")
+	i.set_corner_radius_all(14)
+	i.border_color = Color("#e3c48f")
+	i.border_width_top = 6
+	i.set_content_margin_all(4)
+	inner.add_theme_stylebox_override("panel", i)
+	outer.add_child(inner)
+	# лента-заголовок
+	var ribbon := outer
+	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	ribbon.draw.connect(func() -> void:
+		var w := outer.size.x
+		var r := Rect2(Vector2(14, -8), Vector2(w - 28, 40))
+		ribbon.draw_colored_polygon(PackedVector2Array([r.position + Vector2(-12, 8), r.position + Vector2(8, 8), r.position + Vector2(8, 38), r.position + Vector2(-12, 38), r.position + Vector2(-2, 23)]), Color("#2b7a3a"))
+		ribbon.draw_colored_polygon(PackedVector2Array([r.end + Vector2(12, -32), r.end + Vector2(-8, -32), r.end + Vector2(-8, -2), r.end + Vector2(12, -2), r.end + Vector2(2, -17)]), Color("#2b7a3a"))
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color("#3fb85a")
+		sb.set_corner_radius_all(10)
+		sb.border_color = Color("#ffcf5a")
+		sb.set_border_width_all(3)
+		sb.border_width_bottom = 6
+		ribbon.draw_style_box(sb, r)
+		ribbon.draw_rect(Rect2(r.position + Vector2(10, 6), Vector2(r.size.x - 20, 5)), Color(1, 1, 1, 0.35))
+		var ts := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26)
+		var tp := Vector2(w / 2 - ts.x / 2, 21)
+		ribbon.draw_string_outline(font, tp, title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, 6, Color("#1e5a2a"))
+		ribbon.draw_string(font, tp, title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE))
+	return outer
+
+
+## Портрет панды в арке с золотой рамкой (вырезаем голову из общей картинки).
+func _portrait() -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(170, 178)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tex: Texture2D = load("res://assets/art/panda.png")
+	var head := AtlasTexture.new()
+	head.atlas = tex
+	var tw := float(tex.get_width())
+	head.region = Rect2(tw * 0.18, 0, tw * 0.64, tw * 0.6)
+	c.draw.connect(func() -> void:
+		var s := c.size
+		var arch := PackedVector2Array()
+		var r := s.x / 2 - 6
+		for i in 25:
+			var a := PI + PI * i / 24.0
+			arch.append(Vector2(s.x / 2, r + 6) + Vector2(cos(a), sin(a)) * r)
+		arch.append(Vector2(s.x - 6, s.y - 6))
+		arch.append(Vector2(6, s.y - 6))
+		var outer := PackedVector2Array()
+		for v in arch:
+			outer.append(Vector2(s.x / 2, s.y / 2) + (v - Vector2(s.x / 2, s.y / 2)) * 1.06)
+		c.draw_colored_polygon(outer, Color("#5a3315"))
+		c.draw_colored_polygon(arch, Color("#ffcf5a"))
+		var inner := PackedVector2Array()
+		for v in arch:
+			inner.append(Vector2(s.x / 2, s.y / 2 + 4) + (v - Vector2(s.x / 2, s.y / 2)) * 0.88)
+		c.draw_colored_polygon(inner, Color("#7fd0ff"))
+		c.draw_texture_rect(head, Rect2(Vector2(14, 16), s - Vector2(28, 26)), false)
+		c.draw_rect(Rect2(Vector2(10, s.y - 22), Vector2(s.x - 20, 16)), Color("#ffcf5a"))
+		c.draw_rect(Rect2(Vector2(10, s.y - 10), Vector2(s.x - 20, 6)), Color("#c98a12")))
+	return c
+
+
+## Круглая объёмная кнопка бустера: обод, глянец, иконка, красный кружок с количеством.
+func _round_button(kind: String, base: Color) -> Button:
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(118, 118)
+	btn.flat = true
+	for st in ["normal", "hover", "pressed", "focus", "disabled"]:
+		btn.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+	btn.set_meta("count", -1)
+	btn.set_meta("active", false)
+	btn.draw.connect(func() -> void:
+		var c := btn.size / 2
+		var pressed := btn.is_pressed()
+		var off := Vector2(0, 4) if pressed else Vector2.ZERO
+		var active: bool = btn.get_meta("active")
+		var col := Color("#ffb020") if active else base
+		btn.draw_circle(c + Vector2(0, 7), 54, Color(0, 0, 0, 0.3))
+		btn.draw_circle(c + off, 54, Color("#ffcf5a"))
+		btn.draw_circle(c + off, 49, col.darkened(0.45))
+		btn.draw_circle(c + off + Vector2(0, -3), 45, col)
+		btn.draw_circle(c + off + Vector2(0, -12), 34, col.lightened(0.22))
+		btn.draw_set_transform(c + off + Vector2(-14, -26), -0.4, Vector2(1.0, 0.5))
+		btn.draw_circle(Vector2.ZERO, 16, Color(1, 1, 1, 0.45))
+		btn.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		_draw_tool_icon(btn, kind, c + off)
+		var n: int = btn.get_meta("count")
+		if n >= 0:
+			var bc := c + Vector2(36, 38)
+			btn.draw_circle(bc, 22, Color("#7a0f1c"))
+			btn.draw_circle(bc + Vector2(0, -2), 19, Color("#e8283c"))
+			var f: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+			var t := str(n) if n > 0 else "+"
+			var ts := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 22)
+			btn.draw_string(f, bc + Vector2(-ts.x / 2, 7), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE))
+	btn.button_down.connect(btn.queue_redraw)
+	btn.button_up.connect(btn.queue_redraw)
+	return btn
+
+
+func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
+	var ink := Color("#3a2a1a")
+	match kind:
+		"hammer":
+			ci.draw_set_transform(c, -0.6, Vector2.ONE)
+			ci.draw_rect(Rect2(-6, -8, 12, 46), ink)
+			ci.draw_rect(Rect2(-4, -6, 8, 42), Color("#c98a4b"))
+			ci.draw_rect(Rect2(-24, -30, 48, 24), ink)
+			ci.draw_rect(Rect2(-22, -28, 44, 20), Color("#b8c2d0"))
+			ci.draw_rect(Rect2(-22, -28, 44, 6), Color("#e6edf5"))
+			ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		"arrow", "cannon":
+			var rot := 0.0 if kind == "arrow" else PI / 2.0
+			ci.draw_set_transform(c, rot, Vector2.ONE)
+			ci.draw_rect(Rect2(-24, -7, 48, 14), ink)
+			ci.draw_rect(Rect2(-22, -5, 44, 10), Color("#ffe14d"))
+			for sgn in [-1.0, 1.0]:
+				var tip := PackedVector2Array([Vector2(sgn * 40, 0), Vector2(sgn * 20, -20), Vector2(sgn * 20, 20)])
+				ci.draw_colored_polygon(tip, Color("#ff5a3c"))
+				ci.draw_polyline(PackedVector2Array([tip[0], tip[1], tip[2], tip[0]]), ink, 3.0, true)
+			ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		"shuffle":
+			for k in 2:
+				var a0 := PI * k
+				ci.draw_arc(c, 24, a0 + 0.3, a0 + PI - 0.2, 16, ink, 12.0, true)
+				ci.draw_arc(c, 24, a0 + 0.3, a0 + PI - 0.2, 16, Color("#7fd0ff"), 7.0, true)
+				var e := c + Vector2(cos(a0 + PI - 0.2), sin(a0 + PI - 0.2)) * 24
+				var d := Vector2(cos(a0 + PI + 1.2), sin(a0 + PI + 1.2))
+				ci.draw_colored_polygon(PackedVector2Array([e + d * 12, e + d.orthogonal() * 10, e - d.orthogonal() * 10]), Color("#7fd0ff"))
+		"pause":
+			for dx in [-12, 12]:
+				ci.draw_rect(Rect2(c + Vector2(dx - 8, -22), Vector2(16, 44)), ink)
+				ci.draw_rect(Rect2(c + Vector2(dx - 6, -20), Vector2(12, 40)), Color.WHITE)
+
+
 func _layout_bar() -> void:
 	var r := _board_rest()
 	var bottom := r.y + _board_frame.get_combined_minimum_size().y
-	_booster_bar.size = Vector2(_level_screen.size.x, 110)
-	_booster_bar.position = Vector2(0, bottom + maxf(14.0, (_level_screen.size.y - bottom - 110.0) * 0.35))
+	_booster_bar.size = Vector2(_level_screen.size.x, 124)
+	_booster_bar.position = Vector2(0, bottom + maxf(10.0, (_level_screen.size.y - bottom - 124.0) * 0.4))
 
 
 func _refresh_boosters() -> void:
 	for b in IN_BOOSTERS:
 		var btn: Button = _booster_btns[b[0]]
-		var n := int(Save.boosters.get(b[0], 0))
-		btn.text = "%s\n%s" % [b[1], ("×%d" % n) if n > 0 else "+"]
-		btn.theme_type_variation = "GreenButton" if _aiming == b[0] else "OrangeButton"
+		btn.set_meta("count", int(Save.boosters.get(b[0], 0)))
+		btn.set_meta("active", _aiming == b[0])
+		btn.queue_redraw()
 
 
 func _on_booster(kind: String) -> void:
@@ -863,7 +1024,7 @@ func _close_dialog() -> void:
 
 func _board_rest() -> Vector2:
 	var s := _board_frame.get_combined_minimum_size()
-	var free_top := 300.0
+	var free_top := 290.0
 	var y := free_top + maxf(0.0, (_level_screen.size.y - free_top - 140.0 - s.y) * 0.5)
 	return Vector2((_level_screen.size.x - s.x) / 2.0, y)
 
@@ -989,7 +1150,7 @@ func _build_goals() -> void:
 		v.add_theme_constant_override("separation", 0)
 		slot.add_child(v)
 		var icon := Control.new()
-		icon.custom_minimum_size = Vector2(70, 62)
+		icon.custom_minimum_size = Vector2(66, 58)
 		v.add_child(icon)
 		if goal.kind == "color" or goal.kind == "item":
 			var g: Node2D = Gem.new()

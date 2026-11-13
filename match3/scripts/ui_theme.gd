@@ -47,7 +47,7 @@ static func build() -> Theme:
 	pill.content_margin_right = 18
 	t.set_stylebox("panel", "PillPanel", pill)
 	t.set_type_variation("GoalSlot", "PanelContainer")
-	t.set_stylebox("panel", "GoalSlot", _panel(Color("#ffffff", 0.18), Color("#ffffff", 0.35), 2, 18, 6))
+	t.set_stylebox("panel", "GoalSlot", StyleBoxEmpty.new())
 	t.set_type_variation("BoardPanel", "PanelContainer")
 	# рамка поля: дерево (лианы рисует main.gd поверх)
 	var wood := _panel(Color("#8a5326"), Color("#ffcf5a"), 6, 28, 12)
