@@ -31,6 +31,7 @@ static func build() -> Theme:
 		if type != "Button":
 			t.set_type_variation(type, "Button")
 		_button_styles(t, type, BUTTONS[type])
+	t.set_constant("icon_max_width", "BuyButton", 34)
 
 	# Панели
 	t.set_type_variation("DialogPanel", "PanelContainer")
