@@ -8,7 +8,7 @@ on:
       - '.github/workflows/android-debug.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -88,3 +88,14 @@ jobs:
           name: ai-game-studio-debug-apk
           path: build/ai-game-studio-debug.apk
           if-no-files-found: error
+
+      - name: Publish APK to debug release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="debug-${GITHUB_REF_NAME//\//-}"
+          gh release delete "$TAG" --yes --cleanup-tag -R "$GITHUB_REPOSITORY" || true
+          gh release create "$TAG" build/ai-game-studio-debug.apk --prerelease \
+            --target "$GITHUB_SHA" --title "Debug APK ($GITHUB_REF_NAME)" \
+            --notes "Автосборка debug APK, коммит $GITHUB_SHA" -R "$GITHUB_REPOSITORY"
