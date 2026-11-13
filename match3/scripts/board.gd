@@ -237,36 +237,42 @@ func _tile_box(col: Color) -> StyleBoxFlat:
 	return sb
 
 
-## Поле: «премиальные» плитки со скруглением, зазором, глянцем сверху и тенью снизу.
+## Поле: объёмные плитки — тёмный обод, светлая середина с градиентом, блик сверху, тень снизу.
 func _draw() -> void:
 	var r := Rect2(Vector2.ZERO, board_size())
-	draw_rect(r, Color("#1d3b4f", 0.55))
-	var gap := 3.0
-	# спокойные клетки средней яркости: фишки читаются, глаз не слепит
-	var light := _tile_box(Color("#c9dde6", 0.88))
-	var dark := _tile_box(Color("#b5cdd8", 0.88))
-	var grass_a := _tile_box(Color("#6fdc5e"))
-	var grass_b := _tile_box(Color("#5ccc4f"))
-	var soil_a := _tile_box(Color("#c08a55"))
-	var soil_b := _tile_box(Color("#b07a47"))
+	draw_rect(r, Color("#123247", 0.6))
+	var gap := 2.5
 	for x in W:
 		for y in H:
 			var rect := Rect2(Vector2(x, y) * CELL + Vector2(gap, gap), Vector2(CELL, CELL) - Vector2(gap, gap) * 2)
 			var even := (x + y) % 2 == 0
-			var sb: StyleBoxFlat = light if even else dark
+			var top := Color("#e6f3fa") if even else Color("#d3e7f2")
+			var bottom := Color("#b7d3e2") if even else Color("#a6c6d8")
 			if grass[x][y]:
-				sb = grass_a if even else grass_b
+				top = Color("#8be36e") if even else Color("#7ad85e")
+				bottom = Color("#4fb33c") if even else Color("#43a533")
 			elif grass_target[x][y]:
-				sb = soil_a if even else soil_b
-			draw_style_box(sb, rect)
-			# глянцевая полоска сверху
-			draw_rect(Rect2(rect.position + Vector2(8, 5), Vector2(rect.size.x - 16, 5)), Color(1, 1, 1, 0.18))
+				top = Color("#d7a46e") if even else Color("#cc9862")
+				bottom = Color("#9c6a3c") if even else Color("#915f33")
+			var rim := StyleBoxFlat.new()
+			rim.bg_color = bottom.darkened(0.25)
+			rim.set_corner_radius_all(15)
+			draw_style_box(rim, rect)
+			var body := StyleBoxFlat.new()
+			body.bg_color = bottom
+			body.set_corner_radius_all(13)
+			draw_style_box(body, rect.grow(-2.0))
+			var face := StyleBoxFlat.new()
+			face.bg_color = top
+			face.set_corner_radius_all(12)
+			draw_style_box(face, Rect2(rect.position + Vector2(3, 3), rect.size - Vector2(6, 11)))
+			draw_rect(Rect2(rect.position + Vector2(12, 6), Vector2(rect.size.x - 24, 4)), Color(1, 1, 1, 0.55))
 			if grass[x][y]:
 				for k in 3:
-					var bx := rect.position.x + 12 + k * 24
-					var by := rect.position.y + rect.size.y - 8
-					draw_line(Vector2(bx, by), Vector2(bx - 4, by - 14), Color("#2f8f2f"), 3.0)
-					draw_line(Vector2(bx + 4, by), Vector2(bx + 8, by - 12), Color("#2f8f2f"), 3.0)
+					var bx := rect.position.x + 14 + k * 22
+					var by := rect.position.y + rect.size.y - 10
+					draw_line(Vector2(bx, by), Vector2(bx - 4, by - 12), Color("#2f8f2f"), 3.0)
+					draw_line(Vector2(bx + 4, by), Vector2(bx + 8, by - 10), Color("#2f8f2f"), 3.0)
 
 
 # ---------- запросы к полю ----------
@@ -874,14 +880,24 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 					grassify[a] = true
 			power += 1.5 if g.special == Gem.ORB else 1.0
 			effects.append({"cell": c, "kind": g.special, "color": g.color})
+	var wait := 0.0
 	for e in effects:
-		if e.kind != Gem.PROPELLER:
-			_beam_fx(e.cell, e.kind, e.color)
+		match e.kind:
+			Gem.ROCKET_H, Gem.ROCKET_V:
+				_rocket_fx(e.cell, e.kind == Gem.ROCKET_V)
+				wait = maxf(wait, 0.22)
+			Gem.BOMB:
+				_bomb_fx(e.cell, 1.0)
+				wait = maxf(wait, 0.16)
+			Gem.ORB:
+				_beam_fx(e.cell, e.kind, e.color)
+				wait = maxf(wait, 0.12)
 	for f in flights:
 		_propeller_fx(f.from, f.to, f.color)
+		wait = maxf(wait, 0.38)
 	if power > 0.0:
 		big_hit.emit(power)
-		await get_tree().create_timer(0.38 if not flights.is_empty() else 0.08).timeout
+		await get_tree().create_timer(maxf(wait, 0.08)).timeout
 	var last: Tween = null
 	for c: Vector2i in cleared:
 		var g := gem_at(c)
@@ -889,11 +905,14 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 		var col: int = g.color
 		if col >= 0:
 			gem_cleared.emit(col, to_global(cell_pos(c)))
-		_burst(cell_pos(c), Gem.COLORS[col] if col >= 0 else Color.WHITE, 6)
+		_pop_fx(c, col, 5 if cleared.size() <= 12 else 2)
+		g.z_index = 3
 		var tw := create_tween().set_parallel(true)
-		tw.tween_property(g, "scale", Vector2(1.25, 1.25), 0.07)
-		tw.chain().tween_property(g, "scale", Vector2(0.0, 0.0), 0.13)
-		tw.tween_property(g, "modulate:a", 0.0, 0.13)
+		tw.tween_property(g, "scale", Vector2(1.3, 1.3), 0.08).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(g, "modulate", Color(1.6, 1.6, 1.6), 0.08)
+		tw.chain().tween_property(g, "scale", Vector2(0.0, 0.0), 0.14).set_ease(Tween.EASE_IN)
+		tw.tween_property(g, "rotation", randf_range(-0.6, 0.6), 0.14)
+		tw.tween_property(g, "modulate:a", 0.0, 0.14)
 		tw.chain().tween_callback(g.queue_free)
 		last = tw
 	_grow_grass(grassify)
@@ -1044,21 +1063,24 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 		await get_tree().create_timer(0.4).timeout
 		if carried != Gem.PROPELLER:
 			for t in targets:
-				_beam_fx(t, carried, col)
+				if carried == Gem.BOMB:
+					_bomb_fx(t, 1.0)
+				else:
+					_rocket_fx(t, randf() < 0.5)
 		big_hit.emit(2.0)
 	elif rockets == 2:
 		for x in W:
 			area[Vector2i(x, at.y)] = true
 		for y in H:
 			area[Vector2i(at.x, y)] = true
-		_beam_fx(at, Gem.ROCKET_H, col)
-		_beam_fx(at, Gem.ROCKET_V, col)
+		_rocket_fx(at, false)
+		_rocket_fx(at, true)
 		big_hit.emit(2.0)
 	elif bombs == 2:
 		for dx in range(-2, 3):
 			for dy in range(-2, 3):
 				area[at + Vector2i(dx, dy)] = true
-		_beam_fx(at, Gem.BOMB, col, 2.0)
+		_bomb_fx(at, 2.0)
 		big_hit.emit(3.0)
 	else:
 		for d in range(-1, 2):
@@ -1066,8 +1088,8 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 				area[Vector2i(x, at.y + d)] = true
 			for y in H:
 				area[Vector2i(at.x + d, y)] = true
-			_beam_fx(at + Vector2i(0, d), Gem.ROCKET_H, col)
-			_beam_fx(at + Vector2i(d, 0), Gem.ROCKET_V, col)
+			_rocket_fx(at + Vector2i(0, d), false)
+			_rocket_fx(at + Vector2i(d, 0), true)
 		big_hit.emit(3.0)
 	await _clear(area)
 
@@ -1081,7 +1103,7 @@ func _orb_with_color(orb: Node2D, col: int) -> void:
 			var g := gem_at(Vector2i(x, y))
 			if g and g != orb and g.color == col and g.special != Gem.ITEM:
 				area[Vector2i(x, y)] = true
-				_zap(cell_pos(orb.cell), cell_pos(Vector2i(x, y)), Gem.COLORS[col])
+				_lightning(fx.to_local(to_global(cell_pos(orb.cell))), fx.to_local(to_global(cell_pos(Vector2i(x, y)))), Gem.COLORS[col].lightened(0.4), 7) if fx else null
 	big_hit.emit(1.5)
 	await get_tree().create_timer(0.25).timeout
 	await _clear(area)
@@ -1328,6 +1350,175 @@ func _beam_fx(cell: Vector2i, kind: int, col: int, scale_k: float = 1.0) -> void
 	tw.tween_property(line, "width", 4.0, 0.3)
 	tw.tween_property(line, "modulate:a", 0.0, 0.3)
 	tw.chain().tween_callback(line.queue_free)
+
+
+## Лопнувшая фишка: вспышка-кольцо, осколки-копии фишки и искры.
+func _pop_fx(cell: Vector2i, col: int, shards: int) -> void:
+	if fx == null:
+		return
+	var at := fx.to_local(to_global(cell_pos(cell)))
+	var color: Color = Gem.COLORS[col] if col >= 0 else Color.WHITE
+	var ring := Node2D.new()
+	ring.position = at
+	ring.draw.connect(func() -> void:
+		ring.draw_circle(Vector2.ZERO, CELL * 0.42, Color(1, 1, 1, 0.55))
+		ring.draw_arc(Vector2.ZERO, CELL * 0.42, 0, TAU, 28, color.lightened(0.4), 5.0, true))
+	ring.scale = Vector2(0.3, 0.3)
+	fx.add_child(ring)
+	var rt := ring.create_tween().set_parallel(true)
+	rt.tween_property(ring, "scale", Vector2(1.15, 1.15), 0.22).set_ease(Tween.EASE_OUT)
+	rt.tween_property(ring, "modulate:a", 0.0, 0.22)
+	rt.chain().tween_callback(ring.queue_free)
+	var tex: Texture2D = Gem.tex("gem_%d" % col) if col >= 0 else null
+	for i in shards:
+		var sh := Sprite2D.new()
+		sh.texture = tex
+		if tex == null:
+			continue
+		var k := CELL * 0.28 / maxf(tex.get_width(), tex.get_height())
+		sh.scale = Vector2(k, k)
+		sh.position = at
+		fx.add_child(sh)
+		var ang := TAU * i / shards + randf_range(-0.4, 0.4)
+		var dist := CELL * randf_range(0.7, 1.2)
+		var t := sh.create_tween().set_parallel(true)
+		t.tween_property(sh, "position", at + Vector2(cos(ang), sin(ang)) * dist, 0.38).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		t.tween_property(sh, "rotation", randf_range(-4, 4), 0.38)
+		t.tween_property(sh, "scale", Vector2(k * 0.2, k * 0.2), 0.38).set_ease(Tween.EASE_IN)
+		t.tween_property(sh, "modulate:a", 0.0, 0.38).set_ease(Tween.EASE_IN)
+		t.chain().tween_callback(sh.queue_free)
+	_sparkles(at, color, 4 if shards > 2 else 2)
+
+
+func _sparkles(at: Vector2, color: Color, n: int) -> void:
+	for i in n:
+		var st := Node2D.new()
+		st.position = at
+		var r := randf_range(6, 11)
+		st.draw.connect(func() -> void:
+			var pts := PackedVector2Array()
+			for k in 8:
+				var a := TAU * k / 8.0
+				pts.append(Vector2(cos(a), sin(a)) * (r if k % 2 == 0 else r * 0.35))
+			st.draw_colored_polygon(pts, Color(1, 1, 0.85))
+			st.draw_circle(Vector2.ZERO, r * 0.3, color.lightened(0.6)))
+		fx.add_child(st)
+		var ang := randf() * TAU
+		var t := st.create_tween().set_parallel(true)
+		t.tween_property(st, "position", at + Vector2(cos(ang), sin(ang)) * CELL * randf_range(0.5, 1.0), 0.45).set_ease(Tween.EASE_OUT)
+		t.tween_property(st, "rotation", PI, 0.45)
+		t.tween_property(st, "modulate:a", 0.0, 0.45).set_ease(Tween.EASE_IN)
+		t.chain().tween_callback(st.queue_free)
+
+
+## Ракета: две ракеты разлетаются в стороны с огненным следом, по линии бьёт молния.
+func _rocket_fx(cell: Vector2i, vertical: bool) -> void:
+	if fx == null:
+		return
+	var c := cell_pos(cell)
+	var tex: Texture2D = Gem.tex("rocket")
+	for sgn in [-1.0, 1.0]:
+		var dir := Vector2(0, sgn) if vertical else Vector2(sgn, 0)
+		var end := c + dir * (H if vertical else W) * CELL
+		var r := Sprite2D.new()
+		r.texture = tex
+		if tex:
+			var k := CELL * 0.95 / maxf(tex.get_width(), tex.get_height())
+			r.scale = Vector2(k, k)
+		r.rotation = dir.angle()
+		r.position = fx.to_local(to_global(c))
+		r.z_index = 5
+		fx.add_child(r)
+		var trail := CPUParticles2D.new()
+		trail.amount = 40
+		trail.lifetime = 0.35
+		trail.local_coords = false
+		trail.direction = -dir
+		trail.spread = 20.0
+		trail.initial_velocity_min = 60.0
+		trail.initial_velocity_max = 140.0
+		trail.gravity = Vector2.ZERO
+		trail.scale_amount_min = 6.0
+		trail.scale_amount_max = 12.0
+		var grad := Gradient.new()
+		grad.set_color(0, Color(1, 0.95, 0.5))
+		grad.set_color(1, Color(1, 0.3, 0.1, 0))
+		trail.color_ramp = grad
+		trail.position = Vector2(-60, 0)
+		r.add_child(trail)
+		trail.emitting = true
+		var t := r.create_tween()
+		t.tween_property(r, "position", fx.to_local(to_global(end)), 0.35).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		t.tween_callback(r.queue_free)
+	# молния вдоль линии
+	var a := Vector2(0, c.y) if not vertical else Vector2(c.x, 0)
+	var b := Vector2(W * CELL, c.y) if not vertical else Vector2(c.x, H * CELL)
+	_lightning(fx.to_local(to_global(a)), fx.to_local(to_global(b)), Color("#9fe8ff"), 10)
+
+
+func _lightning(a: Vector2, b: Vector2, color: Color, width: float) -> void:
+	for layer in 2:
+		var line := Line2D.new()
+		var pts := PackedVector2Array()
+		var n := 14
+		var nrm := (b - a).orthogonal().normalized()
+		for i in n + 1:
+			var p := a.lerp(b, float(i) / n)
+			if i > 0 and i < n:
+				p += nrm * randf_range(-14, 14)
+			pts.append(p)
+		line.points = pts
+		line.width = width if layer == 0 else width * 0.35
+		line.default_color = color if layer == 0 else Color.WHITE
+		line.joint_mode = Line2D.LINE_JOINT_ROUND
+		line.z_index = 4
+		fx.add_child(line)
+		var t := line.create_tween()
+		t.tween_property(line, "modulate:a", 0.0, 0.3).set_delay(0.06)
+		t.tween_callback(line.queue_free)
+
+
+## Бомба: вспышка, ударная волна, огонь и обломки.
+func _bomb_fx(cell: Vector2i, power: float) -> void:
+	if fx == null:
+		return
+	var at := fx.to_local(to_global(cell_pos(cell)))
+	var flash := Node2D.new()
+	flash.position = at
+	flash.z_index = 5
+	var rad := CELL * 1.6 * power
+	flash.draw.connect(func() -> void:
+		flash.draw_circle(Vector2.ZERO, rad, Color(1, 0.95, 0.7, 0.7))
+		flash.draw_arc(Vector2.ZERO, rad, 0, TAU, 48, Color(1, 0.6, 0.2), 10.0, true)
+		flash.draw_arc(Vector2.ZERO, rad * 0.8, 0, TAU, 48, Color(1, 1, 1, 0.9), 4.0, true))
+	flash.scale = Vector2(0.15, 0.15)
+	fx.add_child(flash)
+	var t := flash.create_tween().set_parallel(true)
+	t.tween_property(flash, "scale", Vector2.ONE, 0.25).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	t.tween_property(flash, "modulate:a", 0.0, 0.35).set_delay(0.08)
+	t.chain().tween_callback(flash.queue_free)
+	for spec in [[Color("#ffcf3a"), 30, 380.0, 0.0], [Color("#ff6a1a"), 24, 260.0, 0.0], [Color("#7a5230"), 16, 320.0, 700.0]]:
+		var p := CPUParticles2D.new()
+		p.position = at
+		p.one_shot = true
+		p.explosiveness = 1.0
+		p.amount = spec[1] if Save.particles else int(spec[1]) / 3
+		p.lifetime = 0.6
+		p.spread = 180.0
+		p.initial_velocity_min = float(spec[2]) * 0.4
+		p.initial_velocity_max = float(spec[2]) * power
+		p.gravity = Vector2(0, spec[3])
+		p.scale_amount_min = 5.0
+		p.scale_amount_max = 13.0
+		p.color = spec[0]
+		var curve := Curve.new()
+		curve.add_point(Vector2(0, 1))
+		curve.add_point(Vector2(1, 0))
+		p.scale_amount_curve = curve
+		p.z_index = 4
+		fx.add_child(p)
+		p.emitting = true
+		p.finished.connect(p.queue_free)
 
 
 func _propeller_fx(from: Vector2i, to: Vector2i, col: int) -> void:

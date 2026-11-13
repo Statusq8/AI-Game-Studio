@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "0.6.5"
+const VERSION := "0.7.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1704,6 +1704,27 @@ func _run_shots(dir: String) -> void:
 			g.set_special(kinds[i])
 	await get_tree().create_timer(0.3).timeout
 	await _snap(dir, "4_specials")
+	_board.activate_single(Vector2i(1, 2))
+	await get_tree().create_timer(0.12).timeout
+	await _snap(dir, "4b_rocket")
+	while _board.busy:
+		await get_tree().process_frame
+	var bc := Vector2i(3, 2)
+	var bg: Node2D = _board.gem_at(bc)
+	if bg:
+		bg.set_special(Gem.BOMB)
+		_board.activate_single(bc)
+		await get_tree().create_timer(0.1).timeout
+		await _snap(dir, "4c_bomb")
+	while _board.busy:
+		await get_tree().process_frame
+	var m: Array = _board.find_move()
+	if m.size() == 2 and m[0] != m[1]:
+		_board.try_swap(m[0], m[1])
+		await get_tree().create_timer(0.26).timeout
+		await _snap(dir, "4d_pop")
+	while _board.busy:
+		await get_tree().process_frame
 	_state = "done"
 	_show_lose()
 	await get_tree().create_timer(0.5).timeout
