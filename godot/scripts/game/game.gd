@@ -2,6 +2,7 @@ extends Control
 ## Главный экран «Охотника за Вратами». Интерфейс строится кодом; графика — заглушки.
 
 const B := preload("res://scripts/game/balance.gd")
+const UiTheme := preload("res://scripts/ui/ui_theme.gd")
 const IC_STRIKE := preload("res://assets/art/ic_strike.png")
 const IC_GOLD := preload("res://assets/art/ic_gold.png")
 const IC_X2 := preload("res://assets/art/ic_x2.png")
@@ -30,6 +31,7 @@ var _monster_body: Panel
 var _monster_art: TextureRect
 var _monster_style: StyleBoxFlat
 var _hp_bar: ProgressBar
+var _hp_back: ProgressBar
 var _hp_label: Label
 var _buff_button: Button
 var _boss_button: Button
@@ -40,6 +42,7 @@ var _overlay: Control = null
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	theme = UiTheme.build()
 	_build_ui()
 	GameState.changed.connect(_refresh)
 	GameState.rank_up.connect(_on_rank_up)
@@ -60,6 +63,8 @@ func _process(delta: float) -> void:
 			_boss_time -= delta
 			if _boss_time <= 0.0:
 				_on_boss_timeout()
+	if _hp_back.value > _hp_bar.value:
+		_hp_back.value = move_toward(_hp_back.value, _hp_bar.value, _monster_max * 1.5 * delta)
 	_attack_timer -= delta
 	if _attack_timer <= 0.0 and not _paused:
 		_attack_timer = 0.9
@@ -110,13 +115,15 @@ func _spawn_monster() -> void:
 	_monster_body.pivot_offset = _monster_body.custom_minimum_size / 2.0
 	var mart: String = biome.get("boss_art" if boss else "monster_art", "")
 	_monster_art.texture = load(mart) if mart != "" else null
-	_monster_art.custom_minimum_size = Vector2(380, 340) if boss else Vector2(300, 270)
+	_monster_art.custom_minimum_size = Vector2(360, 320) if boss else Vector2(290, 260)
 	_monster_art.pivot_offset = _monster_art.custom_minimum_size * Vector2(0.5, 1.0)
 	_monster_art.visible = _monster_art.texture != null
 	_monster_body.visible = not _monster_art.visible
 	_monster_art.modulate = Color(1, 1, 1)
 	_boss_time = B.BOSS_TIME
 	_boss_extra_used = false
+	_hp_back.max_value = _monster_max
+	_hp_back.value = _monster_max
 	_update_monster_ui()
 
 
@@ -146,6 +153,7 @@ func _on_boss_timeout() -> void:
 	if not _boss_extra_used:
 		var extra := _button("Ещё +15 сек", 30, _on_boss_extra_pressed)
 		extra.icon = IC_AD
+		extra.theme_type_variation = "AdButton"
 		extra.disabled = not Ads.is_ready()
 		box.add_child(extra)
 	box.add_child(_button("Отступить", 30, func() -> void:
@@ -183,6 +191,7 @@ func _show_offline() -> void:
 	var box := _open_overlay("С возвращением!", "Пока тебя не было, отряд добыл %s золота." % B.format_num(amount), IC_CHEST)
 	var double := _button("Забрать x2", 30, _on_offline_double_pressed)
 	double.icon = IC_AD
+	double.theme_type_variation = "AdButton"
 	double.disabled = not Ads.is_ready()
 	box.add_child(double)
 	box.add_child(_button("Забрать", 30, func() -> void:
@@ -285,10 +294,15 @@ func _build_ui() -> void:
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(root)
 
+	var top_panel := PanelContainer.new()
+	top_panel.theme_type_variation = "TopPanel"
+	top_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(top_panel)
 	var top := HBoxContainer.new()
-	root.add_child(top)
+	top.add_theme_constant_override("separation", 10)
+	top_panel.add_child(top)
 	top.add_child(_icon(IC_GOLD, 52))
-	_gold_label = _label("", 34, Color(1, 0.85, 0.3))
+	_gold_label = _label("", 36, Color(1, 0.85, 0.3), true)
 	_gold_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(_gold_label)
 	var badge := _make_badge(0, 76)
@@ -324,10 +338,10 @@ func _build_ui() -> void:
 	for h in B.HUNTERS:
 		var sprite := TextureRect.new()
 		sprite.texture = load(h["sprite"])
-		sprite.custom_minimum_size = Vector2(175, 180)
+		sprite.custom_minimum_size = Vector2(160, 165)
 		sprite.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		sprite.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		sprite.pivot_offset = Vector2(87, 180)
+		sprite.pivot_offset = Vector2(80, 165)
 		sprite.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		squad_box.add_child(sprite)
 		_squad.append(sprite)
@@ -336,7 +350,7 @@ func _build_ui() -> void:
 	mbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.add_child(mbox)
 
-	_monster_name = _label("", 32)
+	_monster_name = _label("", 32, Color(1, 1, 1), true)
 	_monster_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	mbox.add_child(_monster_name)
 
@@ -356,31 +370,48 @@ func _build_ui() -> void:
 	_monster_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	mbox.add_child(_monster_art)
 
+	var hp_holder := Control.new()
+	hp_holder.custom_minimum_size = Vector2(460, 32)
+	hp_holder.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	hp_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mbox.add_child(hp_holder)
+	_hp_back = ProgressBar.new()
 	_hp_bar = ProgressBar.new()
-	_hp_bar.custom_minimum_size = Vector2(440, 30)
-	_hp_bar.show_percentage = false
-	_hp_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	mbox.add_child(_hp_bar)
+	for bar: ProgressBar in [_hp_back, _hp_bar]:
+		bar.set_anchors_preset(Control.PRESET_FULL_RECT)
+		bar.show_percentage = false
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		hp_holder.add_child(bar)
+	_hp_back.theme_type_variation = "HpBack"
+	_hp_bar.theme_type_variation = "HpFront"
 	_hp_label = _label("", 22)
 	_hp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	mbox.add_child(_hp_label)
 
 
+	var sheet := PanelContainer.new()
+	sheet.theme_type_variation = "SheetPanel"
+	root.add_child(sheet)
+	var sheet_box := VBoxContainer.new()
+	sheet_box.add_theme_constant_override("separation", 10)
+	sheet.add_child(sheet_box)
 	var actions := HBoxContainer.new()
 	actions.add_theme_constant_override("separation", 12)
-	root.add_child(actions)
+	sheet_box.add_child(actions)
 	_buff_button = _button("", 26, _on_buff_pressed)
+	_buff_button.theme_type_variation = "AdButton"
 	_buff_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	actions.add_child(_buff_button)
 	_boss_button = _button("Сразиться с боссом", 26, func() -> void:
 		GameState.start_boss()
 		_spawn_monster())
 	_boss_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_boss_button.theme_type_variation = "BossButton"
 	actions.add_child(_boss_button)
 
 	var list := VBoxContainer.new()
-	list.add_theme_constant_override("separation", 10)
-	root.add_child(list)
+	list.add_theme_constant_override("separation", 8)
+	sheet_box.add_child(list)
 	_tap_row = _upgrade_row(list, IC_STRIKE, func() -> void: GameState.try_buy_tap())
 	for i in B.HUNTERS.size():
 		var idx := i
@@ -388,9 +419,12 @@ func _build_ui() -> void:
 
 
 func _upgrade_row(parent: Container, icon_tex: Texture2D, on_buy: Callable) -> Dictionary:
+	var row_panel := PanelContainer.new()
+	row_panel.theme_type_variation = "RowPanel"
+	parent.add_child(row_panel)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
-	parent.add_child(row)
+	row_panel.add_child(row)
 	var icon: Control
 	if icon_tex != null:
 		var tr := TextureRect.new()
@@ -402,13 +436,15 @@ func _upgrade_row(parent: Container, icon_tex: Texture2D, on_buy: Callable) -> D
 		var cr := ColorRect.new()
 		cr.color = Color(0.95, 0.95, 1.0, 0.85)
 		icon = cr
-	icon.custom_minimum_size = Vector2(66, 66)
+	icon.custom_minimum_size = Vector2(60, 60)
 	row.add_child(icon)
-	var info := _label("", 24)
+	var info := _label("", 22)
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(info)
 	var buy := _button("", 26, on_buy)
-	buy.custom_minimum_size = Vector2(220, 68)
+	buy.custom_minimum_size = Vector2(210, 64)
+	buy.theme_type_variation = "BuyButton"
 	row.add_child(buy)
 	return {"icon": icon, "info": info, "buy": buy}
 
@@ -417,8 +453,10 @@ func _on_buff_pressed() -> void:
 	Ads.show_rewarded(func() -> void: GameState.activate_buff())
 
 
-func _label(text: String, size: int, color: Color = Color(1, 1, 1)) -> Label:
+func _label(text: String, size: int, color: Color = Color(1, 1, 1), title: bool = false) -> Label:
 	var l := Label.new()
+	if title:
+		l.theme_type_variation = "TitleLabel"
 	l.text = text
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", color)
@@ -441,7 +479,7 @@ func _button(text: String, size: int, on_press: Callable) -> Button:
 ## Эмблема ранга с буквой поверх (буквы рисуем сами — нейросети их искажают).
 func _make_badge(rank: int, size: int) -> TextureRect:
 	var tr := _icon(load(B.RANK_BADGES[rank]), size)
-	var letter := _label(B.RANKS[rank], int(size * 0.42), Color(1, 1, 1))
+	var letter := _label(B.RANKS[rank], int(size * 0.42), Color(1, 1, 1), true)
 	letter.set_anchors_preset(Control.PRESET_FULL_RECT)
 	letter.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	letter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -461,7 +499,7 @@ func _icon(tex: Texture2D, size: int) -> TextureRect:
 
 
 func _popup(pos: Vector2, text: String, color: Color) -> void:
-	var l := _label(text, 34, color)
+	var l := _label(text, 36, color, true)
 	l.position = pos - Vector2(40, 20)
 	_area.add_child(l)
 	var t := create_tween().set_parallel(true)
@@ -481,6 +519,7 @@ func _open_overlay(title: String, text: String, image: Texture2D = null) -> VBox
 	center.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_overlay.add_child(center)
 	var panel := PanelContainer.new()
+	panel.theme_type_variation = "DialogPanel"
 	panel.custom_minimum_size = Vector2(600, 0)
 	center.add_child(panel)
 	var box := VBoxContainer.new()
@@ -490,7 +529,7 @@ func _open_overlay(title: String, text: String, image: Texture2D = null) -> VBox
 		var pic := _icon(image, 150)
 		pic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		box.add_child(pic)
-	var t := _label(title, 38, Color(1, 0.85, 0.3))
+	var t := _label(title, 40, Color(1, 0.85, 0.3), true)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	box.add_child(t)
 	var body := _label(text, 26)
