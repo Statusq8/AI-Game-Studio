@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.2.1"
+const VERSION := "1.2.2"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1274,6 +1274,39 @@ func _reward_row(items: Array) -> HBoxContainer:
 	return row
 
 
+## Круглая золотая плашка «x2» (удвоение за рекламу), покачивается, чтобы её заметили.
+func _x2_badge() -> Button:
+	var b := Button.new()
+	b.flat = true
+	for st in ["normal", "hover", "pressed", "focus", "disabled"]:
+		b.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+	b.custom_minimum_size = Vector2(62, 62)
+	b.size = Vector2(62, 62)
+	b.pivot_offset = Vector2(31, 31)
+	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	b.draw.connect(func() -> void:
+		var c := Vector2(31, 31)
+		b.draw_circle(c + Vector2(0, 4), 29, Color(0, 0, 0, 0.3))
+		b.draw_circle(c, 29, Color("#8a2a9a"))
+		b.draw_circle(c, 25, Color("#c04ad8"))
+		b.draw_circle(c + Vector2(0, -5), 18, Color("#d97cec"))
+		b.draw_arc(c, 28, 0, TAU, 32, Color("#ffcf3a"), 4.0, true)
+		var t := "x2"
+		var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 26)
+		var p := c + Vector2(-ts.x / 2, 9)
+		b.draw_string_outline(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, 7, Color("#3a0a48"))
+		b.draw_string(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE)
+		# значок «видео» снизу
+		var v := c + Vector2(0, 22)
+		b.draw_colored_polygon(PackedVector2Array([v + Vector2(-5, -6), v + Vector2(7, 0), v + Vector2(-5, 6)]), Color.WHITE))
+	var tw := b.create_tween().set_loops()
+	tw.tween_property(b, "rotation", 0.15, 0.25)
+	tw.tween_property(b, "rotation", -0.15, 0.25)
+	tw.tween_property(b, "rotation", 0.0, 0.2)
+	tw.tween_interval(0.8)
+	return b
+
+
 ## Выход из уровня без победы стоит жизнь.
 func _quit_level(then: Callable) -> void:
 	Save.lose_heart()
@@ -1873,10 +1906,10 @@ func _dialog(title_text: String, lines: Array, buttons: Array) -> VBoxContainer:
 		var btn := Button.new()
 		btn.text = b[0]
 		btn.theme_type_variation = b[1]
-		var main_btn: bool = b[1] == "GreenButton"
-		btn.custom_minimum_size = Vector2(400 if main_btn else 340, 84 if main_btn else 68)
+		# все кнопки окна — одинаковые овалы
+		btn.custom_minimum_size = Vector2(360, 80)
 		btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		btn.add_theme_font_size_override("font_size", 32 if main_btn else 24)
+		btn.add_theme_font_size_override("font_size", 28)
 		btn.disabled = b.size() > 3 and b[3]
 		btn.pressed.connect(b[2])
 		v.add_child(btn)
@@ -1899,13 +1932,27 @@ func _show_win() -> void:
 	var v := _dialog("Уровень пройден!", [], [
 		["Дальше", "GreenButton", _next_level],
 		["Домой", "Button", func() -> void: _transition(_show_home)],
-		["Удвоить монеты (реклама)", "PurpleButton", func() -> void:
-			Ads.show_rewarded(func() -> void: Save.add_coins(coins))
-			_next_level(), not Ads.is_ready()],
 	])
 	var rewards := _reward_row([["star", 1], ["coin", coins], ["streak", Save.streak]])
 	v.add_child(rewards)
 	v.move_child(rewards, 0)
+	# круглая кнопка «x2» на карточке монет: удвоить за рекламу
+	var coin_cell: Control = rewards.get_child(1)
+	var x2 := _x2_badge()
+	coin_cell.add_child(x2)
+	x2.position = Vector2(84, -18)
+	x2.pressed.connect(func() -> void:
+		if not Ads.is_ready():
+			return
+		x2.disabled = true
+		Ads.show_rewarded(func() -> void:
+			Save.add_coins(coins)
+			var from: int = coin_cell.get_meta("val")
+			var t := coin_cell.create_tween()
+			t.tween_method(func(val: float) -> void:
+				coin_cell.set_meta("val", int(val))
+				coin_cell.queue_redraw(), float(from), float(coins * 2), 0.5)
+			x2.queue_free()))
 	# звезда и монеты летят вверх, конфетти
 	var c := size / 2
 	for i in 24:

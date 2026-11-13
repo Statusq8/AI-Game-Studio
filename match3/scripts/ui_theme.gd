@@ -44,10 +44,11 @@ static func build() -> Theme:
 		for st in [["normal", Color.WHITE, 0], ["hover", Color(1.08, 1.08, 1.08), 0], ["pressed", Color(0.85, 0.85, 0.85), 3], ["disabled", Color(0.6, 0.6, 0.6, 0.7), 0]]:
 			var sbt := StyleBoxTexture.new()
 			sbt.texture = tex
-			sbt.texture_margin_left = 50
-			sbt.texture_margin_right = 50
-			sbt.texture_margin_top = 30
-			sbt.texture_margin_bottom = 36
+			# картинка 80 px высотой; концы-полукруги = 40 px — кнопка высотой 80 остаётся ровным овалом
+			sbt.texture_margin_left = 40
+			sbt.texture_margin_right = 40
+			sbt.texture_margin_top = 24
+			sbt.texture_margin_bottom = 29
 			sbt.modulate_color = st[1]
 			sbt.content_margin_left = 34
 			sbt.content_margin_right = 34
