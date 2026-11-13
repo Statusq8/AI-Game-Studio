@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.0.0"
+const VERSION := "1.0.1"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -683,30 +683,28 @@ func _build_level_screen() -> void:
 	clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	clip.custom_minimum_size = Vector2(8, 10) * Board.CELL
 	_board_frame.add_child(clip)
-	# лианы на деревянной рамке
-	var vines := Control.new()
-	vines.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vines.set_anchors_preset(Control.PRESET_FULL_RECT)
-	vines.draw.connect(func() -> void:
-		var w := vines.size.x
-		var h := vines.size.y
-		var pts := PackedVector2Array()
-		for i in 41:
-			var x := w * i / 40.0
-			pts.append(Vector2(x, -4 + sin(i * 0.9) * 7))
-		vines.draw_polyline(pts, Color("#2e7d32"), 5.0, true)
-		for i in 20:
-			var p := pts[i * 2 + 1]
-			var a := 0.6 if i % 2 == 0 else -0.6
-			vines.draw_set_transform(p, a, Vector2.ONE)
-			vines.draw_colored_polygon(PackedVector2Array([Vector2(0, 0), Vector2(9, -7), Vector2(20, 0), Vector2(9, 7)]), Color("#43a047") if i % 3 else Color("#66bb6a"))
-		vines.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-		for c in [Vector2(-2, h * 0.3), Vector2(w + 2, h * 0.55)]:
-			for k in 6:
-				vines.draw_circle(c + Vector2(sin(k) * 5, k * 22), 7, Color("#43a047"))
-		vines.draw_circle(Vector2(w * 0.18, -4), 9, Color("#ff6b9d"))
-		vines.draw_circle(Vector2(w * 0.72, -2), 9, Color("#ffe14d")))
-	_board_frame.add_child(vines)
+	# рамка поля — ИИ-картинка (дерево, лианы, золотой кант), растягивается по 9 частям поверх края поля
+	var ft: Texture2D = load("res://assets/art/ui_board_frame.png")
+	var frame := NinePatchRect.new()
+	frame.texture = ft
+	frame.patch_margin_left = 72
+	frame.patch_margin_right = 72
+	frame.patch_margin_top = 72
+	frame.patch_margin_bottom = 72
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	frame.z_index = 2
+	var fk := 0.42
+	frame.scale = Vector2(fk, fk)
+	frame.top_level = false
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.set_anchors_preset(Control.PRESET_FULL_RECT)
+	holder.add_child(frame)
+	holder.resized.connect(func() -> void:
+		var out := 27.0
+		frame.position = Vector2(-out, -out)
+		frame.size = (holder.size + Vector2(out, out) * 2) / fk)
+	_board_frame.add_child(holder)
 	_board = Board.new()
 	clip.add_child(_board)
 	_board.move_made.connect(_on_move)
@@ -834,51 +832,27 @@ func _panda_rest() -> Vector2:
 ## Объёмная карточка шапки: лента-заголовок сверху, кремовое «окно» внутри деревянной рамки.
 func _hud_card(title: String) -> PanelContainer:
 	var outer := PanelContainer.new()
-	var o := StyleBoxFlat.new()
-	o.bg_color = Color("#8a5326")
-	o.set_corner_radius_all(22)
-	o.border_color = Color("#5a3315")
-	o.set_border_width_all(4)
-	o.border_width_bottom = 10
-	o.set_content_margin_all(8)
-	o.content_margin_top = 34
-	o.shadow_color = Color(0, 0, 0, 0.35)
-	o.shadow_size = 8
-	o.shadow_offset = Vector2(0, 5)
-	outer.add_theme_stylebox_override("panel", o)
-	outer.custom_minimum_size = Vector2(0, 178)
+	var sb := StyleBoxEmpty.new()
+	sb.content_margin_left = 18
+	sb.content_margin_right = 18
+	sb.content_margin_top = 58
+	sb.content_margin_bottom = 18
+	outer.add_theme_stylebox_override("panel", sb)
+	outer.custom_minimum_size = Vector2(0, 190)
 	var inner := PanelContainer.new()
 	inner.name = "Body"
-	var i := StyleBoxFlat.new()
-	i.bg_color = Color("#fff4dc")
-	i.set_corner_radius_all(14)
-	i.border_color = Color("#e3c48f")
-	i.border_width_top = 6
-	i.set_content_margin_all(4)
-	inner.add_theme_stylebox_override("panel", i)
+	inner.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	outer.add_child(inner)
-	# лента-заголовок
-	var ribbon := outer
+	var tex: Texture2D = load("res://assets/art/ui_card.png")
 	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
-	ribbon.draw.connect(func() -> void:
-		var w := outer.size.x
-		var r := Rect2(Vector2(14, -8), Vector2(w - 28, 40))
-		ribbon.draw_colored_polygon(PackedVector2Array([r.position + Vector2(-12, 8), r.position + Vector2(8, 8), r.position + Vector2(8, 38), r.position + Vector2(-12, 38), r.position + Vector2(-2, 23)]), Color("#2b7a3a"))
-		ribbon.draw_colored_polygon(PackedVector2Array([r.end + Vector2(12, -32), r.end + Vector2(-8, -32), r.end + Vector2(-8, -2), r.end + Vector2(12, -2), r.end + Vector2(2, -17)]), Color("#2b7a3a"))
-		var sb := StyleBoxFlat.new()
-		sb.bg_color = Color("#3fb85a")
-		sb.set_corner_radius_all(10)
-		sb.border_color = Color("#ffcf5a")
-		sb.set_border_width_all(3)
-		sb.border_width_bottom = 6
-		ribbon.draw_style_box(sb, r)
-		ribbon.draw_rect(Rect2(r.position + Vector2(10, 6), Vector2(r.size.x - 20, 5)), Color(1, 1, 1, 0.35))
+	outer.draw.connect(func() -> void:
+		outer.draw_texture_rect(tex, Rect2(Vector2.ZERO, outer.size), false)
 		var ts := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26)
-		var tp := Vector2(w / 2 - ts.x / 2, 21)
-		ribbon.draw_string_outline(font, tp, title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, 6, Color("#1e5a2a"))
-		ribbon.draw_string(font, tp, title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE))
+		var tp := Vector2(outer.size.x / 2 - ts.x / 2, outer.size.y * 0.165)
+		outer.draw_string_outline(font, tp, title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, 7, Color("#1e5a2a"))
+		outer.draw_string(font, tp, title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE))
+	outer.resized.connect(outer.queue_redraw)
 	return outer
-
 
 ## Живая панда в шапке (без рамки): дышит, моргает-подпрыгивает, реагирует на игру.
 func _hud_panda() -> Control:
@@ -1296,9 +1270,14 @@ func _big_text(text: String, fsize: int, top: Color, bottom: Color) -> Control:
 	var c := Control.new()
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	var banner: Texture2D = load("res://assets/art/ui_banner.png")
 	c.draw.connect(func() -> void:
 		var ts := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize)
 		var p := Vector2(c.size.x / 2 - ts.x / 2, c.size.y / 2 + fsize * 0.35)
+		if banner:
+			var bw := minf(c.size.x - 10.0, ts.x + 220.0)
+			var bh := bw * banner.get_height() / banner.get_width()
+			c.draw_texture_rect(banner, Rect2(Vector2(c.size.x / 2 - bw / 2, c.size.y / 2 - bh * 0.42), Vector2(bw, bh)), false)
 		var ink := Color("#2a1440")
 		# объём: слои вниз
 		for d in range(10, 0, -2):
@@ -1347,7 +1326,7 @@ func _on_combo(n: int) -> void:
 		[Color("#ffe14d"), Color("#8dff6a"), Color("#ff8ad8"), Color("#7fe3ff")][i],
 		[Color("#ff9a1a"), Color("#21a83a"), Color("#c0359a"), Color("#2a7bd8")][i])
 	_overlay.add_child(l)
-	l.size = Vector2(size.x, 140)
+	l.size = Vector2(size.x, 200)
 	l.position = Vector2(0, _board_rest().y + 260)
 	l.pivot_offset = l.size / 2
 	l.scale = Vector2(0.4, 0.4)

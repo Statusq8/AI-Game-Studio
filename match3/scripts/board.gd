@@ -1309,7 +1309,7 @@ func _orb_with_color(orb: Node2D, col: int) -> void:
 	for x in W:
 		for y in H:
 			var g := gem_at(Vector2i(x, y))
-			if g and g != orb and g.color == col and g.special != Gem.ITEM:
+			if g and g != orb and g.color == col and g.special == Gem.NONE:
 				area[Vector2i(x, y)] = true
 				targets.append(Vector2i(x, y))
 	big_hit.emit(1.5)
@@ -1659,41 +1659,45 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 	var tex: Texture2D = Gem.tex("rocket")
 	for sgn in [-1.0, 1.0]:
 		var dir := Vector2(0, sgn) if vertical else Vector2(sgn, 0)
-		var end := c + dir * (H if vertical else W) * CELL
+		var start := fx.to_local(to_global(c))
+		var end := fx.to_local(to_global(c + dir * (H if vertical else W) * CELL))
 		var r := Sprite2D.new()
 		r.texture = tex
-		if tex:
-			var k := CELL * 0.95 / maxf(tex.get_width(), tex.get_height())
+		var k := CELL * 0.9 / maxf(tex.get_width(), tex.get_height()) if tex else 1.0
+		# картинка смотрит вправо: влево — зеркалим, вверх/вниз — поворачиваем
+		if vertical:
+			r.rotation = PI / 2.0 * sgn
 			r.scale = Vector2(k, k)
-		r.rotation = dir.angle()
-		r.position = fx.to_local(to_global(c))
+		else:
+			r.scale = Vector2(k * sgn, k)
+		r.position = start
 		r.z_index = 5
 		fx.add_child(r)
-		var trail := CPUParticles2D.new()
-		trail.amount = 40
-		trail.lifetime = 0.35
-		trail.local_coords = false
-		trail.direction = -dir
-		trail.spread = 20.0
-		trail.initial_velocity_min = 60.0
-		trail.initial_velocity_max = 140.0
-		trail.gravity = Vector2.ZERO
-		trail.scale_amount_min = 6.0
-		trail.scale_amount_max = 12.0
-		var grad := Gradient.new()
-		grad.set_color(0, Color(1, 0.95, 0.5))
-		grad.set_color(1, Color(1, 0.3, 0.1, 0))
-		trail.color_ramp = grad
-		trail.position = Vector2(-60, 0)
-		r.add_child(trail)
-		trail.emitting = true
-		var t := r.create_tween()
-		t.tween_property(r, "position", fx.to_local(to_global(end)), ROCKET_CELL_TIME * (H if vertical else W))
-		t.tween_callback(r.queue_free)
-	# молния вдоль линии
-	var a := Vector2(0, c.y) if not vertical else Vector2(c.x, 0)
-	var b := Vector2(W * CELL, c.y) if not vertical else Vector2(c.x, H * CELL)
-	pass
+		var cells := float(H if vertical else W)
+		var last := [start]
+		var tw := r.create_tween()
+		tw.tween_method(func(t: float) -> void:
+			r.position = start.lerp(end, t)
+			# дымок: круглые облачка позади ракеты
+			if r.position.distance_to(last[0]) > 26.0:
+				last[0] = r.position
+				_puff(r.position - dir * 30.0), 0.0, 1.0, ROCKET_CELL_TIME * cells)
+		tw.tween_callback(r.queue_free)
+
+
+func _puff(at: Vector2) -> void:
+	var p := Node2D.new()
+	p.position = at
+	p.z_index = 4
+	var rad := randf_range(9, 14)
+	p.draw.connect(func() -> void:
+		p.draw_circle(Vector2.ZERO, rad, Color(1, 0.85, 0.5, 0.75))
+		p.draw_circle(Vector2(-2, -2), rad * 0.55, Color(1, 1, 0.95, 0.9)))
+	fx.add_child(p)
+	var t := p.create_tween().set_parallel(true)
+	t.tween_property(p, "scale", Vector2(1.8, 1.8), 0.35).set_ease(Tween.EASE_OUT)
+	t.tween_property(p, "modulate", Color(0.9, 0.9, 0.95, 0.0), 0.35)
+	t.chain().tween_callback(p.queue_free)
 
 
 ## Объёмная молния: широкое свечение, цветное тело, белая сердцевина, вспышки на изломах.
@@ -1794,6 +1798,7 @@ func _bomb_fx(cell: Vector2i, power: float) -> void:
 		p.finished.connect(p.queue_free)
 
 
+## Бабочка: вспархивает, плавно летит к цели с наклоном по ходу полёта и шлейфом искр, ныряет и лопается.
 func _propeller_fx(from: Vector2i, to: Vector2i, col: int) -> void:
 	if fx == null:
 		return
@@ -1806,22 +1811,46 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int) -> void:
 	var a := fx.to_local(to_global(cell_pos(from)))
 	var b := fx.to_local(to_global(cell_pos(to)))
 	p.position = a
-	var up := Vector2(0, -CELL * 1.8)
-	var side := (b - a).orthogonal().normalized() * CELL * 0.6
-	var c1 := a + up + side
-	var c2 := b + up * 0.6 - side
+	var lift := a + Vector2(0, -CELL * 0.7)
+	var c1 := lift + Vector2(0, -CELL * 1.2)
+	var c2 := b + Vector2(0, -CELL * 1.6)
+	var last := [lift]
 	var tw := p.create_tween()
-	tw.tween_property(p, "scale", Vector2(1.25, 1.25), 0.12).set_trans(Tween.TRANS_BACK)
+	# 1. вспорхнула
+	tw.tween_property(p, "position", lift, 0.16).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	tw.parallel().tween_property(p, "scale", Vector2(1.15, 1.15), 0.16)
+	# 2. полёт по плавной кривой
 	tw.tween_method(func(t: float) -> void:
-		var q := a.bezier_interpolate(c1, c2, b, t)
-		p.rotation = sin(t * TAU * 2.0) * 0.18
-		p.position = q + Vector2(0, sin(t * TAU * 3.0) * 6.0), 0.0, 1.0, PROPELLER_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		var q := lift.bezier_interpolate(c1, c2, b, t)
+		var dx := q.x - p.position.x
+		p.rotation = lerpf(p.rotation, clampf(dx * 0.03, -0.35, 0.35), 0.3)
+		p.position = q
+		if q.distance_to(last[0]) > 22.0:
+			last[0] = q
+			_sparkles(q, Color("#ffcf5a"), 1), 0.0, 1.0, PROPELLER_TIME - 0.28).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	# 3. у цели: зависла, ныряет и лопается
+	tw.tween_property(p, "rotation", 0.0, 0.05)
+	tw.tween_property(p, "scale", Vector2(1.35, 1.35), 0.07).set_trans(Tween.TRANS_BACK)
 	tw.tween_callback(func() -> void:
-		_burst(cell_pos(to), Color("#ffe14d"), 16)
-		_sparkles(b, Color("#ffb020"), 5))
-	tw.tween_property(p, "scale", Vector2(0.2, 0.2), 0.12)
-	tw.parallel().tween_property(p, "modulate:a", 0.0, 0.12)
+		_burst(cell_pos(to), Color("#ffb020"), 14)
+		_pop_ring(b, Color("#ffd23f")))
+	tw.tween_property(p, "scale", Vector2(0.1, 0.1), 0.06).set_ease(Tween.EASE_IN)
 	tw.tween_callback(p.queue_free)
+
+
+func _pop_ring(at: Vector2, color: Color) -> void:
+	var ring := Node2D.new()
+	ring.position = at
+	ring.z_index = 5
+	ring.draw.connect(func() -> void:
+		ring.draw_circle(Vector2.ZERO, CELL * 0.5, Color(1, 1, 1, 0.5))
+		ring.draw_arc(Vector2.ZERO, CELL * 0.5, 0, TAU, 32, color, 6.0, true))
+	ring.scale = Vector2(0.3, 0.3)
+	fx.add_child(ring)
+	var t := ring.create_tween().set_parallel(true)
+	t.tween_property(ring, "scale", Vector2(1.3, 1.3), 0.25).set_ease(Tween.EASE_OUT)
+	t.tween_property(ring, "modulate:a", 0.0, 0.25)
+	t.chain().tween_callback(ring.queue_free)
 
 
 func _zap(from: Vector2, to: Vector2, color: Color) -> void:

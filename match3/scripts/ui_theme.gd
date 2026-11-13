@@ -51,7 +51,8 @@ static func build() -> Theme:
 	t.set_type_variation("BoardPanel", "PanelContainer")
 	# рамка поля: дерево (лианы рисует main.gd поверх)
 	# фон рамки прозрачный: в дырах фигурного поля виден фон уровня
-	var wood := _panel(Color("#8a5326", 0.0), Color("#ffcf5a"), 6, 28, 12)
+	var wood := _panel(Color("#8a5326", 0.0), Color("#ffcf5a", 0.0), 0, 28, 26)
+	wood.shadow_size = 0
 	wood.shadow_size = 18
 	wood.shadow_color = Color(0, 0, 0, 0.35)
 	t.set_stylebox("panel", "BoardPanel", wood)
