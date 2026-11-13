@@ -30,7 +30,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglu1-mesa > /dev/null
+          sudo apt-get install -y -qq xvfb libgl1-mesa-dri libglu1-mesa ffmpeg > /dev/null
           BASE="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable"
           curl -fL --retry 3 "$BASE/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -o /tmp/godot.zip
           unzip -q /tmp/godot.zip -d /tmp/godot
