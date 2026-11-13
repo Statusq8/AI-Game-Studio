@@ -1057,6 +1057,12 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 		if col >= 0:
 			gem_cleared.emit(col, to_global(cell_pos(c)))
 		var dl: float = delay_of.get(c, 0.0)
+		var sk: int = g.special
+		if sk != Gem.NONE or col < 0:
+			# особые фишки исчезают по-своему
+			tiles[c.x][c.y] = null
+			last = _special_vanish(g, sk, dl)
+			continue
 		if dl > 0.0:
 			get_tree().create_timer(dl).timeout.connect(_pop_fx.bind(c, col, 3))
 		else:
@@ -1076,6 +1082,44 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 	_grow_grass(grassify)
 	if last:
 		await last.finished
+
+
+## Исчезновение особой фишки: у каждой своя анимация.
+func _special_vanish(g: Node2D, kind: int, delay: float) -> Tween:
+	g.z_index = 4
+	var tw := create_tween()
+	if delay > 0.0:
+		tw.tween_interval(delay)
+	match kind:
+		Gem.ROCKET_H, Gem.ROCKET_V:
+			# корпус вздрагивает и «распадается» на две ракеты (их рисует _rocket_fx)
+			tw.tween_property(g, "scale", Vector2(1.35, 0.75) if kind == Gem.ROCKET_H else Vector2(0.75, 1.35), 0.06)
+			tw.tween_property(g, "modulate:a", 0.0, 0.05)
+		Gem.BOMB:
+			# раздувается, краснеет, дрожит и лопается
+			tw.tween_property(g, "scale", Vector2(1.55, 1.55), 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			tw.parallel().tween_property(g, "modulate", Color(1.8, 0.7, 0.6), 0.12)
+			tw.tween_property(g, "rotation", 0.15, 0.03)
+			tw.tween_property(g, "rotation", -0.15, 0.03)
+			tw.tween_property(g, "scale", Vector2(0.1, 0.1), 0.07).set_ease(Tween.EASE_IN)
+			tw.parallel().tween_property(g, "modulate:a", 0.0, 0.07)
+		Gem.PROPELLER:
+			# бабочка вспархивает вверх (летящую рисует _propeller_fx)
+			tw.tween_property(g, "position:y", g.position.y - 30, 0.12).set_ease(Tween.EASE_OUT)
+			tw.parallel().tween_property(g, "modulate:a", 0.0, 0.12)
+		_:
+			# радужный шар: быстро крутится, вспыхивает радугой и схлопывается в точку
+			tw.tween_property(g, "rotation", TAU * 1.5, 0.3).set_ease(Tween.EASE_IN)
+			tw.parallel().tween_property(g, "scale", Vector2(1.4, 1.4), 0.15)
+			tw.parallel().tween_property(g, "modulate", Color(2, 2, 2), 0.15)
+			tw.tween_callback(func() -> void:
+				if fx:
+					var at := fx.to_local(to_global(g.position))
+					for i in 6:
+						_sparkles(at, Gem.COLORS[i], 1))
+			tw.tween_property(g, "scale", Vector2(0.05, 0.05), 0.12).set_ease(Tween.EASE_IN)
+	tw.tween_callback(g.queue_free)
+	return tw
 
 
 func _area(kind: int, c: Vector2i) -> Array:

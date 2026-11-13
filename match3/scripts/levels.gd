@@ -12,8 +12,24 @@ const SHAPES := [
 	[Vector2i(0, 0), Vector2i(1, 0), Vector2i(2, 0), Vector2i(5, 0), Vector2i(6, 0), Vector2i(7, 0), Vector2i(0, 1), Vector2i(7, 1)],
 	[Vector2i(3, 2), Vector2i(4, 2), Vector2i(3, 5), Vector2i(4, 5)],
 	[Vector2i(0, 2), Vector2i(7, 2), Vector2i(0, 5), Vector2i(7, 5), Vector2i(0, 6), Vector2i(7, 6)],
+	# ромб: срезаны все четыре угла лесенкой
+	[Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(6, 0), Vector2i(7, 0), Vector2i(7, 1), Vector2i(0, 6), Vector2i(0, 7), Vector2i(1, 7), Vector2i(7, 6), Vector2i(6, 7), Vector2i(7, 7)],
+	# сердце: вырез сверху посередине и срезанный низ
+	[Vector2i(3, 0), Vector2i(4, 0), Vector2i(0, 6), Vector2i(0, 7), Vector2i(1, 7), Vector2i(7, 6), Vector2i(7, 7), Vector2i(6, 7)],
+	# крест
+	[Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(6, 0), Vector2i(7, 0), Vector2i(6, 1), Vector2i(7, 1), Vector2i(0, 6), Vector2i(1, 6), Vector2i(0, 7), Vector2i(1, 7), Vector2i(6, 6), Vector2i(7, 6), Vector2i(6, 7), Vector2i(7, 7)],
+	# две колонны внутри
+	[Vector2i(2, 2), Vector2i(2, 3), Vector2i(5, 2), Vector2i(5, 3)],
+	# «песочные часы»: сужение в середине
+	[Vector2i(0, 3), Vector2i(0, 4), Vector2i(1, 3), Vector2i(1, 4), Vector2i(6, 3), Vector2i(6, 4), Vector2i(7, 3), Vector2i(7, 4)],
+	# лесенка слева
+	[Vector2i(0, 0), Vector2i(0, 1), Vector2i(1, 0), Vector2i(0, 2), Vector2i(1, 1), Vector2i(2, 0)],
+	# окно в центре + срезанные верхние углы
+	[Vector2i(0, 0), Vector2i(7, 0), Vector2i(3, 4), Vector2i(4, 4)],
+	# зубцы сверху (как башня)
+	[Vector2i(1, 0), Vector2i(3, 0), Vector2i(5, 0), Vector2i(7, 0)],
 ]
-const OBSTACLES := ["crate", "grass", "item", "chain", "vase", "ice", "balloon", "honey", "jar", "flower", "cage", "bush", "shell", "safe"]
+const OBSTACLES := ["crate", "grass", "item", "chain", "vase", "ice", "honey", "jar", "flower", "cage", "bush", "shell", "safe"]
 ## Блоки на поле: номер вида (как в board.gd) и прочность.
 const BLOCK := {"crate": [1, 1], "vase": [2, 1], "safe": [3, 3], "jar": [4, 1], "cage": [5, 2], "balloon": [6, 1], "flower": [7, 2], "bush": [8, 2], "shell": [9, 2]}
 
@@ -55,8 +71,9 @@ static func make(n: int) -> Dictionary:
 	for k in kinds:
 		_add_obstacle(lv, k, n, rng)
 	# фигурное поле с 6-го уровня, каждый 2-й уровень
-	if n >= 6 and n % 2 == 0:
-		var holes: Array = SHAPES[(n / 2) % SHAPES.size()]
+	# фигурное поле: с 6-го уровня на 3 уровнях из 4, форма по номеру уровня
+	if n >= 6 and n % 4 != 1:
+		var holes: Array = SHAPES[(n * 7) % SHAPES.size()]
 		lv["holes"] = holes
 		_cut_holes(lv, holes)
 	# сложные уровни: каждый 10-й «Сложный», каждый 30-й «Очень сложный» (меньше ходов, больше монет)

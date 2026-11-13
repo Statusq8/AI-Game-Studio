@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "0.9.2"
+const VERSION := "0.9.3"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1771,7 +1771,7 @@ func _run_shots(dir: String) -> void:
 	await _snap(dir, "1d_settings")
 	_clear_overlay()
 	# уровни с разными препятствиями: 4 ящики, 5 трава, 6 предметы, 7 цепи, 8 вазы
-	for n in [4, 5, 7, 9, 21, 23, 24, 26, 27, 29, 31]:
+	for n in [6, 7, 8, 10, 11, 12, 14, 15, 16, 18, 19, 20]:
 		_start_level(n)
 		await get_tree().create_timer(1.6).timeout
 		await _snap(dir, "2_level_%d" % n)
