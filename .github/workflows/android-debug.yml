@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'godot/**'
+      - 'android-plugins/**'
       - '.github/workflows/android-debug.yml'
 
 permissions:
@@ -13,7 +14,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       GODOT_VERSION: '4.5.1'
     steps:
@@ -36,6 +37,19 @@ jobs:
           test -d "$ANDROID_HOME/platform-tools"
           test -d "$ANDROID_HOME/build-tools"
           ls "$ANDROID_HOME/build-tools"
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Build Yandex Ads Godot plugin (AAR)
+        run: |
+          set -euo pipefail
+          gradle -p android-plugins/yandex-ads assembleRelease --no-daemon --stacktrace
+          mkdir -p godot/addons/yandex_ads/bin
+          cp android-plugins/yandex-ads/build/outputs/aar/YandexAds-release.aar godot/addons/yandex_ads/bin/
+          ls -la godot/addons/yandex_ads/bin
 
       - name: Install Godot and export templates
         run: |
@@ -79,7 +93,7 @@ jobs:
           set -euo pipefail
           mkdir -p build
           godot --headless --path godot --editor --quit --verbose
-          godot --headless --path godot --export-debug Android "$GITHUB_WORKSPACE/build/ai-game-studio-debug.apk" --verbose
+          godot --headless --path godot --install-android-build-template --export-debug Android "$GITHUB_WORKSPACE/build/ai-game-studio-debug.apk" --verbose
           test -s build/ai-game-studio-debug.apk
 
       - name: Upload APK

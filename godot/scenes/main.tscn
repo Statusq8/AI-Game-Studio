@@ -28,9 +28,9 @@ anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
 offset_left = -310.0
-offset_top = -120.0
+offset_top = -220.0
 offset_right = 310.0
-offset_bottom = 120.0
+offset_bottom = 220.0
 grow_horizontal = 2
 grow_vertical = 2
 theme_override_constants/separation = 28
@@ -52,3 +52,16 @@ layout_mode = 2
 custom_minimum_size = Vector2(0, 86)
 theme_override_font_sizes/font_size = 30
 text = "TEST BUTTON"
+
+[node name="AdButton" type="Button" parent="Center"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 86)
+theme_override_font_sizes/font_size = 30
+disabled = true
+text = "WATCH AD (+100)"
+
+[node name="Coins" type="Label" parent="Center"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 26
+text = "Coins: 0"
+horizontal_alignment = 1

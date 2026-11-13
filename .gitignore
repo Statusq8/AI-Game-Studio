@@ -1,0 +1,6 @@
+build/
+godot/.godot/
+godot/android/
+godot/addons/yandex_ads/bin/
+android-plugins/**/build/
+android-plugins/**/.gradle/
