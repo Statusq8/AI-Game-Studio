@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.1.1"
+const VERSION := "1.2.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1092,7 +1092,9 @@ func _show_prelevel(n: int) -> void:
 	var lv := Levels.make(n)
 	var hard := int(lv.get("hard", 0))
 	var v := _dialog("Уровень %d" % n, [], [
-		["Играть", "GreenButton", func() -> void: _transition(_start_level.bind(n))],
+		["Играть", "GreenButton", func() -> void:
+			_clear_overlay()
+			_level_transition(n)],
 		["Закрыть", "Button", _show_home],
 	])
 	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
@@ -1211,6 +1213,65 @@ func _show_prelevel(n: int) -> void:
 			tw.tween_property(t, "scale", Vector2(1.15, 1.15), 0.08)
 			tw.tween_property(t, "scale", Vector2.ONE, 0.1))
 		row.add_child(t)
+
+
+## Ряд наград: золотые ячейки с объёмными значками и числами (монеты «набегают»).
+func _reward_row(items: Array) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 14)
+	var slot_t: Texture2D = load("res://assets/art/ui_slot_goal.png")
+	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	var names := {"star": "звезда", "coin": "монеты", "streak": "серия"}
+	for it in items:
+		var kind: String = it[0]
+		var target: int = it[1]
+		var cell := Control.new()
+		cell.custom_minimum_size = Vector2(128, 150)
+		cell.set_meta("val", 0 if kind == "coin" else target)
+		cell.draw.connect(func() -> void:
+			cell.draw_texture_rect(slot_t, Rect2(Vector2(4, 0), Vector2(120, 120)), false)
+			var c := Vector2(64, 50)
+			match kind:
+				"star":
+					Zoo.draw_star(cell, c, 30.0)
+				"coin":
+					cell.draw_circle(c + Vector2(0, 3), 28, Color("#a86a08"))
+					cell.draw_circle(c, 28, Color("#e09a12"))
+					cell.draw_circle(c, 22, Color("#ffd23f"))
+					cell.draw_circle(c + Vector2(-8, -8), 6, Color(1, 1, 1, 0.8))
+				"streak":
+					var flame := PackedVector2Array()
+					for i in 24:
+						var a := TAU * i / 24.0
+						var r := 26.0 * (1.0 + 0.35 * maxf(0.0, -sin(a)))
+						flame.append(c + Vector2(cos(a) * r * 0.75, sin(a) * r - 4))
+					cell.draw_colored_polygon(flame, Color("#ff5a1a"))
+					var inner := PackedVector2Array()
+					for p in flame:
+						inner.append(c + (p - c) * 0.55 + Vector2(0, 6))
+					cell.draw_colored_polygon(inner, Color("#ffd23f"))
+			var txt := ("+" if kind != "streak" else "") + str(int(cell.get_meta("val")))
+			var ts := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 30)
+			var p := Vector2(64 - ts.x / 2, 106)
+			for d in range(4, 0, -1):
+				cell.draw_string_outline(font, p + Vector2(0, d), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 9, Color("#2b2350"))
+			cell.draw_string_outline(font, p, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 9, Color("#2b2350"))
+			cell.draw_string(font, p, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color.WHITE)
+			var ns: String = names[kind]
+			var nts := font.get_string_size(ns, HORIZONTAL_ALIGNMENT_LEFT, -1, 20)
+			cell.draw_string(font, Vector2(64 - nts.x / 2, 144), ns, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UiTheme.INK))
+		row.add_child(cell)
+		# появление по очереди + счётчик монет
+		cell.modulate.a = 0.0
+		var tw := cell.create_tween()
+		tw.tween_interval(0.25 + row.get_child_count() * 0.15)
+		tw.tween_property(cell, "modulate:a", 1.0, 0.15)
+		if kind == "coin":
+			tw.tween_method(func(v: float) -> void:
+				cell.set_meta("val", int(v))
+				cell.queue_redraw(), 0.0, float(target), 0.6)
+	return row
 
 
 ## Выход из уровня без победы стоит жизнь.
@@ -1738,7 +1799,10 @@ func _dialog(title_text: String, lines: Array, buttons: Array) -> VBoxContainer:
 		var btn := Button.new()
 		btn.text = b[0]
 		btn.theme_type_variation = b[1]
-		btn.custom_minimum_size = Vector2(0, 100 if b[1] == "GreenButton" else 84)
+		var main_btn: bool = b[1] == "GreenButton"
+		btn.custom_minimum_size = Vector2(400 if main_btn else 340, 84 if main_btn else 68)
+		btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		btn.add_theme_font_size_override("font_size", 32 if main_btn else 24)
 		btn.disabled = b.size() > 3 and b[3]
 		btn.pressed.connect(b[2])
 		v.add_child(btn)
@@ -1758,13 +1822,16 @@ func _show_win() -> void:
 	Save.streak += 1
 	Save.add_coins(coins)
 	Save.vibrate(60)
-	var v := _dialog("Уровень пройден!", ["+1 звезда   +%d монет" % coins, "Серия побед: %d" % Save.streak], [
+	var v := _dialog("Уровень пройден!", [], [
 		["Дальше", "GreenButton", _next_level],
 		["Домой", "Button", func() -> void: _transition(_show_home)],
 		["Удвоить монеты (реклама)", "PurpleButton", func() -> void:
 			Ads.show_rewarded(func() -> void: Save.add_coins(coins))
 			_next_level(), not Ads.is_ready()],
 	])
+	var rewards := _reward_row([["star", 1], ["coin", coins], ["streak", Save.streak]])
+	v.add_child(rewards)
+	v.move_child(rewards, 0)
 	# звезда и монеты летят вверх, конфетти
 	var c := size / 2
 	for i in 24:
@@ -1796,7 +1863,44 @@ func _next_level() -> void:
 	if Save.hearts <= 0:
 		_transition(_show_home)
 		return
-	_transition(_start_level.bind(Save.level))
+	_level_transition(Save.level)
+
+
+## Переход между уровнями: экран-заставка «Уровень N» на плашке, панда подпрыгивает, потом уровень проявляется.
+func _level_transition(n: int) -> void:
+	var cur := Control.new()
+	cur.mouse_filter = Control.MOUSE_FILTER_STOP
+	cur.set_anchors_preset(Control.PRESET_FULL_RECT)
+	cur.size = size
+	cur.z_index = 50
+	var bg := TextureRect.new()
+	bg.texture = load("res://assets/art/zoo_map.webp")
+	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.size = size
+	bg.modulate = Color(0.55, 0.65, 0.55)
+	cur.add_child(bg)
+	var title := _big_text("Уровень %d" % n, 84, Color("#ffe14d"), Color("#ff9a1a"))
+	title.size = Vector2(size.x, 220)
+	title.position = Vector2(0, size.y * 0.3)
+	cur.add_child(title)
+	var panda := _make_panda(330.0)
+	panda.position = Vector2(size.x / 2 - panda.custom_minimum_size.x / 2, size.y * 0.5)
+	cur.add_child(panda)
+	add_child(cur)
+	cur.modulate.a = 0.0
+	title.pivot_offset = title.size / 2
+	title.scale = Vector2(0.3, 0.3)
+	var tw := cur.create_tween()
+	tw.tween_property(cur, "modulate:a", 1.0, 0.25)
+	tw.parallel().tween_property(title, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(panda, "position:y", size.y * 0.47, 0.25).set_ease(Tween.EASE_OUT)
+	tw.tween_property(panda, "position:y", size.y * 0.5, 0.25).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_BOUNCE)
+	tw.tween_callback(_start_level.bind(n))
+	tw.tween_interval(0.45)
+	tw.tween_property(cur, "modulate:a", 0.0, 0.35)
+	tw.tween_callback(cur.queue_free)
 
 
 func _show_lose() -> void:
@@ -2058,8 +2162,12 @@ func _run_shots(dir: String) -> void:
 	await _snap(dir, "5_lose")
 	_level["bonus_coins"] = 40
 	_show_win()
-	await get_tree().create_timer(0.5).timeout
+	await get_tree().create_timer(1.4).timeout
 	await _snap(dir, "6_win")
+	_level_transition(12)
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "6b_transition")
+	await get_tree().create_timer(1.2).timeout
 	_show_prelevel(10)
 	await get_tree().create_timer(0.5).timeout
 	await _snap(dir, "8_prelevel")

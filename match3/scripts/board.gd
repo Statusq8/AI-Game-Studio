@@ -28,6 +28,7 @@ signal special_fired
 const Gem := preload("res://scripts/gem.gd")
 const CELL := 84.0
 const PROPELLER_TIME := 1.5  # полёт бабочки к цели
+const PROPELLER_DELAY := 0.25  # сначала взрываются соседи, потом бабочка взлетает
 const ROCKET_CELL_TIME := 0.045  # ракета пролетает клетку за столько секунд
 enum { B_NONE, B_CRATE, B_VASE, B_SAFE, B_JAR, B_CAGE, B_BALLOON, B_FLOWER, B_BUSH, B_SHELL }
 ## Препятствия-блоки: цель уровня, бьёт ли совпадение рядом, картинки по стадиям поломки.
@@ -143,11 +144,14 @@ func _fill_initial(items: int) -> void:
 					tiles[x][y] = null
 		var item_cols: Array = range(W)
 		item_cols.shuffle()
-		for i in items:
-			var x: int = item_cols[i % W]
-			var y := i / W
-			if _fillable(Vector2i(x, y)):
-				_place(_new_gem(-1, Gem.ITEM), Vector2i(x, y))
+		var placed := 0
+		for y in H:
+			for x in item_cols:
+				if placed >= items:
+					break
+				if _fillable(Vector2i(x, y)) and tiles[x][y] == null:
+					_place(_new_gem(-1, Gem.ITEM), Vector2i(x, y))
+					placed += 1
 		for y in H:
 			for x in W:
 				if not _fillable(Vector2i(x, y)) or tiles[x][y] != null:
@@ -1011,7 +1015,13 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 		if cleared.has(c) or not inside(c):
 			continue
 		if block_kind[c.x][c.y] != B_NONE:
-			_hit_block(c)
+			var bdl: float = delay_of.get(c, 0.0)
+			if bdl > 0.05:
+				get_tree().create_timer(bdl).timeout.connect(func() -> void:
+					_hits.erase(c)
+					_hit_block(c))
+			else:
+				_hit_block(c)
 			continue
 		var g := gem_at(c)
 		if g == null or g.special == Gem.ITEM:
@@ -1039,6 +1049,9 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 				if target != Vector2i(-1, -1):
 					area.append(target)
 					flights.append({"from": c, "to": target, "color": g.color})
+					var arrive: float = delay_of.get(c, 0.0) + PROPELLER_DELAY + PROPELLER_TIME
+					if not delay_of.has(target) or delay_of[target] > arrive:
+						delay_of[target] = arrive
 			pending.append_array(area)
 			if grass[c.x][c.y]:
 				for a in area:
@@ -1052,7 +1065,7 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 				_rocket_fx(e.cell, e.kind == Gem.ROCKET_V, delay_of.get(e.cell, 0.0))
 				wait = maxf(wait, 0.05)
 			Gem.BOMB:
-				_bomb_fx(e.cell, 1.0)
+				_bomb_fx(e.cell, 1.5)
 				wait = maxf(wait, 0.16)
 			Gem.ORB:
 				_beam_fx(e.cell, e.kind, e.color)
@@ -1061,13 +1074,16 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 					orb_targets.append(oc)
 				await _chain_lightning(e.cell, orb_targets, color_at(orb_targets[0]) if not orb_targets.is_empty() else -1)
 	for f in flights:
-		_propeller_fx(f.from, f.to, f.color)
-		wait = maxf(wait, PROPELLER_TIME + 0.15)
+		_propeller_fx(f.from, f.to, f.color, delay_of.get(f.from, 0.0) + PROPELLER_DELAY)
+		wait = maxf(wait, 0.08)
 	if power > 0.0:
 		big_hit.emit(power)
 		special_fired.emit()
 		await get_tree().create_timer(maxf(wait, 0.08)).timeout
 	var last: Tween = null
+	var max_dl := 0.0
+	for c: Vector2i in cleared:
+		max_dl = maxf(max_dl, float(delay_of.get(c, 0.0)))
 	for c: Vector2i in cleared:
 		var g := gem_at(c)
 		tiles[c.x][c.y] = null
@@ -1104,7 +1120,7 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 			grassify[c2] = true
 	_grow_grass(grassify)
 	if last:
-		await last.finished
+		await get_tree().create_timer(max_dl + 0.24).timeout
 
 
 ## Исчезновение особой фишки: у каждой своя анимация.
@@ -1155,8 +1171,8 @@ func _area(kind: int, c: Vector2i) -> Array:
 			for y in H:
 				out.append(Vector2i(c.x, y))
 		Gem.BOMB:
-			for dx in range(-1, 2):
-				for dy in range(-1, 2):
+			for dx in range(-2, 3):
+				for dy in range(-2, 3):
 					out.append(c + Vector2i(dx, dy))
 		Gem.PROPELLER:
 			for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
@@ -1302,8 +1318,8 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 		_rocket_fx(at, true)
 		big_hit.emit(2.0)
 	elif bombs == 2:
-		for dx in range(-2, 3):
-			for dy in range(-2, 3):
+		for dx in range(-3, 4):
+			for dy in range(-3, 4):
 				area[at + Vector2i(dx, dy)] = true
 		_bomb_fx(at, 2.0)
 		big_hit.emit(3.0)
@@ -1379,6 +1395,20 @@ func _collect_items() -> bool:
 			continue
 		var c := Vector2i(x, bottom)
 		var g := gem_at(c)
+		# яйцо над дырой дальше не упадёт — тоже считаем «дошло до низа»
+		for y2 in range(H - 1, -1, -1):
+			var g2 := gem_at(Vector2i(x, y2))
+			if g2 and g2.special == Gem.ITEM:
+				var only_holes := true
+				for y3 in range(y2 + 1, H):
+					if not hole[x][y3]:
+						only_holes = false
+						break
+				if only_holes:
+					c = Vector2i(x, y2)
+					g = g2
+					bottom = y2
+				break
 		if g and g.special == Gem.ITEM:
 			tiles[x][bottom] = null
 			got = true
@@ -1818,9 +1848,11 @@ func _bomb_fx(cell: Vector2i, power: float) -> void:
 
 
 ## Бабочка: вспархивает, плавно летит к цели с наклоном по ходу полёта и шлейфом искр, ныряет и лопается.
-func _propeller_fx(from: Vector2i, to: Vector2i, col: int) -> void:
+func _propeller_fx(from: Vector2i, to: Vector2i, col: int, delay: float = 0.0) -> void:
 	if fx == null:
 		return
+	if delay > 0.0:
+		await get_tree().create_timer(delay).timeout
 	var p: Node2D = Gem.new()
 	p.color = col
 	p.size = CELL
