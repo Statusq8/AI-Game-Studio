@@ -91,6 +91,8 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--shots="):
 			_run_shots.call_deferred(arg.trim_prefix("--shots="))
+		elif arg == "--demo":
+			_run_demo.call_deferred()
 
 
 func _process(delta: float) -> void:
@@ -666,6 +668,34 @@ func _run_shots(dir: String) -> void:
 	await get_tree().create_timer(0.4).timeout
 	await _shot(dir, "5_offline")
 	get_tree().quit()
+
+
+## Демо-бой для записи видео в CI (Movie Maker: --write-movie ... -- --demo).
+func _run_demo() -> void:
+	var gs := GameState
+	gs.gold = 12345.0
+	gs.tap_level = 8
+	gs.hunters[0] = 5
+	gs.hunters[1] = 3
+	gs.hunters[2] = 1
+	gs.gate = 3
+	gs.wave = 6
+	gs.gates_cleared = 2
+	_spawn_monster()
+	_refresh()
+	_heroes_run_in()
+	await get_tree().create_timer(1.0).timeout
+	for i in 14:
+		_tap(_monster_center())
+		await get_tree().create_timer(0.16).timeout
+	_buy(0)
+	await get_tree().create_timer(0.8).timeout
+	gs.start_boss()
+	_spawn_monster()
+	await get_tree().create_timer(1.6).timeout
+	for i in 12:
+		_tap(_monster_center())
+		await get_tree().create_timer(0.14).timeout
 
 
 func _shot(dir: String, shot_name: String) -> void:

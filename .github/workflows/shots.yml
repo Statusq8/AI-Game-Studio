@@ -20,7 +20,7 @@ concurrency:
 jobs:
   shots:
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       GODOT_VERSION: '4.5.1'
     steps:
@@ -43,6 +43,14 @@ jobs:
           mkdir -p shots
           timeout 120 xvfb-run -a -s "-screen 0 1080x1920x24" \
             godot --path godot --rendering-driver opengl3 --resolution 720x1280 -- --shots="$GITHUB_WORKSPACE/shots" 2>&1 | tail -40 || true
+          # Видео боя: Movie Maker пишет кадры с фиксированными 30 fps независимо от скорости рендера.
+          mkdir -p /tmp/frames
+          timeout 300 xvfb-run -a -s "-screen 0 1080x1920x24" \
+            godot --path godot --rendering-driver opengl3 --resolution 720x1280 \
+            --write-movie /tmp/frames/f.png --fixed-fps 30 --quit-after 210 -- --demo > /dev/null 2>&1 || true
+          ls /tmp/frames | wc -l
+          ffmpeg -loglevel error -y -framerate 30 -i /tmp/frames/f%08d.png -vf "scale=540:-2" \
+            -c:v libx264 -preset veryfast -crf 26 -pix_fmt yuv420p shots/battle.mp4 || true
           ls -la shots
           test -n "$(ls shots/*.png 2>/dev/null)"
 
