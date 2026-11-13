@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.3.0"
+const VERSION := "1.3.1"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -73,6 +73,7 @@ func _ready() -> void:
 	_overlay = Control.new()
 	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_overlay.z_index = 20  # окна поверх препятствий и эффектов поля
 	add_child(_overlay)
 	Save.changed.connect(_refresh_coins)
 	_show_home()
@@ -1500,9 +1501,8 @@ func _show_tip() -> void:
 			var ic := Control.new()
 			ic.custom_minimum_size = Vector2(0, 110)
 			ic.draw.connect(func() -> void:
-				ic.draw_set_transform(Vector2(ic.size.x / 2, 55), 0.0, Vector2(1.7, 1.7))
-				_draw_goal_icon(ic, k, Vector2.ZERO)
-				ic.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE))
+				_draw_goal_icon(ic, k, Vector2(ic.size.x / 2, 55)))
+			ic.resized.connect(ic.queue_redraw)
 			v.add_child(ic)
 			v.move_child(ic, 0)
 			return
@@ -2393,7 +2393,7 @@ func _run_shots(dir: String) -> void:
 	await _snap(dir, "1d_settings")
 	_clear_overlay()
 	# уровни с разными препятствиями: 4 ящики, 5 трава, 6 предметы, 7 цепи, 8 вазы
-	for n in [152, 278, 377]:
+	for n in [8, 12, 21, 40, 55, 70]:
 		_start_level(n)
 		await get_tree().create_timer(1.6).timeout
 		await _snap(dir, "2_level_%d" % n)

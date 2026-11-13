@@ -130,10 +130,9 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 		"crate", "vase", "safe", "jar", "cage", "balloon", "flower", "bush", "shell", "stone", "colorbox", "birdhouse":
 			var info: Array = BLOCK[kind]
 			var width := mini(4 + n / 30, 6) if kind in ["crate", "vase", "balloon"] else (3 if kind in ["stone", "safe"] else mini(3 + n / 60, 5))
-			var x0 := (W - width) / 2
 			var count := 0
-			for x in range(x0, x0 + width):
-				var c := Vector2i(x, H - 1)
+			var want := 2 if kind == "birdhouse" else width + (2 if kind in ["crate", "vase"] and n > 20 else 0)
+			for c: Vector2i in _pattern(n + kind.length(), want, rng):
 				if lv.blocks.has(c):
 					continue
 				var hp: int = info[1]
@@ -143,7 +142,7 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 					hp = 2
 				lv.blocks[c] = {"kind": info[0], "hp": hp, "color": rng.randi_range(0, lv.colors - 1)}
 				count += 1
-				if kind == "birdhouse" and count >= 2:
+				if count >= want:
 					break
 			if kind == "birdhouse":
 				lv["birdhouse"] = true
@@ -238,3 +237,47 @@ static func _cut_holes(lv: Dictionary, holes: Array) -> void:
 				g.left = cnt
 	# лёд/трава могли закончиться — в цель ставим хотя бы что-то разумное
 	lv.goals = lv.goals.filter(func(g: Dictionary) -> bool: return g.left > 0)
+
+
+## Где стоят препятствия: разные раскладки по номеру уровня (не только нижний ряд).
+## Ни один ряд не перекрывается целиком — фишки обтекают препятствия по диагонали.
+static func _pattern(n: int, want: int, rng: RandomNumberGenerator) -> Array:
+	var cells: Array = []
+	match n % 8:
+		0:  # нижний ряд по центру
+			for x in [3, 4, 2, 5, 1, 6]:
+				cells.append(Vector2i(x, H - 1))
+		1:  # полоса посередине с просветами
+			for x in [1, 2, 5, 6, 3, 4]:
+				cells.append(Vector2i(x, H / 2))
+		2:  # две колонны
+			for y in range(3, 3 + 4):
+				cells.append(Vector2i(1, y))
+				cells.append(Vector2i(6, y))
+		3:  # группа в центре
+			for p in [Vector2i(3, 4), Vector2i(4, 4), Vector2i(3, 5), Vector2i(4, 5), Vector2i(2, 4), Vector2i(5, 5), Vector2i(2, 5), Vector2i(5, 4)]:
+				cells.append(p)
+		4:  # нижние углы
+			for p in [Vector2i(0, H - 1), Vector2i(7, H - 1), Vector2i(1, H - 1), Vector2i(6, H - 1), Vector2i(0, H - 2), Vector2i(7, H - 2), Vector2i(1, H - 2), Vector2i(6, H - 2)]:
+				cells.append(p)
+		5:  # ромб вокруг центра
+			for p in [Vector2i(3, 3), Vector2i(4, 3), Vector2i(2, 4), Vector2i(5, 4), Vector2i(2, 5), Vector2i(5, 5), Vector2i(3, 6), Vector2i(4, 6)]:
+				cells.append(p)
+		6:  # диагональ-лесенка
+			for i in 7:
+				cells.append(Vector2i(i, 2 + i))
+		_:  # россыпь
+			var used := {}
+			while cells.size() < want + 4:
+				var c := Vector2i(rng.randi_range(0, W - 1), rng.randi_range(3, H - 1))
+				if not used.has(c):
+					used[c] = true
+					cells.append(c)
+	# защита: не больше W-2 препятствий в одном ряду
+	var per_row := {}
+	var out: Array = []
+	for c in cells:
+		per_row[c.y] = per_row.get(c.y, 0) + 1
+		if per_row[c.y] <= W - 2:
+			out.append(c)
+	return out
