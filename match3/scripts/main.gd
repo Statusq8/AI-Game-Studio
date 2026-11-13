@@ -1745,7 +1745,9 @@ func _run_bot(levels: int, first: int = 1) -> void:
 		print("BOT level %d: %s, goals left %s" % [n, "WIN" if won else "LOSE", ", ".join(rest)])
 		Save.level = 1
 		Save.coins = 0
+		Save.streak = 0
 		Save.hearts = Save.MAX_HEARTS
+		Save.streak = 0
 		_clear_overlay()
 	print("BOT done: %d/%d wins" % [wins, levels - first + 1])
 	get_tree().quit()
@@ -1754,13 +1756,15 @@ func _run_bot(levels: int, first: int = 1) -> void:
 ## Проверка настоящего ввода: свайп и два тапа через очередь событий, как палец на телефоне.
 func _run_input_test() -> void:
 	Save.hearts = Save.MAX_HEARTS
+	Save.streak = 0  # бот мог оставить серию побед — она добавляет особые фишки на старте
+	_bot = true
 	_start_level(1)
 	await get_tree().create_timer(1.5).timeout
 	var ok := 0
 	for mode in ["mouse", "swipe", "tap"]:
 		var m: Array = []
 		for cand in _board.all_moves():
-			if cand[0] != cand[1]:
+			if cand[0] != cand[1] and not _board.gem_at(cand[0]).is_power() and not _board.gem_at(cand[1]).is_power():
 				m = cand
 				break
 		var before := _moves
