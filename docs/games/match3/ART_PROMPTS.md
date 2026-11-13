@@ -32,3 +32,5 @@
 
 ### Фон уровня, 9:16
 11. `Vertical mobile game background 9:16, sunny cheerful cartoon zoo, green lawn, wooden fences, palm trees and bamboo, a small pond, colorful animal enclosures in the distance, soft blurred depth of field, bright blue sky, empty calm center area, no characters, no text. Stylized 3D cartoon render, soft studio lighting, vibrant saturated colors`
+
+Пачка 1 встроена в игру 2026-11-13 (версия 0.3.0): панда, 6 фишек, ракета, бомба, радужный шар, пропеллер, фон зоопарка. Белый фон вырезан скриптом, фишки 192 px.

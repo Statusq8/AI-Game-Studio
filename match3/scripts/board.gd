@@ -261,7 +261,7 @@ func gem_at(c: Vector2i) -> Node2D:
 
 func color_at(c: Vector2i) -> int:
 	var g := gem_at(c)
-	if g == null or g.special == Gem.ORB or g.special == Gem.ITEM:
+	if g == null or g.special != Gem.NONE:
 		return -1
 	return g.color
 
@@ -581,13 +581,14 @@ func try_swap(a: Vector2i, b: Vector2i) -> void:
 			await _orb_with_color(orb, other.color)
 			await _cascade([])
 			return
+	if pa or pb:
+		# особая фишка, сдвинутая свапом, всегда срабатывает
+		move_made.emit()
+		var sp := ga if pa else gb
+		await _clear({sp.cell: true})
+		await _cascade([])
+		return
 	if find_groups().is_empty():
-		if pa or pb:
-			move_made.emit()
-			var sp := ga if pa else gb
-			await _clear({sp.cell: true})
-			await _cascade([])
-			return
 		await _animate_swap(ga, gb, b, a)
 		_swap_data(a, b)
 		busy = false

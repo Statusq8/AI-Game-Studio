@@ -6,7 +6,7 @@ const Levels := preload("res://scripts/levels.gd")
 const Board := preload("res://scripts/board.gd")
 const Gem := preload("res://scripts/gem.gd")
 
-const VERSION := "0.2.1"
+const VERSION := "0.3.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -24,6 +24,8 @@ var _hearts_timer: Label
 var _ui_tick := 0.0
 
 var _board: Board
+var _home_panda: Control
+var _panda: Control
 var _board_frame: Control
 var _moves_label: Label
 var _level_label: Label
@@ -91,8 +93,9 @@ func _build_background() -> void:
 	tex.width = 8
 	tex.height = 256
 	_bg = TextureRect.new()
-	_bg.texture = tex
-	_bg.stretch_mode = TextureRect.STRETCH_SCALE
+	_bg.texture = load("res://assets/art/bg_zoo.webp") if ResourceLoader.exists("res://assets/art/bg_zoo.webp") else tex
+	_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_bg)
@@ -199,23 +202,11 @@ func _build_home() -> void:
 	center.add_theme_constant_override("separation", 30)
 	_home.add_child(center)
 
-	var gems := Control.new()
-	gems.custom_minimum_size = Vector2(0, 150)
-	center.add_child(gems)
-	for i in 5:
-		var g: Node2D = Gem.new()
-		g.color = i
-		g.size = 110.0
-		g.position = Vector2(0, 75)
-		gems.add_child(g)
-		var tw := g.create_tween().set_loops()
-		tw.tween_property(g, "position:y", 60.0, 0.9 + i * 0.13).set_trans(Tween.TRANS_SINE)
-		tw.tween_property(g, "position:y", 90.0, 0.9 + i * 0.13).set_trans(Tween.TRANS_SINE)
-	gems.resized.connect(func() -> void:
-		var i := 0
-		for g in gems.get_children():
-			g.position.x = gems.size.x / 2 + (i - 2) * 120
-			i += 1)
+	var panda_box := CenterContainer.new()
+	panda_box.custom_minimum_size = Vector2(0, 400)
+	center.add_child(panda_box)
+	_home_panda = _make_panda(380.0)
+	panda_box.add_child(_home_panda)
 
 	var title := Label.new()
 	title.text = "ТРИ В РЯД"
@@ -327,7 +318,68 @@ func _build_level_screen() -> void:
 	_board.goal_hit.connect(_on_goal_hit)
 	_board.settled.connect(_on_settled)
 	_board.big_hit.connect(func(p: float) -> void: _shake = maxf(_shake, 6.0 + p * 4.0))
-	_level_screen.resized.connect(func() -> void: _board_frame.position = _board_rest())
+	_panda = _make_panda(200.0)
+	_level_screen.add_child(_panda)
+	_level_screen.move_child(_panda, _board_frame.get_index())
+	_board.combo_made.connect(func(n: int) -> void: if n >= 2: _panda_react("combo"))
+	_level_screen.resized.connect(func() -> void:
+		_board_frame.position = _board_rest()
+		_panda.position = _panda_rest())
+
+
+## Панда: картинка с «дыханием». Позже заменим на версию из частей (голова, лапы, тело).
+func _make_panda(height: float) -> Control:
+	var holder := Control.new()
+	var t: Texture2D = load("res://assets/art/panda.png")
+	var w := height * t.get_width() / t.get_height()
+	holder.custom_minimum_size = Vector2(w, height)
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var img := TextureRect.new()
+	img.texture = t
+	img.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
+	img.size = Vector2(w, height)
+	img.pivot_offset = Vector2(w / 2, height)
+	img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	img.name = "Img"
+	holder.add_child(img)
+	var tw := img.create_tween().set_loops()
+	tw.tween_property(img, "scale", Vector2(1.02, 0.975), 0.9).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(img, "scale", Vector2(0.99, 1.02), 0.9).set_trans(Tween.TRANS_SINE)
+	return holder
+
+
+## Реакция панды: "combo" — подпрыгнуть, "win" — прыгать от радости, "sad" — поникнуть.
+func _panda_react(kind: String) -> void:
+	if _panda == null:
+		return
+	var img: Control = _panda.get_node("Img")
+	if kind == "reset":
+		img.rotation = 0.0
+		_panda.modulate = Color.WHITE
+		return
+	var tw := _panda.create_tween()
+	match kind:
+		"combo":
+			tw.tween_property(_panda, "position:y", _panda_rest().y - 40, 0.15).set_ease(Tween.EASE_OUT)
+			tw.tween_property(_panda, "position:y", _panda_rest().y, 0.2).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_BOUNCE)
+		"win":
+			for i in 3:
+				tw.tween_property(_panda, "position:y", _panda_rest().y - 60, 0.18).set_ease(Tween.EASE_OUT)
+				tw.tween_property(_panda, "position:y", _panda_rest().y, 0.18).set_ease(Tween.EASE_IN)
+		"sad":
+			tw.tween_property(img, "rotation", -0.12, 0.3)
+			tw.tween_property(_panda, "modulate", Color(0.75, 0.75, 0.85), 0.3)
+
+
+func _panda_rest() -> Vector2:
+	var top := _board_rest().y
+	var h := clampf(top - 225.0, 120.0, 260.0)
+	_panda.custom_minimum_size = Vector2(h * 0.84, h)
+	var img: Control = _panda.get_node("Img")
+	img.size = _panda.custom_minimum_size
+	img.pivot_offset = Vector2(img.size.x / 2, img.size.y)
+	return Vector2(_level_screen.size.x - h * 0.84 - 10, top - h + 18)
 
 
 func _board_rest() -> Vector2:
@@ -387,6 +439,8 @@ func _start_level(n: int) -> void:
 	_board.setup(_level)
 	_board.input_enabled = true
 	_board_frame.position = _board_rest()
+	_panda.position = _panda_rest()
+	_panda_react("reset")
 	_build_goals()
 	_update_moves()
 	_state = "play"
@@ -569,6 +623,7 @@ func _on_settled() -> void:
 			elif _moves <= 0:
 				_board.input_enabled = false
 				_state = "done"
+				_panda_react("sad")
 				await get_tree().create_timer(0.4).timeout
 				_show_lose()
 		"bonus":
@@ -578,6 +633,7 @@ func _on_settled() -> void:
 
 func _begin_bonus() -> void:
 	_state = "bonus"
+	_panda_react("win")
 	_board.input_enabled = false
 	var l := Label.new()
 	l.text = "Отлично!"
@@ -677,6 +733,7 @@ func _add_moves() -> void:
 	_clear_overlay()
 	_moves += EXTRA_MOVES
 	_update_moves()
+	_panda_react("reset")
 	_state = "play"
 	_board.input_enabled = true
 

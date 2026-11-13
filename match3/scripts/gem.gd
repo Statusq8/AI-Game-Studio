@@ -13,6 +13,9 @@ const COLORS := [
 	Color("#ff9a2a"),  # 5 оранжевый — квадрат
 ]
 
+## ИИ-графика (решение №26). Нет файла — рисуем заглушку кодом.
+static var _tex := {}
+
 var color := 0
 var special := NONE
 var cell := Vector2i.ZERO
@@ -42,8 +45,42 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
+static func tex(name: String) -> Texture2D:
+	if not _tex.has(name):
+		var path := "res://assets/art/%s.png" % name
+		_tex[name] = load(path) if ResourceLoader.exists(path) else null
+	return _tex[name]
+
+
+func _draw_tex(t: Texture2D, box: float, angle: float = 0.0, k: float = 1.0) -> void:
+	var sz := t.get_size()
+	var s := box * k / maxf(sz.x, sz.y)
+	draw_set_transform(Vector2.ZERO, angle, Vector2(s, s))
+	draw_texture(t, -sz / 2)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
 func _draw() -> void:
 	var r := size * 0.41
+	var box := size * 0.9
+	var pulse := 1.0 + sin(_t * 5.0) * 0.05
+	var t: Texture2D = null
+	match special:
+		NONE:
+			t = tex("gem_%d" % color) if color >= 0 else null
+			if t:
+				_draw_tex(t, box)
+				return
+		ROCKET_H, ROCKET_V:
+			t = tex("rocket")
+			if t:
+				_draw_tex(t, box * 1.05, PI / 2.0 if special == ROCKET_V else 0.0, pulse)
+				return
+		BOMB, ORB, PROPELLER:
+			t = tex({BOMB: "bomb", ORB: "orb", PROPELLER: "propeller"}[special])
+			if t:
+				_draw_tex(t, box, _t * 6.0 if special == PROPELLER else 0.0, pulse)
+				return
 	match special:
 		NONE:
 			_draw_gem(color, r)
