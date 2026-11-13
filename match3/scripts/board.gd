@@ -27,7 +27,7 @@ signal special_fired
 
 const Gem := preload("res://scripts/gem.gd")
 const CELL := 84.0
-const PROPELLER_TIME := 0.75  # полёт бабочки к цели
+const PROPELLER_TIME := 1.5  # полёт бабочки к цели
 const ROCKET_CELL_TIME := 0.045  # ракета пролетает клетку за столько секунд
 enum { B_NONE, B_CRATE, B_VASE, B_SAFE, B_JAR, B_CAGE, B_BALLOON, B_FLOWER, B_BUSH, B_SHELL }
 ## Препятствия-блоки: цель уровня, бьёт ли совпадение рядом, картинки по стадиям поломки.
@@ -1323,7 +1323,7 @@ func _chain_lightning(start: Vector2i, targets: Array, col: int) -> void:
 	var color: Color = Gem.COLORS[col].lightened(0.45) if col >= 0 else Color("#bfe9ff")
 	var left := targets.duplicate()
 	var cur := start
-	var step := clampf(0.5 / maxf(1.0, left.size()), 0.025, 0.06)
+	var step := clampf(0.75 / maxf(1.0, left.size()), 0.04, 0.09)
 	while not left.is_empty():
 		var best := 0
 		var bd := 1e9
@@ -1817,8 +1817,8 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int) -> void:
 	var last := [lift]
 	var tw := p.create_tween()
 	# 1. вспорхнула
-	tw.tween_property(p, "position", lift, 0.16).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
-	tw.parallel().tween_property(p, "scale", Vector2(1.15, 1.15), 0.16)
+	tw.tween_property(p, "position", lift, 0.3).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+	tw.parallel().tween_property(p, "scale", Vector2(1.15, 1.15), 0.3)
 	# 2. полёт по плавной кривой
 	tw.tween_method(func(t: float) -> void:
 		var q := lift.bezier_interpolate(c1, c2, b, t)
@@ -1827,14 +1827,14 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int) -> void:
 		p.position = q
 		if q.distance_to(last[0]) > 22.0:
 			last[0] = q
-			_sparkles(q, Color("#ffcf5a"), 1), 0.0, 1.0, PROPELLER_TIME - 0.28).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+			_sparkles(q, Color("#ffcf5a"), 1), 0.0, 1.0, PROPELLER_TIME - 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	# 3. у цели: зависла, ныряет и лопается
 	tw.tween_property(p, "rotation", 0.0, 0.05)
-	tw.tween_property(p, "scale", Vector2(1.35, 1.35), 0.07).set_trans(Tween.TRANS_BACK)
+	tw.tween_property(p, "scale", Vector2(1.35, 1.35), 0.14).set_trans(Tween.TRANS_BACK)
 	tw.tween_callback(func() -> void:
 		_burst(cell_pos(to), Color("#ffb020"), 14)
 		_pop_ring(b, Color("#ffd23f")))
-	tw.tween_property(p, "scale", Vector2(0.1, 0.1), 0.06).set_ease(Tween.EASE_IN)
+	tw.tween_property(p, "scale", Vector2(0.1, 0.1), 0.12).set_ease(Tween.EASE_IN)
 	tw.tween_callback(p.queue_free)
 
 

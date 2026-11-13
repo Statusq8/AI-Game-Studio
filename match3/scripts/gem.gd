@@ -94,6 +94,11 @@ func _draw() -> void:
 					draw_set_transform(Vector2(0, sin(_t * 4.0) * 3.0), 0.0, Vector2(k * (0.55 + 0.45 * absf(sin(_t * 12.0))), k))
 					draw_texture(t, -sz / 2)
 					draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+				elif special == BOMB:
+					# у бомбы фитиль справа сверху — сдвигаем картинку, чтобы шар стоял по центру клетки, и делаем крупнее
+					draw_set_transform(Vector2(-size * 0.05, size * 0.06), 0.0, Vector2.ONE)
+					_draw_tex(t, box * 1.25, 0.0, pulse)
+					draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 				else:
 					_draw_tex(t, box * 1.08, 0.0, pulse)
 				return
