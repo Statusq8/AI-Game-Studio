@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.0.1"
+const VERSION := "1.0.2"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -701,7 +701,7 @@ func _build_level_screen() -> void:
 	holder.set_anchors_preset(Control.PRESET_FULL_RECT)
 	holder.add_child(frame)
 	holder.resized.connect(func() -> void:
-		var out := 27.0
+		var out := 36.0
 		frame.position = Vector2(-out, -out)
 		frame.size = (holder.size + Vector2(out, out) * 2) / fk)
 	_board_frame.add_child(holder)
@@ -1272,28 +1272,35 @@ func _big_text(text: String, fsize: int, top: Color, bottom: Color) -> Control:
 	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
 	var banner: Texture2D = load("res://assets/art/ui_banner.png")
 	c.draw.connect(func() -> void:
-		var ts := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize)
-		var p := Vector2(c.size.x / 2 - ts.x / 2, c.size.y / 2 + fsize * 0.35)
+		var fs := fsize
+		var ts := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var cx := c.size.x / 2.0
+		var cy := c.size.y / 2.0
 		if banner:
-			var bw := minf(c.size.x - 10.0, ts.x + 220.0)
+			var bw := minf(c.size.x - 6.0, ts.x + 170.0)
 			var bh := bw * banner.get_height() / banner.get_width()
-			c.draw_texture_rect(banner, Rect2(Vector2(c.size.x / 2 - bw / 2, c.size.y / 2 - bh * 0.42), Vector2(bw, bh)), false)
+			# надпись помещается в «окно» плашки (≈ 72% ширины)
+			while ts.x > bw * 0.74 and fs > 30:
+				fs -= 2
+				ts = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			# центр окна плашки — на 37% её высоты
+			c.draw_texture_rect(banner, Rect2(Vector2(cx - bw / 2.0, cy - bh * 0.37), Vector2(bw, bh)), false)
+		var depth := int(fs * 0.16)
+		# визуальный центр заглавных букв ~0.36 кегля над базовой линией; объём тянется вниз — сдвигаем вверх на половину
+		var p := Vector2(cx - ts.x / 2.0, cy + fs * 0.36 - depth / 2.0)
 		var ink := Color("#2a1440")
-		# объём: слои вниз
-		for d in range(10, 0, -2):
-			c.draw_string_outline(font, p + Vector2(0, d), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, 16, ink)
-			c.draw_string(font, p + Vector2(0, d), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, bottom.darkened(0.35))
-		c.draw_string_outline(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, 16, ink)
-		c.draw_string_outline(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, 6, Color.WHITE)
-		c.draw_string(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, bottom)
-		# верхняя половина светлее (градиент): рисуем заливку ещё раз, обрезав сверху
-		c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-		var clip_h := fsize * 0.5
-		var rect := Rect2(Vector2(0, p.y - fsize * 0.85), Vector2(c.size.x, clip_h))
-		c.draw_rect(rect, Color(0, 0, 0, 0), false)
-		c.draw_string(font, p + Vector2(0, -2), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, Color(top, 0.75))
-		# блик
-		c.draw_string(font, p + Vector2(-2, -5), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fsize, Color(1, 1, 1, 0.22)))
+		var side := bottom.darkened(0.45)
+		for d in range(depth, 0, -1):
+			c.draw_string_outline(font, p + Vector2(0, d), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 18, ink)
+		for d in range(depth, 0, -1):
+			c.draw_string(font, p + Vector2(0, d), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, side.lerp(bottom.darkened(0.2), 1.0 - float(d) / depth))
+		c.draw_string_outline(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 18, ink)
+		c.draw_string_outline(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 7, Color(1, 1, 1, 0.95))
+		c.draw_string(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, bottom)
+		# градиент: верх светлее — несколько полупрозрачных слоёв со сдвигом вверх
+		for k in 3:
+			c.draw_string(font, p + Vector2(0, -1 - k), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(top, 0.35))
+		c.draw_string(font, p + Vector2(-2, -5), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, 0.18)))
 	c.resized.connect(c.queue_redraw)
 	return c
 
@@ -1420,14 +1427,43 @@ func _goal_tick(gv: Dictionary) -> void:
 	var l: Label = gv.label
 	if not is_instance_valid(l):
 		return
-	l.text = "✓" if gv.shown <= 0 else str(gv.shown)
-	if gv.shown <= 0:
-		l.add_theme_color_override("font_color", Color("#7dff8a"))
 	var icon: Control = gv.icon
 	icon.pivot_offset = icon.size / 2
+	if gv.shown <= 0 and not gv.get("done", false):
+		gv["done"] = true
+		l.text = " "
+		_check_badge(icon)
+		return
+	if gv.shown > 0:
+		l.text = str(gv.shown)
 	var tw := icon.create_tween()
 	tw.tween_property(icon, "scale", Vector2(1.25, 1.25), 0.06)
 	tw.tween_property(icon, "scale", Vector2.ONE, 0.1)
+
+
+## Объёмная зелёная галочка в круге поверх иконки выполненной цели (с «прыжком» и искрами).
+func _check_badge(icon: Control) -> void:
+	var b := Control.new()
+	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.size = Vector2(44, 44)
+	b.position = Vector2(icon.size.x / 2.0 - 22, icon.size.y - 26)
+	b.pivot_offset = Vector2(22, 22)
+	b.draw.connect(func() -> void:
+		var c := Vector2(22, 22)
+		b.draw_circle(c + Vector2(0, 3), 21, Color(0, 0, 0, 0.3))
+		b.draw_circle(c, 21, Color("#1e6b2a"))
+		b.draw_circle(c, 18, Color("#3fc25a"))
+		b.draw_circle(c + Vector2(0, -4), 13, Color("#6fe07f"))
+		var pts := PackedVector2Array([c + Vector2(-10, 0), c + Vector2(-3, 8), c + Vector2(11, -8)])
+		b.draw_polyline(pts, Color("#1e5a2a"), 9.0, true)
+		b.draw_polyline(pts, Color.WHITE, 5.5, true)
+		b.draw_circle(c + Vector2(-8, -10), 3.5, Color(1, 1, 1, 0.75)))
+	icon.add_child(b)
+	b.scale = Vector2(0.1, 0.1)
+	var t := b.create_tween()
+	t.tween_property(b, "scale", Vector2(1.35, 1.35), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(b, "scale", Vector2.ONE, 0.12)
+	_board._sparkles(_fx.to_local(icon.get_global_rect().get_center()), Color("#7dff8a"), 6) if _board else null
 
 
 func _goals_done() -> bool:
@@ -1834,7 +1870,10 @@ func _run_shots(dir: String) -> void:
 	_start_level(23)
 	await get_tree().create_timer(1.6).timeout
 	_on_combo(4)
-	await get_tree().create_timer(0.3).timeout
+	_goal_views[0].goal.left = 0
+	_goal_views[0].shown = 1
+	_goal_tick(_goal_views[0])
+	await get_tree().create_timer(0.4).timeout
 	await _snap(dir, "2z_combo")
 	_start_level(5)
 	await get_tree().create_timer(1.4).timeout
