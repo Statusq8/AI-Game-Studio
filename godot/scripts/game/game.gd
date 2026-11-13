@@ -22,6 +22,7 @@ var _squad: Array[TextureRect] = []
 var _attack_timer := 0.0
 var _gold_label: Label
 var _rank_label: Label
+var _rank_badge: TextureRect
 var _gate_label: Label
 var _area: Control
 var _monster_name: Label
@@ -168,6 +169,10 @@ func _grant_boss_extra() -> void:
 func _on_rank_up(rank: int) -> void:
 	var box := _open_overlay("Новый ранг: %s!" % B.RANKS[rank],
 		"Весь урон отряда и ударов x%s." % str(B.RANK_MULT[rank]))
+	var big := _make_badge(rank, 170)
+	big.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	box.add_child(big)
+	box.move_child(big, 0)
 	box.add_child(_button("Отлично", 30, _close_overlay))
 
 
@@ -210,7 +215,8 @@ func _update_monster_ui() -> void:
 func _refresh() -> void:
 	var gs := GameState
 	_gold_label.text = B.format_num(gs.gold)
-	_rank_label.text = "Ранг " + B.RANKS[gs.rank()]
+	_rank_label.text = B.RANKS[gs.rank()]
+	_rank_badge.texture = load(B.RANK_BADGES[gs.rank()])
 	var biome := B.biome(gs.gate)
 	var wave_text := "БОСС" if B.is_boss(gs.wave) else "Волна %d/%d" % [gs.wave, B.WAVES_PER_GATE]
 	if gs.farm:
@@ -285,8 +291,10 @@ func _build_ui() -> void:
 	_gold_label = _label("", 34, Color(1, 0.85, 0.3))
 	_gold_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(_gold_label)
-	_rank_label = _label("", 34, Color(0.7, 0.85, 1))
-	top.add_child(_rank_label)
+	var badge := _make_badge(0, 76)
+	_rank_badge = badge
+	_rank_label = badge.get_child(0)
+	top.add_child(badge)
 
 	_gate_label = _label("", 24, Color(0.85, 0.85, 0.9))
 	_gate_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -428,6 +436,18 @@ func _button(text: String, size: int, on_press: Callable) -> Button:
 	b.add_theme_constant_override("icon_max_width", 52)
 	b.pressed.connect(on_press)
 	return b
+
+
+## Эмблема ранга с буквой поверх (буквы рисуем сами — нейросети их искажают).
+func _make_badge(rank: int, size: int) -> TextureRect:
+	var tr := _icon(load(B.RANK_BADGES[rank]), size)
+	var letter := _label(B.RANKS[rank], int(size * 0.42), Color(1, 1, 1))
+	letter.set_anchors_preset(Control.PRESET_FULL_RECT)
+	letter.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	letter.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	letter.position.y = size * 0.03
+	tr.add_child(letter)
+	return tr
 
 
 func _icon(tex: Texture2D, size: int) -> TextureRect:

@@ -26,6 +26,7 @@ const RANKS := ["E", "D", "C"]
 ## Сколько Врат нужно закрыть для ранга.
 const RANK_GATES := [0, 5, 10]
 const RANK_MULT := [1.0, 1.5, 2.25]
+const RANK_BADGES := ["res://assets/art/rank_e.png", "res://assets/art/rank_d.png", "res://assets/art/rank_c.png"]
 
 
 static func biome(gate: int) -> Dictionary:
