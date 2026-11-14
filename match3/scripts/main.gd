@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "2.10.0"
+const VERSION := "2.11.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1235,8 +1235,11 @@ func _on_booster(kind: String) -> void:
 	if _aiming == kind:
 		_aiming = ""
 		_board.target_cb = Callable()
+		_hide_aim_banner()
 		_refresh_boosters()
 		return
+	if _aiming != "":
+		_hide_aim_banner()
 	if int(Save.boosters.get(kind, 0)) <= 0:
 		_board.input_enabled = false
 		_dialog("Нет бустера", ["Купить 1 шт. за %d монет?" % BOOSTER_PRICE], [
@@ -1257,11 +1260,76 @@ func _on_booster(kind: String) -> void:
 		return
 	_aiming = kind
 	_refresh_boosters()
+	_show_aim_banner(kind)
 	_board.target_cb = func(cell: Vector2i) -> void:
 		_aiming = ""
+		_hide_aim_banner()
 		Save.use_booster(kind)
 		_refresh_boosters()
 		_board.booster_hit(kind, cell)
+
+
+var _aim_banner: Control
+
+const AIM_TEXT := {"hammer": ["Молот", "Коснись фишки или препятствия — разобьёт его!"],
+	"arrow": ["Стрела", "Коснись клетки — очистит весь ряд!"],
+	"cannon": ["Стрела", "Коснись клетки — очистит весь столбец!"]}
+
+
+## Плашка выбранного бустера: выезжает сверху на место шапки, крупная иконка + подсказка.
+func _show_aim_banner(kind: String) -> void:
+	_hide_aim_banner()
+	if not AIM_TEXT.has(kind):
+		return
+	var b := Control.new()
+	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.size = Vector2(_level_screen.size.x, 200)
+	b.z_index = 15
+	var font: Font = UiTheme.title_font()
+	var info: Array = AIM_TEXT[kind]
+	b.draw.connect(func() -> void:
+		var w := b.size.x
+		_draw_band(b, Rect2(0, 0, w, 196), false)
+		var ic := Vector2(110, 100)
+		b.draw_texture_rect(Board.fx_tex("glow"), Rect2(ic - Vector2(100, 100), Vector2(200, 200)), false, Color(1, 0.9, 0.5, 0.6))
+		var icon := "ui_hammer" if kind == "hammer" else "ui_arrow"
+		if kind == "cannon":
+			b.draw_set_transform(ic, -PI / 2.0, Vector2.ONE)
+			Zoo.draw_art(b, icon, Vector2.ZERO, 130.0)
+			b.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		else:
+			Zoo.draw_art(b, icon, ic, 130.0)
+		var tx := 210.0
+		b.draw_string_outline(font, Vector2(tx, 78), info[0] + "!", HORIZONTAL_ALIGNMENT_LEFT, -1, 48, 12, Color("#3a1a00"))
+		b.draw_string(font, Vector2(tx, 78), info[0] + "!", HORIZONTAL_ALIGNMENT_LEFT, -1, 48, Color("#ffe14d"))
+		var words: PackedStringArray = (info[1] as String).split(" ")
+		var line := ""
+		var y := 122.0
+		for wd in words:
+			var test := (line + " " + wd).strip_edges()
+			if font.get_string_size(test, HORIZONTAL_ALIGNMENT_LEFT, -1, 26).x > w - tx - 24 and line != "":
+				b.draw_string_outline(font, Vector2(tx, y), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, 8, Color("#0f3a1c"))
+				b.draw_string(font, Vector2(tx, y), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE)
+				line = wd
+				y += 32
+			else:
+				line = test
+		b.draw_string_outline(font, Vector2(tx, y), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, 8, Color("#0f3a1c"))
+		b.draw_string(font, Vector2(tx, y), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color.WHITE))
+	_level_screen.add_child(b)
+	b.position = Vector2(0, -210)
+	var t := b.create_tween()
+	t.tween_property(b, "position:y", 0.0, 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_aim_banner = b
+
+
+func _hide_aim_banner() -> void:
+	if _aim_banner and is_instance_valid(_aim_banner):
+		var b := _aim_banner
+		var t := b.create_tween()
+		t.tween_property(b, "position:y", -210.0, 0.2).set_ease(Tween.EASE_IN)
+		t.tween_callback(b.queue_free)
+	_aim_banner = null
 
 
 func _close_dialog() -> void:

@@ -905,6 +905,7 @@ func booster_hit(kind: String, cell: Vector2i) -> void:
 	busy = true
 	_hits.clear()
 	var area := {}
+	await _tool_anim(kind, cell)
 	match kind:
 		"hammer":
 			area[cell] = true
@@ -920,6 +921,63 @@ func booster_hit(kind: String, cell: Vector2i) -> void:
 	big_hit.emit(1.5)
 	await _clear(area)
 	await _cascade([])
+
+
+## Крупная анимация бустера: молот замахивается и бьёт по клетке; стрела проносится через ряд/столбец.
+func _tool_anim(kind: String, cell: Vector2i) -> void:
+	if fx == null:
+		return
+	var gs := get_global_transform().get_scale().x
+	var at := fx.to_local(to_global(cell_pos(cell)))
+	var name := "ui_hammer" if kind == "hammer" else "ui_arrow"
+	var tex: Texture2D = load("res://scripts/zoo.gd").art(name)
+	if tex == null:
+		return
+	var sp := Sprite2D.new()
+	sp.texture = tex
+	sp.z_index = 12
+	var k := CELL * 2.4 * gs / maxf(tex.get_width(), tex.get_height())
+	fx.add_child(sp)
+	if kind == "hammer":
+		# молот прилетает крупным сбоку-сверху, замахивается и с силой бьёт
+		sp.scale = Vector2(k, k) * 0.3
+		sp.position = at + Vector2(CELL * 1.6, -CELL * 2.6) * gs
+		sp.rotation = 0.9
+		var tw := sp.create_tween()
+		tw.tween_property(sp, "scale", Vector2(k, k), 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.parallel().tween_property(sp, "position", at + Vector2(CELL * 0.9, -CELL * 1.3) * gs, 0.2)
+		tw.tween_property(sp, "rotation", 1.5, 0.16).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(sp, "rotation", -0.55, 0.1).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.parallel().tween_property(sp, "position", at + Vector2(CELL * 0.35, -CELL * 0.55) * gs, 0.1)
+		await tw.finished
+		Sfx.play("bomb", 1.25, -4.0)
+		shake.emit(14.0)
+		_glow_flash(at, Color(1, 0.9, 0.6), CELL * 2.4 * gs, 0.3)
+		_pop_ring(at, Color("#ffe08a"))
+		_sparkles(at, Color("#fff3b0"), 10)
+		var ot := sp.create_tween()
+		ot.tween_property(sp, "rotation", 0.2, 0.15).set_trans(Tween.TRANS_BACK)
+		ot.parallel().tween_property(sp, "modulate:a", 0.0, 0.25).set_delay(0.08)
+		ot.tween_callback(sp.queue_free)
+	else:
+		# стрела влетает с края поля и проносится через весь ряд/столбец
+		var vertical := kind == "cannon"
+		var a := fx.to_local(to_global(Vector2(-CELL, cell_pos(cell).y) if not vertical else Vector2(cell_pos(cell).x, board_size().y + CELL)))
+		var b := fx.to_local(to_global(Vector2(board_size().x + CELL, cell_pos(cell).y) if not vertical else Vector2(cell_pos(cell).x, -CELL)))
+		sp.scale = Vector2(k, k) * 0.8
+		sp.rotation = -PI / 2.0 if vertical else 0.0
+		sp.position = a
+		Sfx.play("rocket", 1.2, -3.0)
+		var last := [a]
+		var tw := sp.create_tween()
+		tw.tween_method(func(t: float) -> void:
+			sp.position = a.lerp(b, t)
+			if sp.position.distance_to(last[0]) > 30.0:
+				last[0] = sp.position
+				_sparkles(sp.position, Color("#ffe08a"), 2), 0.0, 1.0, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_callback(sp.queue_free)
+		shake.emit(8.0)
+		await get_tree().create_timer(0.18).timeout
 
 
 func shuffle_now() -> void:
@@ -1891,31 +1949,40 @@ func _fly_special_in(g: Node2D, k: int) -> void:
 	s.set_special(k)
 	s.z_index = 10
 	fx.add_child(s)
-	var p0 := fx.to_local(to_global(Vector2(board_size().x / 2.0, board_size().y + CELL * 2.2)))
 	var p2 := fx.to_local(to_global(cell_pos(g.cell)))
-	var p1 := (p0 + p2) / 2.0 + Vector2(randf_range(-180, 180), -CELL * 3.0 * gs.y)
-	var last := [p0]
-	Sfx.play("swap", 0.8)
+	var p0 := p2 + Vector2(0, -CELL * 6.0 * gs.y)
+	s.position = p0
+	s.scale = gs * 2.6
+	s.modulate.a = 0.0
+	Sfx.play("swap", 0.7)
+	# бонус крупно появляется над полем и с силой падает в свою клетку
 	var tw := s.create_tween()
-	tw.tween_method(func(t: float) -> void:
-		var q := p0.lerp(p1, t).lerp(p1.lerp(p2, t), t)
-		s.position = q
-		s.rotation = TAU * t * 1.5
-		var lift := 4.0 * t * (1.0 - t)
-		s.scale = gs * (0.6 + 0.9 * lift + 0.4 * t)
-		if q.distance_to(last[0]) > 26.0:
-			last[0] = q
-			_sparkles(q, Color("#fff3b0"), 1), 0.0, 1.0, 0.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(s, "modulate:a", 1.0, 0.12)
+	tw.parallel().tween_property(s, "rotation", TAU, 0.45).set_trans(Tween.TRANS_QUAD)
+	tw.parallel().tween_property(s, "position", p2, 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(s, "scale", gs * 1.1, 0.45).set_ease(Tween.EASE_IN)
 	tw.tween_callback(func() -> void:
 		s.queue_free()
 		if not is_instance_valid(g):
 			return
 		g.set_special(k)
-		g.scale = Vector2(1.5, 1.5)
-		var pt := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		pt.tween_property(g, "scale", Vector2.ONE, 0.3)
+		g.scale = Vector2(1.45, 0.65)
+		var pt := g.create_tween()
+		pt.tween_property(g, "scale", Vector2(0.85, 1.2), 0.1)
+		pt.tween_property(g, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		shake.emit(12.0)
+		_glow_flash(p2, Color(1, 0.92, 0.6), CELL * 3.0 * gs.x, 0.35)
 		_pop_ring(p2, Color("#fff6b0"))
-		_sparkles(p2, Color("#fff6b0"), 8)
+		_sparkles(p2, Color("#fff6b0"), 10)
+		# соседние фишки подпрыгивают от удара
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)]:
+			var nb: Node2D = gem_at(g.cell + d)
+			if nb and not nb.has_meta("incoming"):
+				var base := cell_pos(nb.cell)
+				var bt := nb.create_tween()
+				bt.tween_property(nb, "position", base + Vector2(d) * 10.0 + Vector2(0, -8), 0.08).set_ease(Tween.EASE_OUT)
+				bt.tween_property(nb, "position", base, 0.25).set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+		Sfx.play("bomb", 1.4, -8.0)
 		Sfx.play("special"))
 
 
