@@ -58,6 +58,27 @@ static func zone_of(n: int) -> int:
 	return z
 
 
+## Когда открывается каждое препятствие (плейтест: все 16 — до 60-го уровня).
+const UNLOCKS := [[4, "crate"], [6, "grass"], [8, "vase"], [11, "chain"], [14, "ice"], [17, "bush"], [20, "flower"],
+	[23, "item"], [26, "shell"], [30, "honey"], [34, "cage"], [38, "stone"], [42, "jar"], [46, "birdhouse"], [50, "safe"], [55, "colorbox"]]
+
+
+static func unlocked(n: int) -> Array:
+	var out: Array = []
+	for u in UNLOCKS:
+		if n >= u[0]:
+			out.append(u[1])
+	return out
+
+
+## Препятствие, открытое на этом или 2 предыдущих уровнях (его показываем сразу).
+static func fresh_obstacle(n: int) -> String:
+	for u in UNLOCKS:
+		if n >= u[0] and n - u[0] < 3:
+			return u[1]
+	return ""
+
+
 const OBSTACLES := ["crate", "grass", "vase", "chain", "bush", "flower", "shell", "item", "ice", "stone", "honey", "cage", "birdhouse", "jar", "safe", "colorbox"]
 ## Блоки на поле: номер вида (как в board.gd) и прочность.
 const BLOCK := {"crate": [1, 1], "vase": [2, 2], "safe": [3, 5], "jar": [4, 1], "cage": [5, 2], "balloon": [6, 1], "flower": [7, 2], "bush": [8, 2], "shell": [9, 2],
@@ -68,25 +89,22 @@ static func make(n: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = n * 7919 + 17
 	var lv := {
-		"n": n, "colors": 5, "moves": clampi(26 - n / 15, 20, 26), "goals": [],
+		"n": n, "colors": 5, "moves": clampi(21 - n / 25, 15, 21), "goals": [],
 		"blocks": {}, "chains": {}, "grass_start": [], "grass_target": [], "items": 0, "ice": {}, "honey": [],
 	}
 
 	var kinds: Array = []
-	# новые препятствия открываются постепенно: к 31-му уровню — все 14
-	var pool := pool_for(n)
-	# новое препятствие зоны — на первых уровнях зоны чаще
-	var zstart: int = ZONE_POOLS[zone_of(n)][0]
-	var fresh: Array = ZONE_POOLS[zone_of(n)][1]
+	# препятствия открываются быстро: к 55-му уровню — все 16; только что открытое — сразу на поле
+	var pool := unlocked(n)
+	var fresh := fresh_obstacle(n)
 	if n >= 4:
-		if n - zstart < 12 and zstart > 1:
-			kinds.append(fresh[(n - zstart) % fresh.size()])
-		else:
-			kinds.append(pool[(n * 5 + 3) % pool.size()])
-	if n >= 14 and n % 3 == 0:
-		var extra: String = pool[(n * 7 + 1) % pool.size()]
-		if extra not in kinds:
-			kinds.append(extra)
+		kinds.append(fresh if fresh != "" else pool[rng.randi_range(0, pool.size() - 1)])
+	if n >= 12 and n % 2 == 0 and pool.size() > 1:
+		for tries in 6:
+			var extra: String = pool[rng.randi_range(0, pool.size() - 1)]
+			if extra not in kinds:
+				kinds.append(extra)
+				break
 	lv["zone"] = zone_of(n)
 
 	var color_goals := 1 if n <= 2 else 2
@@ -101,26 +119,48 @@ static func make(n: int) -> Dictionary:
 			picked.append(c)
 	for c in picked:
 		# количество фишек в цели растёт до 26 и дальше не увеличивается
-		var amount := mini(10 + mini(n, 40) / 2 + rng.randi_range(0, 4), 26)
+		var amount := mini(10 + mini(n, 40) / 2 + rng.randi_range(0, 4), 22)
 		if color_goals == 3:
 			amount = int(amount * 0.8)
 		lv.goals.append({"kind": "color", "color": c, "left": amount})
 
 	for k in kinds:
 		_add_obstacle(lv, k, n, rng)
-	# фигурное поле с 6-го уровня, каждый 2-й уровень
-	# фигурное поле: с 6-го уровня на 3 уровнях из 4, форма по номеру уровня
-	if n >= 6 and n % 4 != 1:
-		var holes: Array = SHAPES[(n * 7) % SHAPES.size()]
-		lv["holes"] = holes
-		_cut_holes(lv, holes)
-	# сложные уровни: каждый 10-й «Сложный», каждый 30-й «Очень сложный» (меньше ходов, больше монет)
-	if n % 30 == 0:
+	# фигурное поле: с 4-го уровня на 5 уровнях из 6, форма случайная, иногда зеркально
+	var holes: Array = []
+	if n >= 4 and n % 6 != 1:
+		for c: Vector2i in SHAPES[rng.randi_range(0, SHAPES.size() - 1)]:
+			holes.append(c)
+		if rng.randf() < 0.5:
+			holes = holes.map(func(c: Vector2i) -> Vector2i: return Vector2i(W - 1 - c.x, c.y))
+	# разный размер поля: 6 в ширину, 8×9 или 8×8 (крайние колонки/верхние ряды — дыры)
+	if n >= 7:
+		match n % 7:
+			3:
+				for y in H:
+					holes.append(Vector2i(0, y))
+					holes.append(Vector2i(W - 1, y))
+			5:
+				for x in W:
+					holes.append(Vector2i(x, 0))
+			6:
+				if n >= 20:
+					for x in W:
+						holes.append(Vector2i(x, 0))
+						holes.append(Vector2i(x, 1))
+	if not holes.is_empty():
+		var uniq := {}
+		for c in holes:
+			uniq[c] = true
+		lv["holes"] = uniq.keys()
+		_cut_holes(lv, lv.holes)
+	# сложные уровни: каждый 5-й «Сложный», каждый 15-й «Очень сложный» (меньше ходов, больше монет)
+	if n % 15 == 0:
 		lv["hard"] = 2
-		lv.moves -= 5
-	elif n % 10 == 0:
+		lv.moves -= 4
+	elif n % 5 == 0:
 		lv["hard"] = 1
-		lv.moves -= 3
+		lv.moves -= 2
 	lv["seed"] = rng.randi()
 	return lv
 
@@ -148,10 +188,10 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 				lv["birdhouse"] = true
 				# цель — птицы: каждый скворечник выпускает 3 птицы, их надо спустить вниз
 				lv.goals.append({"kind": "item", "left": count * 3})
-				lv.moves += 10
+				lv.moves += 7
 			else:
 				lv.goals.append({"kind": kind, "left": count})
-				lv.moves += 10 if kind in ["safe", "stone"] else (8 if kind == "vase" else 5)
+				lv.moves += 7 if kind in ["safe", "stone"] else (5 if kind == "vase" else 3)
 		"ice":
 			var count := 0
 			for y in range(H - 3, H):
@@ -161,14 +201,14 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 						lv.ice[c] = 2 if (n >= 20 and rng.randf() < 0.3) else 1
 						count += 1
 			lv.goals.append({"kind": "ice", "left": count})
-			lv.moves += 6
+			lv.moves += 4
 		"honey":
 			while lv.honey.size() < 3:
 				var c := Vector2i(rng.randi_range(1, W - 2), rng.randi_range(2, 5))
 				if c not in lv.honey and not lv.chains.has(c):
 					lv.honey.append(c)
 			lv.goals.append({"kind": "honey", "left": 3})
-			lv.moves += 4
+			lv.moves += 3
 		"grass":
 			var rows := 3
 			for y in range(H - rows, H):
@@ -181,11 +221,11 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 				if c not in lv.grass_start:
 					lv.grass_start.append(c)
 			lv.goals.append({"kind": "grass", "left": lv.grass_target.size() - lv.grass_start.size()})
-			lv.moves += 8
+			lv.moves += 6
 		"item":
 			lv.items = clampi(2 + n / 10, 2, 4)
 			lv.goals.append({"kind": "item", "left": lv.items})
-			lv.moves += 6
+			lv.moves += 4
 		"chain":
 			var count := clampi(5 + n / 4, 5, 12)
 			var cells: Array = []
@@ -204,7 +244,7 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 			for c in cells:
 				lv.chains[c] = 2 if (n >= 20 and rng.randf() < 0.3) else 1
 			lv.goals.append({"kind": "chain", "left": cells.size()})
-			lv.moves += 3
+			lv.moves += 2
 
 
 ## Убираем препятствия из дыр и пересчитываем цели.
@@ -243,7 +283,8 @@ static func _cut_holes(lv: Dictionary, holes: Array) -> void:
 ## Ни один ряд не перекрывается целиком — фишки обтекают препятствия по диагонали.
 static func _pattern(n: int, want: int, rng: RandomNumberGenerator) -> Array:
 	var cells: Array = []
-	match n % 8:
+	var layout := rng.randi_range(0, 9)
+	match layout:
 		0:  # нижний ряд по центру
 			for x in [3, 4, 2, 5, 1, 6]:
 				cells.append(Vector2i(x, H - 1))
@@ -266,6 +307,11 @@ static func _pattern(n: int, want: int, rng: RandomNumberGenerator) -> Array:
 		6:  # диагональ-лесенка
 			for i in 7:
 				cells.append(Vector2i(i, 2 + i))
+		8:  # уголок в случайном месте
+			var ox := rng.randi_range(0, W - 4)
+			var oy := rng.randi_range(3, H - 4)
+			for p in [Vector2i(0, 0), Vector2i(0, 1), Vector2i(0, 2), Vector2i(1, 2), Vector2i(2, 2), Vector2i(3, 2), Vector2i(1, 0), Vector2i(3, 1)]:
+				cells.append(Vector2i(ox, oy) + p)
 		_:  # россыпь
 			var used := {}
 			while cells.size() < want + 4:
@@ -273,6 +319,10 @@ static func _pattern(n: int, want: int, rng: RandomNumberGenerator) -> Array:
 				if not used.has(c):
 					used[c] = true
 					cells.append(c)
+	# случайный сдвиг раскладки по горизонтали — уровни не похожи друг на друга
+	var shift := rng.randi_range(-1, 1) if layout <= 7 else 0
+	cells = cells.map(func(c: Vector2i) -> Vector2i: return Vector2i(clampi(c.x + shift, 0, W - 1), c.y))
+	cells.shuffle()
 	# защита: не больше W-2 препятствий в одном ряду
 	var per_row := {}
 	var out: Array = []

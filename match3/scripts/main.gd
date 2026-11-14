@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.6.0"
+const VERSION := "1.7.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1192,7 +1192,8 @@ func _show_prelevel(n: int) -> void:
 		grow.add_child(cell)
 	if Save.streak > 0:
 		var sl := Label.new()
-		sl.text = "Серия побед: %d — бонус на старте!" % Save.streak
+		var nxt := 3 if Save.streak < 3 else (5 if Save.streak < 5 else (8 if Save.streak < 8 else 10))
+		sl.text = ("Серия побед: %d — бонус на старте!" % Save.streak) if Save.streak >= 3 else ("Серия побед: %d — бонус с %d побед" % [Save.streak, nxt])
 		sl.theme_type_variation = "InkLabel"
 		sl.add_theme_font_size_override("font_size", 24)
 		sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1409,10 +1410,11 @@ func _start_level(n: int) -> void:
 	for b in PRE_BOOSTERS:
 		if _pre_selected.get(b[0], false) and Save.use_booster(b[0]):
 			_board.spawn_specials(1, b[2])
-	# серия побед: 1 — ракета, 2 — ракета и бомба, 3+ — ракета, бомба и шар
-	var bonus := [1, 3, 4]
-	for i in mini(Save.streak, 3):
-		_board.spawn_specials(1, bonus[i])
+	# серия побед (ослаблено по плейтесту): 3 победы — ракета, 5 — ещё бомба, 8 — ещё шар
+	var bonus := [[3, 1], [5, 3], [8, 4]]
+	for b in bonus:
+		if Save.streak >= b[0]:
+			_board.spawn_specials(1, b[1])
 	# супер-бонус: 10 побед подряд — ещё один радужный шар и бабочка
 	if Save.streak >= 10:
 		_board.spawn_specials(1, 4)
