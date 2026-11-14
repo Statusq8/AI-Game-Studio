@@ -165,7 +165,41 @@ static func make(n: int) -> Dictionary:
 	return lv
 
 
+## Большие препятствия 2×2 (как в Royal Match): камень, цветок, клетка.
+const BIG := {"stone": 4, "flower": 3, "cage": 3}
+
+
+static func _add_big(lv: Dictionary, kind: String, n: int, rng: RandomNumberGenerator) -> void:
+	var want := 2 if n < 60 else 3
+	var count := 0
+	for tries in 60:
+		var a := Vector2i(rng.randi_range(0, W - 2), rng.randi_range(2, H - 3))
+		var cells := [a, a + Vector2i(1, 0), a + Vector2i(0, 1), a + Vector2i(1, 1)]
+		var free := true
+		for c in cells:
+			# не впритык к другому большому блоку — чтобы фишки обтекали
+			for dx in range(-1, 2):
+				for dy in range(-1, 2):
+					var nb: Vector2i = c + Vector2i(dx, dy)
+					if lv.blocks.has(nb) and lv.blocks[nb].has("anchor"):
+						free = false
+			if lv.blocks.has(c):
+				free = false
+		if not free:
+			continue
+		for c in cells:
+			lv.blocks[c] = {"kind": BLOCK[kind][0], "hp": BIG[kind], "anchor": a, "color": 0}
+		count += 1
+		if count >= want:
+			break
+	lv.goals.append({"kind": kind, "left": count})
+	lv.moves += 4 * count
+
+
 static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumberGenerator) -> void:
+	if BIG.has(kind):
+		_add_big(lv, kind, n, rng)
+		return
 	match kind:
 		"crate", "vase", "safe", "jar", "cage", "balloon", "flower", "bush", "shell", "stone", "colorbox", "birdhouse":
 			var info: Array = BLOCK[kind]
@@ -249,6 +283,12 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 
 ## Убираем препятствия из дыр и пересчитываем цели.
 static func _cut_holes(lv: Dictionary, holes: Array) -> void:
+	# большой блок задет дырой — убираем его целиком
+	for c in holes:
+		if lv.blocks.has(c) and lv.blocks[c].has("anchor"):
+			var a: Vector2i = lv.blocks[c].anchor
+			for d in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
+				lv.blocks.erase(a + d)
 	for c in holes:
 		lv.blocks.erase(c)
 		lv.chains.erase(c)
@@ -272,7 +312,10 @@ static func _cut_holes(lv: Dictionary, holes: Array) -> void:
 			_:
 				var cnt := 0
 				for c in lv.blocks:
-					if block_goal.get(lv.blocks[c].kind, "") == g.kind:
+					var bl: Dictionary = lv.blocks[c]
+					if bl.has("anchor") and bl.anchor != c:
+						continue
+					if block_goal.get(bl.kind, "") == g.kind:
 						cnt += 1
 				g.left = cnt
 	# лёд/трава могли закончиться — в цель ставим хотя бы что-то разумное

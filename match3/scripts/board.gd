@@ -56,6 +56,7 @@ var block_kind: Array = []   # B_NONE / B_CRATE / B_VASE
 var block_hp: Array = []
 var block_max: Array = []
 var block_color: Array = []  # цвет цветного ящика
+var block_anchor: Array = [] # большой блок 2×2: левая верхняя клетка; у обычных — сама клетка
 var ice: Array = []          # слой льда под фишкой
 var hole: Array = []         # дыра в фигурном поле (клетки нет)
 var honey: Array = []        # мёд на фишке (растекается)
@@ -101,6 +102,7 @@ func setup(level: Dictionary) -> void:
 	block_hp = []
 	block_max = []
 	block_color = []
+	block_anchor = []
 	ice = []
 	hole = []
 	honey = []
@@ -113,6 +115,7 @@ func setup(level: Dictionary) -> void:
 		block_hp.append([])
 		block_max.append([])
 		block_color.append([])
+		block_anchor.append([])
 		ice.append([])
 		hole.append([])
 		honey.append([])
@@ -127,6 +130,7 @@ func setup(level: Dictionary) -> void:
 			block_hp[x].append(int(b.get("hp", 0)))
 			block_max[x].append(int(b.get("hp", 0)))
 			block_color[x].append(int(b.get("color", -1)))
+			block_anchor[x].append(b.get("anchor", c))
 			ice[x].append(int(level.get("ice", {}).get(c, 0)))
 			hole[x].append(c in level.get("holes", []))
 			honey[x].append(c in level.get("honey", []))
@@ -134,7 +138,8 @@ func setup(level: Dictionary) -> void:
 			grass[x].append(c in level.grass_start)
 			grass_target[x].append(c in level.grass_target)
 	for c: Vector2i in level.blocks:
-		_make_block_node(c)
+		if level.blocks[c].get("anchor", c) == c:
+			_make_block_node(c)
 	_overlay = Node2D.new()
 	_overlay.z_index = 3
 	_overlay.draw.connect(_draw_overlay)
@@ -200,9 +205,13 @@ func _place(g: Node2D, cell: Vector2i) -> void:
 	g.position = cell_pos(cell)
 
 
+func is_big(c: Vector2i) -> bool:
+	return inside(c) and block_kind[c.x][c.y] != B_NONE and (block_anchor[c.x][c.y] != c or (inside(c + Vector2i.ONE) and block_anchor[c.x + 1][c.y + 1] == c))
+
+
 func _make_block_node(cell: Vector2i) -> void:
 	var n := Node2D.new()
-	n.position = cell_pos(cell)
+	n.position = cell_pos(cell) + (Vector2(CELL, CELL) / 2.0 if is_big(cell) else Vector2.ZERO)
 	n.z_index = 1
 	n.draw.connect(_draw_block.bind(n, cell))
 	add_child(n)
@@ -213,23 +222,37 @@ func _draw_block(n: Node2D, cell: Vector2i) -> void:
 	var hp: int = block_hp[cell.x][cell.y]
 	var kind: int = block_kind[cell.x][cell.y]
 	var t := block_tex(kind, block_max[cell.x][cell.y] - hp)
+	var big := is_big(cell)
 	if t:
 		var sz := t.get_size()
-		var k := CELL * 1.06 / maxf(sz.x, sz.y)
+		var k := CELL * (2.05 if big else 1.06) / maxf(sz.x, sz.y)
 		n.draw_set_transform(Vector2(0, 0), 0.0, Vector2(k, k))
 		n.draw_texture(t, -sz / 2)
 		n.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-		if hp >= 2 and BLOCKS[kind].tex.size() == 1:
-			# прочность цифрой, если у картинки нет стадий
-			var f: Font = ThemeDB.fallback_font
-			n.draw_circle(Vector2(CELL * 0.3, CELL * 0.3), 13, Color("#2b2350"))
-			n.draw_string(f, Vector2(CELL * 0.3 - 6, CELL * 0.3 + 7), str(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
+		if hp >= 2 and (BLOCKS[kind].tex.size() == 1 or big):
+			# прочность цифрой, если у картинки нет стадий (у больших блоков — всегда)
+			var f: Font = load("res://scripts/ui_theme.gd").title_font()
+			var bp := Vector2(CELL * (0.75 if big else 0.3), CELL * (0.75 if big else 0.3))
+			var br := 17.0 if big else 13.0
+			n.draw_circle(bp, br, Color("#2b2350"))
+			n.draw_arc(bp, br, 0, TAU, 24, Color.WHITE, 2.5, true)
+			var fs := 24 if big else 20
+			var ts := f.get_string_size(str(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			n.draw_string(f, bp + Vector2(-ts.x / 2, fs * 0.36), str(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
 		return
+	var bk := 2.0 if big else 1.0
 	match kind:
 		B_VASE:
-			draw_vase(n, Vector2.ZERO, CELL * 0.44, hp)
+			draw_vase(n, Vector2.ZERO, CELL * 0.44 * bk, hp)
 		B_STONE:
-			draw_stone(n, Vector2.ZERO, CELL * 0.45, hp)
+			draw_stone(n, Vector2.ZERO, CELL * 0.45 * bk, mini(hp, 3))
+			if big and hp >= 1:
+				var f: Font = load("res://scripts/ui_theme.gd").title_font()
+				var bp := Vector2(CELL * 0.75, CELL * 0.75)
+				n.draw_circle(bp, 17.0, Color("#2b2350"))
+				n.draw_arc(bp, 17.0, 0, TAU, 24, Color.WHITE, 2.5, true)
+				var ts := f.get_string_size(str(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 24)
+				n.draw_string(f, bp + Vector2(-ts.x / 2, 8.6), str(hp), HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color.WHITE)
 		B_COLORBOX:
 			draw_colorbox(n, Vector2.ZERO, CELL * 0.46, block_color[cell.x][cell.y])
 		B_BIRDHOUSE:
@@ -1052,16 +1075,27 @@ func _creation_cell(group: Dictionary, prefer: Array, kind: int) -> Vector2i:
 	return longest[longest.size() / 2]
 
 
-func _hit_block(c: Vector2i) -> void:
-	if not inside(c) or block_kind[c.x][c.y] == B_NONE or _hits.has(c):
+func _hit_block(c0: Vector2i) -> void:
+	if not inside(c0) or block_kind[c0.x][c0.y] == B_NONE:
+		return
+	# у большого блока все удары идут в его левую верхнюю клетку, один раз за волну
+	var c: Vector2i = block_anchor[c0.x][c0.y]
+	var big := is_big(c)
+	if _hits.has(c):
 		return
 	_hits[c] = true
 	var kind: int = block_kind[c.x][c.y]
 	Sfx.play("glass" if kind in [B_VASE, B_JAR, B_SHELL] else "wood", randf_range(0.9, 1.1), -4.0)
 	block_hp[c.x][c.y] -= 1
 	var n: Node2D = block_nodes.get(c)
-	_burst(cell_pos(c), BLOCKS[kind].fx if BLOCKS.has(kind) else Color.WHITE, 12)
+	var center := cell_pos(c) + (Vector2(CELL, CELL) / 2.0 if big else Vector2.ZERO)
+	_burst(center, BLOCKS[kind].fx if BLOCKS.has(kind) else Color.WHITE, 20 if big else 12)
 	if block_hp[c.x][c.y] <= 0:
+		if big:
+			for d in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
+				block_kind[c.x + d.x][c.y + d.y] = B_NONE
+				block_anchor[c.x + d.x][c.y + d.y] = c + d
+			shake.emit(8.0)
 		block_kind[c.x][c.y] = B_NONE
 		block_nodes.erase(c)
 		if n:
@@ -1069,7 +1103,7 @@ func _hit_block(c: Vector2i) -> void:
 			tw.tween_property(n, "scale", Vector2(1.3, 1.3), 0.15)
 			tw.tween_property(n, "modulate:a", 0.0, 0.15)
 			tw.chain().tween_callback(n.queue_free)
-		goal_hit.emit(BLOCKS[kind].goal if BLOCKS.has(kind) else "crate", to_global(cell_pos(c)))
+		goal_hit.emit(BLOCKS[kind].goal if BLOCKS.has(kind) else "crate", to_global(center))
 		_on_block_destroyed(kind, c)
 	elif n:
 		n.queue_redraw()
@@ -1227,6 +1261,8 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 		max_dl = maxf(max_dl, float(delay_of[c]))
 	for c: Vector2i in cleared:
 		var g := gem_at(c)
+		if g == null:
+			continue
 		tiles[c.x][c.y] = null
 		var col: int = g.color
 		if col >= 0:

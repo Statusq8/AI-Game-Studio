@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "2.0.0"
+const VERSION := "2.1.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -758,7 +758,7 @@ func _build_level_screen() -> void:
 	holder.set_anchors_preset(Control.PRESET_FULL_RECT)
 	holder.add_child(frame)
 	holder.resized.connect(func() -> void:
-		var out := 24.0
+		var out := 40.0
 		frame.position = Vector2(-out, -out)
 		frame.size = (holder.size + Vector2(out, out) * 2) / fk)
 	_board_frame.add_child(holder)
@@ -2394,9 +2394,14 @@ func _show_win() -> void:
 	pile.draw.connect(func() -> void:
 		var cx := pile.size.x / 2
 		var pile_art := Zoo.art("ui_coin_pile")
+		# число + горка — одной группой строго по центру окна
+		var txt0 := str(int(pile.get_meta("val")))
+		var tw0 := font.get_string_size(str(coins), HORIZONTAL_ALIGNMENT_LEFT, -1, 92).x
 		if pile_art:
-			var ps := pile_art.get_size() * (200.0 / pile_art.get_size().y)
-			pile.draw_texture_rect(pile_art, Rect2(Vector2(cx - 20, 0), ps), false)
+			var ps := pile_art.get_size() * (190.0 / pile_art.get_size().y)
+			var group := tw0 + 16.0 + ps.x
+			cx = pile.size.x / 2 - group / 2 + tw0 + 30.0
+			pile.draw_texture_rect(pile_art, Rect2(Vector2(cx - 14, 6), ps), false)
 		# пенёк-подставка
 		var base := Vector2(cx + 10, 168)
 		if pile_art:
@@ -2423,10 +2428,10 @@ func _show_win() -> void:
 			pile.draw_circle(Vector2(-8, -6), 5, Color(1, 1, 1, 0.8))
 			pile.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		# число
-		var txt := str(int(pile.get_meta("val")))
+		var txt := txt0
 		var fs := 92
 		var ts := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-		var p := Vector2(cx - 30 - ts.x, 130)
+		var p := Vector2(cx - 30 - tw0 + (tw0 - ts.x) / 2.0, 130)
 		for d in range(12, 0, -1):
 			pile.draw_string_outline(font, p + Vector2(0, d), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 16, Color("#2a1440"))
 			pile.draw_string(font, p + Vector2(0, d), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#c98a12"))
@@ -2443,13 +2448,9 @@ func _show_win() -> void:
 	pt.tween_method(func(val: float) -> void:
 		pile.set_meta("val", int(val))
 		pile.queue_redraw(), 0.0, float(coins), 0.7)
-	# звезда и серия — маленькие плашки
-	var chips := Label.new()
-	chips.text = "+1 звезда   ·   серия побед: %d" % Save.streak
-	chips.theme_type_variation = "InkLabel"
-	chips.add_theme_font_size_override("font_size", 24)
-	chips.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(chips)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 8)
+	v.add_child(gap)
 	# две кнопки рядом: «Дальше» и «реклама x2»
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
