@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.5.0"
+const VERSION := "1.5.1"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1573,6 +1573,8 @@ func _big_text(text: String, fsize: int, top: Color, bottom: Color) -> Control:
 	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
 	var banner: Texture2D = load("res://assets/art/ui_banner.png")
 	c.draw.connect(func() -> void:
+		if _draw_word_art(c, text, fsize, font):
+			return
 		var fs := fsize
 		var ts := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 		var cx := c.size.x / 2.0
@@ -1604,6 +1606,75 @@ func _big_text(text: String, fsize: int, top: Color, bottom: Color) -> Control:
 		c.draw_string(font, p + Vector2(-2, -5), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(1, 1, 1, 0.18)))
 	c.resized.connect(c.queue_redraw)
 	return c
+
+
+## Надписи-картинки (ИИ-арт) вместо шрифта. «Уровень N» = слово-картинка + число.
+const TXT_ART := {"Отлично!": "txt_otlichno", "Супер!": "txt_super", "Невероятно!": "txt_neveroyatno",
+	"Потрясающе!": "txt_potryasayushche", "Здорово!": "txt_zdorovo", "Молодец!": "txt_molodec",
+	"Уровень пройден!": "txt_uroven_proyden", "Уровень": "txt_uroven"}
+
+
+func _draw_word_art(c: Control, text: String, fsize: int, font: Font) -> bool:
+	var key := text
+	var num := ""
+	if text.begins_with("Уровень ") and not TXT_ART.has(text):
+		key = "Уровень"
+		num = text.substr(8)
+	if not TXT_ART.has(key):
+		return false
+	var t := Zoo.art(TXT_ART[key])
+	if t == null:
+		return false
+	var h := fsize * 1.75
+	var w := t.get_width() * h / t.get_height()
+	var nh := h * 0.62
+	var nw := number_width(num, nh, font) if num != "" else 0.0
+	var gap := nh * 0.12 if num != "" else 0.0
+	var k := minf(1.0, (c.size.x - 10.0) / (w + gap + nw))
+	h *= k; w *= k; nh *= k; nw *= k; gap *= k
+	var x0 := c.size.x / 2.0 - (w + gap + nw) / 2.0
+	c.draw_texture_rect(t, Rect2(Vector2(x0, c.size.y / 2.0 - h / 2.0), Vector2(w, h)), false)
+	if num != "":
+		draw_number(c, num, Vector2(x0 + w + gap, c.size.y / 2.0 + h * 0.04), nh, font)
+	return true
+
+
+## Все ли цифры 0–9 есть картинками (иначе числа рисуются шрифтом, чтобы стиль не смешивался).
+static func digits_ready() -> bool:
+	for i in 10:
+		if Zoo.art("dig_%d" % i) == null:
+			return false
+	return true
+
+
+static func number_width(s: String, h: float, font: Font) -> float:
+	if digits_ready():
+		var w := 0.0
+		for ch in s:
+			var t := Zoo.art("dig_" + ch)
+			w += (t.get_width() * h / t.get_height() if t else h * 0.6) - h * 0.08
+		return w + h * 0.08
+	return font.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, int(h * 1.25)).x
+
+
+## Число по левому краю left_mid (центр по высоте) высотой h: картинки-цифры или объёмный шрифт.
+static func draw_number(ci: CanvasItem, s: String, left_mid: Vector2, h: float, font: Font) -> void:
+	if digits_ready():
+		var x := left_mid.x
+		for ch in s:
+			var t := Zoo.art("dig_" + ch)
+			if t == null:
+				continue
+			var w := t.get_width() * h / t.get_height()
+			ci.draw_texture_rect(t, Rect2(Vector2(x, left_mid.y - h / 2.0), Vector2(w, h)), false)
+			x += w - h * 0.08
+		return
+	var fs := int(h * 1.25)
+	var p := left_mid + Vector2(0, fs * 0.36)
+	for d in range(int(fs * 0.12), 0, -1):
+		ci.draw_string_outline(font, p + Vector2(0, d), s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 16, Color("#3a0a5a"))
+	ci.draw_string_outline(font, p, s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 16, Color("#5a1a8a"))
+	ci.draw_string(font, p, s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#fff3dc"))
 
 
 ## Белая вспышка экрана на мощных взрывах.
