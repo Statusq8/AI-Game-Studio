@@ -27,7 +27,7 @@ signal special_fired
 
 const Gem := preload("res://scripts/gem.gd")
 const CELL := 84.0
-const PROPELLER_TIME := 1.5  # полёт бабочки к цели
+const PROPELLER_TIME := 1.5  # полёт бабочки к цели: 0.3 взлёт + 1.0 полёт + 0.2 нырок
 const PROPELLER_DELAY := 0.25  # сначала взрываются соседи, потом бабочка взлетает
 const ROCKET_CELL_TIME := 0.045  # ракета пролетает клетку за столько секунд
 enum { B_NONE, B_CRATE, B_VASE, B_SAFE, B_JAR, B_CAGE, B_BALLOON, B_FLOWER, B_BUSH, B_SHELL, B_STONE, B_COLORBOX, B_BIRDHOUSE }
@@ -1001,12 +1001,10 @@ func _cascade(prefer: Array) -> void:
 				# бонус «выпрыгивает» из слившихся фишек: вспышка, кольцо, искры, крутанулся и подпрыгнул
 				ng.z_index = 4
 				ng.scale = Vector2.ZERO
-				ng.rotation = -0.6
-				ng.modulate = Color(2.2, 2.2, 2.2)
+				ng.modulate = Color(2.0, 2.0, 2.0)
 				# твин живёт на самой фишке: если бонус сразу взорвётся, анимация просто остановится
 				var ct := ng.create_tween().set_parallel(true)
 				ct.tween_property(ng, "scale", Vector2(1.55, 1.55), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-				ct.tween_property(ng, "rotation", 0.0, 0.3).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 				ct.tween_property(ng, "modulate", Color.WHITE, 0.3)
 				ct.chain().tween_property(ng, "scale", Vector2(0.9, 1.1), 0.08)
 				ct.chain().tween_property(ng, "scale", Vector2.ONE, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -1017,9 +1015,7 @@ func _cascade(prefer: Array) -> void:
 					_glow_flash(at, tint.lerp(Color.WHITE, 0.4), CELL * 2.2, 0.35)
 					_pop_ring(at, Color("#fff6b0"))
 					_sparkles(at, Color("#fff6b0"), 12)
-					for i in 6:
-						var ang := TAU * i / 6.0
-						_droplet(at, tint.lerp(Color.WHITE, 0.3), 12.0, Vector2(cos(ang), sin(ang) - 0.6) * 260.0, 0.5)
+
 		await _gravity()
 		prefer = []
 	if _player_move:
@@ -1198,6 +1194,18 @@ func _on_block_destroyed(kind: int, c: Vector2i) -> void:
 					_sparkles(fx.to_local(to_global(g.position)), Color("#7fd0ff"), 5))
 
 
+func _crack_ice(c: Vector2i) -> void:
+	if ice[c.x][c.y] <= 0:
+		return
+	ice[c.x][c.y] -= 1
+	_burst(cell_pos(c), Color("#bfe9ff"), 10)
+	if ice[c.x][c.y] <= 0:
+		goal_hit.emit("ice", to_global(cell_pos(c)))
+	queue_redraw()
+	# корка льда рисуется на верхнем слое — его тоже перерисовать, иначе лёд «висит»
+	_overlay.queue_redraw()
+
+
 func _break_chain(c: Vector2i) -> void:
 	if _hits.has(c):
 		return
@@ -1253,18 +1261,22 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 		var g := gem_at(c)
 		if g == null or g.special == Gem.ITEM:
 			continue
+		var cdl: float = delay_of.get(c, 0.0)
 		if _chained(c):
-			_break_chain(c)
+			# лианы/мёд под целью бабочки или ракеты ломаются, когда удар долетел, а не сразу
+			if cdl > 0.05:
+				get_tree().create_timer(cdl).timeout.connect(func() -> void:
+					_hits.erase(c)
+					_break_chain(c))
+			else:
+				_break_chain(c)
 			continue
 		cleared[c] = true
 		if ice[c.x][c.y] > 0:
-			ice[c.x][c.y] -= 1
-			_burst(cell_pos(c), Color("#bfe9ff"), 10)
-			if ice[c.x][c.y] <= 0:
-				goal_hit.emit("ice", to_global(cell_pos(c)))
-			queue_redraw()
-			# корка льда рисуется на верхнем слое — его тоже перерисовать, иначе лёд «висит»
-			_overlay.queue_redraw()
+			if cdl > 0.05:
+				get_tree().create_timer(cdl).timeout.connect(_crack_ice.bind(c))
+			else:
+				_crack_ice(c)
 		if g.is_power():
 			var area := _area(g.special, c)
 			if g.special == Gem.ROCKET_H or g.special == Gem.ROCKET_V:
@@ -1436,6 +1448,8 @@ func _pick_target(exclude: Dictionary, also: Array) -> Vector2i:
 			var score := 0.0
 			if block_kind[x][y] != B_NONE:
 				score = 50.0
+			elif ice[x][y] > 0:
+				score = 45.0
 			elif _chained(c):
 				score = 40.0
 			elif grass_target[x][y] and not grass[x][y]:
@@ -1902,9 +1916,6 @@ func _merge_into(creations: Array) -> void:
 	var any := false
 	for cr in creations:
 		var target := cell_pos(cr.cell)
-		if fx:
-			# золотой вихрь втягивается в клетку и вспыхивает, когда появляется бонус
-			_flipbook("birth", fx.to_local(to_global(target)), CELL * 3.0 * get_global_transform().get_scale().x, 0.7, Color.WHITE, true, 8)
 		for c: Vector2i in cr.cells:
 			var g := gem_at(c)
 			if g == null or g.special != Gem.NONE or g.color < 0 or g.has_meta("merged"):
@@ -2389,44 +2400,61 @@ func _bomb_fx(cell: Vector2i, power: float) -> void:
 
 ## Бабочка: вспархивает, плавно летит к цели с наклоном по ходу полёта и шлейфом искр, ныряет и лопается.
 func _propeller_fx(from: Vector2i, to: Vector2i, col: int, delay: float = 0.0) -> void:
+	## Бабочка: вспорхнула (0.3 с) → летит плавной дугой к цели (1.0 с) → зависла и нырнула (0.2 с).
+	## Удар по цели — ровно в конце нырка: delay + PROPELLER_TIME (совпадает с delay_of цели).
 	if fx == null:
 		return
 	if delay > 0.0:
 		await get_tree().create_timer(delay).timeout
+	var gs := get_global_transform().get_scale().x
 	var p: Node2D = Gem.new()
 	p.color = col
-	p.size = CELL
-	p.z_index = 6
+	p.size = CELL * 0.9
+	p.z_index = 9
 	fx.add_child(p)
 	p.set_special(Gem.PROPELLER)
+	p.scale = Vector2.ONE * gs
 	var a := fx.to_local(to_global(cell_pos(from)))
 	var b := fx.to_local(to_global(cell_pos(to)))
 	p.position = a
 	Sfx.play("butterfly")
-	var lift := a + Vector2(0, -CELL * 0.7)
-	var c1 := lift + Vector2(0, -CELL * 1.2)
-	var c2 := b + Vector2(0, -CELL * 1.6)
+	_glow_flash(a, Color(1, 0.9, 0.5), CELL * 1.2 * gs, 0.25)
+	var lift := a + Vector2(0, -CELL * 0.8 * gs)
+	var hover := b + Vector2(0, -CELL * 0.9 * gs)
+	var c1 := lift + Vector2((b.x - a.x) * 0.15, -CELL * 1.4 * gs)
+	var c2 := hover + Vector2((a.x - b.x) * 0.15, -CELL * 1.2 * gs)
 	var last := [lift]
+	# тень на поле бежит под бабочкой
+	var shadow := _fx_sprite("sphere", a, Color(0, 0, 0, 0.0), CELL * 0.55 * gs)
+	shadow.z_index = 5
 	var tw := p.create_tween()
-	# 1. вспорхнула
-	tw.tween_property(p, "position", lift, 0.3).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
-	tw.parallel().tween_property(p, "scale", Vector2(1.15, 1.15), 0.3)
-	# 2. полёт по плавной кривой
+	# 1. вспорхнула: присела и подпрыгнула вверх
+	tw.tween_property(p, "scale", Vector2(1.15, 0.85) * gs, 0.08)
+	tw.tween_property(p, "scale", Vector2(1.2, 1.2) * gs, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(p, "position", lift, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	# 2. полёт: плавная дуга, наклон по ходу, искорки, тень на поле
 	tw.tween_method(func(t: float) -> void:
-		var q := lift.bezier_interpolate(c1, c2, b, t)
+		var q := lift.bezier_interpolate(c1, c2, hover, t)
 		var dx := q.x - p.position.x
-		p.rotation = lerpf(p.rotation, clampf(dx * 0.025, -0.3, 0.3), 0.1)
-		p.position = q
+		p.rotation = lerpf(p.rotation, clampf(dx * 0.02, -0.28, 0.28), 0.12)
+		p.position = q + Vector2(0, sin(t * TAU * 3.0) * 4.0)
+		var ground := a.lerp(b, t)
+		shadow.position = ground
+		shadow.modulate.a = 0.22
 		if q.distance_to(last[0]) > 22.0:
 			last[0] = q
-			_sparkles(q, Color("#ffcf5a"), 1), 0.0, 1.0, PROPELLER_TIME - 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	# 3. у цели: зависла, ныряет и лопается
-	tw.tween_property(p, "rotation", 0.0, 0.05)
-	tw.tween_property(p, "scale", Vector2(1.35, 1.35), 0.14).set_trans(Tween.TRANS_BACK)
+			_sparkles(q, Color("#ffcf5a"), 1), 0.0, 1.0, 1.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	# 3. зависла над целью и нырнула в неё
+	tw.tween_property(p, "rotation", 0.0, 0.06)
+	tw.parallel().tween_property(p, "scale", Vector2(1.35, 1.35) * gs, 0.06)
+	tw.tween_property(p, "position", b, 0.14).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(p, "scale", Vector2(0.7, 0.7) * gs, 0.14)
 	tw.tween_callback(func() -> void:
-		_burst(cell_pos(to), Color("#ffb020"), 14)
+		shadow.queue_free()
+		_flipbook("pop", b, CELL * 2.2 * gs, 0.36, Color(1.0, 0.85, 0.4), true, 8)
+		_burst(cell_pos(to), Color("#ffb020"), 10)
 		_pop_ring(b, Color("#ffd23f")))
-	tw.tween_property(p, "scale", Vector2(0.1, 0.1), 0.12).set_ease(Tween.EASE_IN)
+	tw.tween_property(p, "modulate:a", 0.0, 0.08)
 	tw.tween_callback(p.queue_free)
 
 

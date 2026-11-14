@@ -77,7 +77,9 @@ func _draw() -> void:
 			t = tex("gem_%d" % color)
 			if t:
 				# мягкая тень под кристаллом + редкий блеск
-				draw_circle(Vector2(0, size * 0.36), size * 0.3, Color(0, 0, 0, 0.12))
+				draw_set_transform(Vector2(size * 0.03, size * 0.38), 0.0, Vector2(1.0, 0.32))
+				draw_circle(Vector2.ZERO, size * 0.36, Color(0.05, 0.12, 0.25, 0.28))
+				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 				_draw_tex(t, box)
 				return
 		ROCKET_H, ROCKET_V:

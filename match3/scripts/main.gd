@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "2.8.0"
+const VERSION := "2.9.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1080,17 +1080,39 @@ func _round_button(kind: String, base: Color) -> Button:
 		var off := Vector2(0, 4) if pressed else Vector2.ZERO
 		var active: bool = btn.get_meta("active")
 		var col := Color("#ffb020") if active else base
-		btn.draw_circle(c + Vector2(0, 7), 60, Color(0, 0, 0, 0.3))
-		if kind == "pause" and Zoo.art("ui_pause"):
-			Zoo.draw_art(btn, "ui_pause", c + off, 126.0)
+		# объёмная плитка-слот: тень, тёмная кайма, золото, тёплая грань с градиентом, блик сверху;
+		# иконка крупная и чуть выступает над плиткой
+		var w := 112.0
+		var h := 112.0
+		var r := Rect2(c + off - Vector2(w, h) / 2.0 + Vector2(0, 6), Vector2(w, h))
+		var face_top := Color("#fff3d6")
+		var face_bot := Color("#f2b866")
+		if kind == "pause":
+			face_top = Color("#8fd0ff")
+			face_bot = Color("#2f7fe0")
+		if active:
+			face_top = Color("#fffbe0")
+			face_bot = Color("#ffd23f")
+		_tile(btn, Rect2(r.position + Vector2(0, 7 - off.y), r.size), Color(0, 0, 0, 0.35), 26.0)
+		_tile(btn, r.grow(4.0), Color("#5a3a08"), 28.0)
+		_tile(btn, r.grow(1.0), Color("#ffcf3a"), 26.0)
+		var inner := r.grow(-5.0)
+		var steps := 10
+		for i in steps:
+			var y0 := inner.position.y + inner.size.y * i / steps
+			var band := Rect2(inner.position.x, y0, inner.size.x, inner.size.y / steps + 1.0)
+			_tile(btn, band, face_top.lerp(face_bot, float(i) / (steps - 1)), 20.0 if i == 0 or i == steps - 1 else 0.0)
+		_tile(btn, Rect2(inner.position + Vector2(10, 6), Vector2(inner.size.x - 20, 12)), Color(1, 1, 1, 0.55), 6.0)
+		if active:
+			btn.draw_arc(c + off + Vector2(0, 6), 66, 0, TAU, 40, Color(1, 0.95, 0.5, 0.8), 5.0, true)
+		if kind == "pause":
+			for dx in [-14.0, 14.0]:
+				_tile(btn, Rect2(c + off + Vector2(dx - 9, -22 + 6), Vector2(18, 44)), Color("#1a4f9a"), 7.0)
+				_tile(btn, Rect2(c + off + Vector2(dx - 8, -24 + 6), Vector2(16, 42)), Color.WHITE, 7.0)
 			return
-		if Zoo.art("ui_round_btn"):
-			if active:
-				btn.draw_circle(c + off, 65, Color("#ffe14d"))
-			Zoo.draw_art(btn, "ui_round_btn", c + off, 126.0)
-			_draw_tool_icon(btn, kind, c + off)
-			_draw_count(btn, c)
-			return
+		_draw_tool_icon(btn, kind, c + off + Vector2(0, -2))
+		_draw_count(btn, c)
+		return
 		btn.draw_circle(c + off, 54, Color("#ffcf5a"))
 		btn.draw_circle(c + off, 49, col.darkened(0.45))
 		btn.draw_circle(c + off + Vector2(0, -3), 45, col)
@@ -1105,13 +1127,25 @@ func _round_button(kind: String, base: Color) -> Button:
 	return btn
 
 
+## Скруглённый прямоугольник (StyleBoxFlat) — основа объёмных плиток.
+func _tile(ci: CanvasItem, r: Rect2, col: Color, radius: float) -> void:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = col
+	sb.set_corner_radius_all(int(radius))
+	sb.anti_aliasing = true
+	ci.draw_style_box(sb, r)
+
+
 ## Красный кружок с количеством бустера (или «+», если их нет).
 func _draw_count(btn: Button, c: Vector2) -> void:
 		var n: int = btn.get_meta("count")
 		if n >= 0:
-			var bc := c + Vector2(42, 44)
-			btn.draw_circle(bc, 22, Color("#7a0f1c"))
-			btn.draw_circle(bc + Vector2(0, -2), 19, Color("#e8283c"))
+			var bc := c + Vector2(44, 50)
+			var green := n == 0
+			btn.draw_circle(bc + Vector2(0, 3), 22, Color(0, 0, 0, 0.3))
+			btn.draw_circle(bc, 22, Color.WHITE)
+			btn.draw_circle(bc, 18, Color("#2f9e3a") if green else Color("#e8283c"))
+			btn.draw_circle(bc + Vector2(0, -5), 11, Color(1, 1, 1, 0.25))
 			var f: Font = UiTheme.title_font()
 			var t := str(n) if n > 0 else "+"
 			var ts := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 22)
@@ -1124,10 +1158,10 @@ func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 	if art.has(kind) and Zoo.art(art[kind]):
 		if kind == "cannon":
 			ci.draw_set_transform(c, PI / 2.0, Vector2.ONE)
-			Zoo.draw_art(ci, art[kind], Vector2.ZERO, 80.0)
+			Zoo.draw_art(ci, art[kind], Vector2.ZERO, 92.0)
 			ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		else:
-			Zoo.draw_art(ci, art[kind], c, 80.0)
+			Zoo.draw_art(ci, art[kind], c, 92.0)
 		return
 	match kind:
 		"hammer":
@@ -2177,10 +2211,10 @@ func _begin_bonus() -> void:
 	await get_tree().create_timer(1.0).timeout
 	var bonus := _moves
 	_level["bonus_coins"] = bonus * COINS_PER_MOVE
-	# праздник: каждый оставшийся ход вылетает ракетой из счётчика и превращает фишку в ракету
+	# праздник: каждый оставшийся ход вылетает бабочкой из счётчика и превращает фишку в бабочку
 	var n := mini(bonus, 12)
 	var from := _moves_label.get_global_rect().get_center()
-	var rtex: Texture2D = Gem.tex("rocket")
+	var rtex: Texture2D = Gem.tex("propeller")
 	for i in n:
 		var cells: Array = []
 		for x in _board.W:
@@ -2201,14 +2235,17 @@ func _begin_bonus() -> void:
 		spr.position = _fx.to_local(from)
 		_fx.add_child(spr)
 		var to := _fx.to_local(_board.get_global_transform_with_canvas() * _board.cell_pos(cell))
-		spr.rotation = (to - spr.position).angle()
+		var mid := (spr.position + to) / 2.0 + Vector2(randf_range(-120, 120), -90)
+		var p0 := spr.position
 		var tw := spr.create_tween()
-		tw.tween_property(spr, "position", to, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_method(func(t: float) -> void:
+			spr.position = p0.lerp(mid, t).lerp(mid.lerp(to, t), t)
+			spr.rotation = sin(t * TAU * 2.0) * 0.25, 0.0, 1.0, 0.4).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 		tw.tween_callback(func() -> void:
 			spr.queue_free()
 			var g: Node2D = _board.gem_at(cell)
 			if g and g.special == Gem.NONE:
-				g.set_special(Gem.ROCKET_H if randf() < 0.5 else Gem.ROCKET_V)
+				g.set_special(Gem.PROPELLER)
 				g.scale = Vector2(1.5, 1.5)
 				g.create_tween().tween_property(g, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK))
 		await get_tree().create_timer(0.09).timeout
