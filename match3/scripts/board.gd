@@ -24,6 +24,7 @@ signal combo_made(size: int)
 signal shake(amount: float)
 signal idle_hint
 signal special_fired
+signal bad_move
 
 const Gem := preload("res://scripts/gem.gd")
 const CELL := 84.0
@@ -870,6 +871,7 @@ func try_swap(a: Vector2i, b: Vector2i) -> void:
 		return
 	if find_groups().is_empty():
 		Sfx.play("bad")
+		bad_move.emit()
 		await _animate_swap(ga, gb, b, a)
 		_swap_data(a, b)
 		var tw := create_tween()
@@ -1829,17 +1831,36 @@ func _gravity() -> void:
 	if moved.is_empty():
 		return
 	var longest := 0.0
+	# небольшой сдвиг старта по столбцам — фишки сыплются «волной», а не одной плитой
+	var col_lag: Array[float] = []
+	for x in W:
+		col_lag.append(rng.randf_range(0.0, 0.03))
 	for g: Node2D in moved:
 		var target := cell_pos(g.cell)
-		var dist := (target - g.position).length() / CELL
-		var t := 0.12 + sqrt(maxf(dist, 0.0)) * 0.09
-		longest = maxf(longest, t)
+		var dist := maxf((target - g.position).length() / CELL, 0.0)
+		var t := 0.12 + sqrt(dist) * 0.09
+		# нижние фишки трогаются чуть раньше верхних — между ними появляется зазор, как у сыплющихся конфет
+		var dl := col_lag[g.cell.x] + float(H - 1 - g.cell.y) * 0.012
+		longest = maxf(longest, dl + t)
+		var k := clampf(dist / 4.0, 0.35, 1.0)
+		if g.has_meta("fall_tw"):
+			var old: Tween = g.get_meta("fall_tw")
+			if old and old.is_valid():
+				old.kill()
 		var tw := create_tween()
+		g.set_meta("fall_tw", tw)
+		if dl > 0.0:
+			tw.tween_interval(dl)
 		tw.tween_property(g, "position", target, t).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		# «желе»: сплющивается при приземлении и пружинит
-		tw.tween_property(g, "scale", Vector2(1.26, 0.72), 0.06)
-		tw.tween_property(g, "scale", Vector2(0.88, 1.14), 0.09)
-		tw.tween_property(g, "scale", Vector2(1.05, 0.96), 0.07)
+		if dist >= 1.5:
+			# в полёте чуть вытягивается по вертикали — ощущение скорости
+			tw.parallel().tween_property(g, "scale", Vector2(0.93, 1.09), t * 0.6).set_delay(t * 0.25)
+		# «желе»: сплющивается при приземлении (сильнее после долгого падения), подскакивает и пружинит
+		tw.tween_property(g, "scale", Vector2(1.0 + 0.24 * k, 1.0 - 0.26 * k), 0.06)
+		tw.tween_property(g, "scale", Vector2(1.0 - 0.1 * k, 1.0 + 0.12 * k), 0.09)
+		tw.parallel().tween_property(g, "position:y", target.y - 6.0 * k, 0.09).set_ease(Tween.EASE_OUT)
+		tw.tween_property(g, "scale", Vector2(1.0 + 0.04 * k, 1.0 - 0.04 * k), 0.07)
+		tw.parallel().tween_property(g, "position:y", target.y, 0.07).set_ease(Tween.EASE_IN)
 		tw.tween_property(g, "scale", Vector2.ONE, 0.07)
 	await get_tree().create_timer(longest + 0.12).timeout
 

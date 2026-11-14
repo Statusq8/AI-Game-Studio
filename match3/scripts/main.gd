@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "2.13.1"
+const VERSION := "2.14.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -101,6 +101,10 @@ func _process(delta: float) -> void:
 		_refresh_hearts()
 	if _board_frame == null:
 		return
+	if _aiming != "" and _booster_btns.has(_aiming):
+		var ab: Button = _booster_btns[_aiming]
+		ab.set_meta("glow", 0.5 + 0.5 * sin(Time.get_ticks_msec() / 160.0))
+		ab.queue_redraw()
 	if _shake > 0.0:
 		_board_frame.position = _board_rest() + Vector2(randf_range(-1, 1), randf_range(-1, 1)) * _shake
 		_shake = move_toward(_shake, 0.0, 40.0 * delta)
@@ -781,7 +785,7 @@ func _build_level_screen() -> void:
 			_slowmo())
 	_booster_bar = HBoxContainer.new()
 	_booster_bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	_booster_bar.add_theme_constant_override("separation", 6)
+	_booster_bar.add_theme_constant_override("separation", 0)
 	_level_screen.add_child(_booster_bar)
 	for b in IN_BOOSTERS:
 		var btn := _round_button(b[0], Color("#3fb85a"))
@@ -800,8 +804,8 @@ func _build_level_screen() -> void:
 		var w := bands.size.x
 		var top_h := 238.0
 		_draw_band(bands, Rect2(0, 0, w, top_h), false)
-		var by := _booster_bar.position.y - 14.0
-		_draw_band(bands, Rect2(0, by, w, bands.size.y - by), true))
+		var by := _booster_bar.position.y + 4.0
+		_draw_tray(bands, Rect2(12, by, w - 24, 132)))
 	_level_screen.add_child(bands)
 	_level_screen.move_child(bands, 1)
 	_bands = bands
@@ -811,6 +815,9 @@ func _build_level_screen() -> void:
 	_level_screen.move_child(_panda, _board_frame.get_index())
 	_board.combo_made.connect(_on_combo)
 	_board.idle_hint.connect(func() -> void: _panda_react("yawn"))
+	_board.bad_move.connect(func() -> void:
+		if _state == "play":
+			_panda_react("bad"))
 	_board.special_fired.connect(func() -> void:
 		if _state == "play":
 			_panda_react("special"))
@@ -852,47 +859,170 @@ func _panda_react(kind: String) -> void:
 	if _portrait_node == null:
 		return
 	var img: Control = _portrait_node.get_node("Img")
-	if _portrait_node.has_meta("react"):
-		var old: Tween = _portrait_node.get_meta("react")
+	var body := _portrait_node
+	if body.has_meta("react"):
+		var old: Tween = body.get_meta("react")
 		if old and old.is_valid():
 			old.kill()
 	img.rotation = 0.0
 	img.position = Vector2(-10, -14)
+	body.pivot_offset = Vector2(body.size.x / 2.0, body.size.y)
+	body.scale = Vector2.ONE
 	if kind == "reset":
 		img.modulate = Color.WHITE
 		return
-	var t := img.create_tween()
-	_portrait_node.set_meta("react", t)
+	if kind != "sad":
+		img.modulate = Color.WHITE
+	var t := body.create_tween()
+	body.set_meta("react", t)
+	var squash := func(tw: Tween, sx: float, sy: float, d: float) -> void:
+		tw.tween_property(body, "scale", Vector2(sx, sy), d).set_trans(Tween.TRANS_SINE)
 	match kind:
-		"combo":
-			# подпрыгивает от радости
-			t.tween_property(img, "position:y", -44.0, 0.14).set_ease(Tween.EASE_OUT)
-			t.tween_property(img, "position:y", -14.0, 0.22).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_BOUNCE)
+		"combo", "bigcombo":
+			# подготовка-присед, прыжок с вытягиванием, приземление со сплющиванием
+			var hgt := -64.0 if kind == "bigcombo" else -42.0
+			squash.call(t, 1.12, 0.86, 0.07)
+			t.tween_property(img, "position:y", hgt, 0.16).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+			t.parallel().tween_property(body, "scale", Vector2(0.92, 1.1), 0.12)
+			if kind == "bigcombo":
+				t.parallel().tween_property(img, "rotation", TAU, 0.34).from(0.0)
+			t.tween_property(img, "position:y", -14.0, 0.16).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+			squash.call(t, 1.14, 0.84, 0.06)
+			t.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+			t.parallel().tween_property(img, "rotation", 0.0, 0.01)
+			_panda_emote("hearts" if kind == "combo" else "stars")
 		"special":
-			# удивление: вытягивается и наклоняется
-			t.tween_property(img, "rotation", -0.15, 0.08)
+			# удивление: вытягивается вверх и покачивается
+			squash.call(t, 0.9, 1.12, 0.08)
+			t.parallel().tween_property(img, "rotation", -0.15, 0.08)
 			t.tween_property(img, "rotation", 0.15, 0.12)
 			t.tween_property(img, "rotation", 0.0, 0.1)
+			t.parallel().tween_property(body, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			_panda_emote("wow")
+		"goal":
+			# цель выполнена: радостный прыжок с поворотом
+			squash.call(t, 1.1, 0.88, 0.07)
+			t.tween_property(img, "position:y", -50.0, 0.18).set_ease(Tween.EASE_OUT)
+			t.parallel().tween_property(img, "rotation", 0.25, 0.18)
+			t.tween_property(img, "position:y", -14.0, 0.16).set_ease(Tween.EASE_IN)
+			t.parallel().tween_property(img, "rotation", 0.0, 0.16)
+			t.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+			_panda_emote("check")
+		"bad":
+			# неверный ход: качает головой
+			for i in 2:
+				t.tween_property(img, "rotation", -0.12, 0.08)
+				t.tween_property(img, "rotation", 0.12, 0.1)
+			t.tween_property(img, "rotation", 0.0, 0.08)
 		"nervous":
-			# мало ходов: дрожит
+			# мало ходов: дрожит, капля пота
 			for i in 6:
 				t.tween_property(img, "position:x", -4.0, 0.04)
 				t.tween_property(img, "position:x", -16.0, 0.04)
 			t.tween_property(img, "position:x", -10.0, 0.04)
+			_panda_emote("sweat")
 		"win":
-			# танец
+			# танец с прыжками
 			for i in 3:
+				squash.call(t, 1.08, 0.9, 0.06)
 				t.tween_property(img, "rotation", 0.2, 0.12)
 				t.parallel().tween_property(img, "position:y", -40.0, 0.12)
+				t.parallel().tween_property(body, "scale", Vector2(0.94, 1.08), 0.12)
 				t.tween_property(img, "rotation", -0.2, 0.12)
 				t.parallel().tween_property(img, "position:y", -14.0, 0.12)
 			t.tween_property(img, "rotation", 0.0, 0.1)
+			t.parallel().tween_property(body, "scale", Vector2.ONE, 0.2)
+			_panda_emote("stars")
 		"sad":
-			t.tween_property(img, "rotation", -0.1, 0.4)
+			squash.call(t, 1.06, 0.92, 0.4)
+			t.parallel().tween_property(img, "rotation", -0.1, 0.4)
 			t.parallel().tween_property(img, "modulate", Color(0.7, 0.72, 0.85), 0.4)
+			_panda_emote("rain")
 		"yawn":
-			t.tween_property(img, "scale", Vector2(1.08, 0.92), 0.4)
-			t.tween_property(img, "scale", Vector2.ONE, 0.5)
+			t.tween_property(body, "scale", Vector2(1.08, 0.92), 0.4)
+			t.tween_property(body, "scale", Vector2.ONE, 0.5)
+			_panda_emote("zzz")
+
+
+## Эмоция над пандой: кружок-облачко с иконкой выпрыгивает, чуть всплывает и тает.
+func _panda_emote(kind: String) -> void:
+	if _portrait_node == null or _bot:
+		return
+	for old in _portrait_node.get_children():
+		if old.has_meta("emote"):
+			old.queue_free()
+	var e := Control.new()
+	e.set_meta("emote", true)
+	e.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	e.size = Vector2(64, 64)
+	e.pivot_offset = Vector2(32, 56)
+	e.position = Vector2(_portrait_node.size.x - 46, 8)
+	e.z_index = 5
+	e.draw.connect(_draw_emote.bind(e, kind))
+	_portrait_node.add_child(e)
+	e.scale = Vector2(0.2, 0.2)
+	e.modulate.a = 0.0
+	var t := e.create_tween()
+	t.tween_property(e, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.parallel().tween_property(e, "modulate:a", 1.0, 0.12)
+	t.tween_property(e, "position:y", e.position.y - 14.0, 0.9).set_trans(Tween.TRANS_SINE)
+	t.tween_property(e, "modulate:a", 0.0, 0.25)
+	t.tween_callback(e.queue_free)
+
+
+## Рисует облачко эмоции панды.
+func _draw_emote(e: Control, kind: String) -> void:
+	var font: Font = UiTheme.title_font()
+	var c := Vector2(32, 30)
+	# облачко с хвостиком к панде
+	e.draw_circle(c + Vector2(0, 4), 29, Color(0, 0, 0, 0.25))
+	e.draw_colored_polygon(PackedVector2Array([c + Vector2(-18, 14), c + Vector2(-4, 22), c + Vector2(-30, 38)]), Color("#5a3a08"))
+	e.draw_circle(c, 29, Color("#5a3a08"))
+	e.draw_circle(c, 26, Color.WHITE)
+	e.draw_colored_polygon(PackedVector2Array([c + Vector2(-16, 14), c + Vector2(-5, 20), c + Vector2(-26, 34)]), Color.WHITE)
+	match kind:
+		"hearts":
+			_draw_heart(e, c + Vector2(-7, 2), 11.0, Color("#ff3d5a"))
+			_draw_heart(e, c + Vector2(9, -6), 8.0, Color("#ff7aa0"))
+		"stars":
+			Zoo.draw_star(e, c + Vector2(-6, 3), 13.0)
+			Zoo.draw_star(e, c + Vector2(10, -8), 9.0)
+		"wow", "check", "zzz":
+			var t: String = "!"
+			if kind == "check":
+				var pts := PackedVector2Array([c + Vector2(-12, 0), c + Vector2(-3, 10), c + Vector2(13, -10)])
+				e.draw_polyline(pts, Color("#1e6b2a"), 10.0, true)
+				e.draw_polyline(pts, Color("#3fc25a"), 6.0, true)
+			elif kind == "zzz":
+				for i in 3:
+					var fs := 14 + i * 5
+					e.draw_string(font, c + Vector2(-16 + i * 9, 12 - i * 9), "z", HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#4a6fd8"))
+			else:
+				var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 40)
+				var p := c + Vector2(-ts.x / 2, 14)
+				e.draw_string_outline(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, 40, 6, Color("#7a1a08"))
+				e.draw_string(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, 40, Color("#ffb21e"))
+		"sweat":
+			var d := c + Vector2(2, 2)
+			e.draw_colored_polygon(PackedVector2Array([d + Vector2(0, -18), d + Vector2(-10, 2), d + Vector2(10, 2)]), Color("#3aa6ff"))
+			e.draw_circle(d + Vector2(0, 4), 10.5, Color("#3aa6ff"))
+			e.draw_circle(d + Vector2(-3, 1), 3.5, Color(1, 1, 1, 0.8))
+		"rain":
+			e.draw_circle(c + Vector2(-8, -4), 9, Color("#8a94a8"))
+			e.draw_circle(c + Vector2(4, -7), 11, Color("#8a94a8"))
+			e.draw_circle(c + Vector2(13, -2), 8, Color("#8a94a8"))
+			e.draw_rect(Rect2(c + Vector2(-16, -4), Vector2(36, 9)), Color("#8a94a8"))
+			for i in 3:
+				var dp := c + Vector2(-9 + i * 9, 12 + (i % 2) * 4)
+				e.draw_line(dp, dp + Vector2(-2, 7), Color("#3aa6ff"), 3.0, true)
+
+
+func _draw_heart(ci: CanvasItem, c: Vector2, r: float, col: Color) -> void:
+	ci.draw_circle(c + Vector2(-r * 0.5, -r * 0.2), r * 0.58, col)
+	ci.draw_circle(c + Vector2(r * 0.5, -r * 0.2), r * 0.58, col)
+	ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-r * 1.05, 0), c + Vector2(r * 1.05, 0), c + Vector2(0, r * 1.05)]), col)
+	ci.draw_circle(c + Vector2(-r * 0.6, -r * 0.4), r * 0.2, Color(1, 1, 1, 0.6))
+
 
 func _panda_rest() -> Vector2:
 	var top := _board_rest().y
@@ -1069,62 +1199,44 @@ func _draw_icon_button(btn: Button, kind: String, d: float, base: Color) -> void
 ## Круглая объёмная кнопка бустера: обод, глянец, иконка, красный кружок с количеством.
 func _round_button(kind: String, base: Color) -> Button:
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(124, 132)
+	var is_pause := kind == "pause"
+	btn.custom_minimum_size = Vector2(104, 140) if is_pause else Vector2(134, 140)
 	btn.flat = true
 	for st in ["normal", "hover", "pressed", "focus", "disabled"]:
 		btn.add_theme_stylebox_override(st, StyleBoxEmpty.new())
 	btn.set_meta("count", -1)
 	btn.set_meta("active", false)
+	btn.set_meta("glow", 0.0)
 	btn.draw.connect(func() -> void:
-		var c := btn.size / 2
-		var pressed := btn.is_pressed()
-		var off := Vector2(0, 4) if pressed else Vector2.ZERO
+		var c := btn.size / 2 + Vector2(0, 2)
 		var active: bool = btn.get_meta("active")
-		var col := Color("#ffb020") if active else base
-		# объёмная плитка-слот: тень, тёмная кайма, золото, тёплая грань с градиентом, блик сверху;
-		# иконка крупная и чуть выступает над плиткой
-		var w := 112.0
-		var h := 112.0
-		var r := Rect2(c + off - Vector2(w, h) / 2.0 + Vector2(0, 6), Vector2(w, h))
-		var face_top := Color("#fff3d6")
-		var face_bot := Color("#f2b866")
-		if kind == "pause":
-			face_top = Color("#8fd0ff")
-			face_bot = Color("#2f7fe0")
-		if active:
-			face_top = Color("#fffbe0")
-			face_bot = Color("#ffd23f")
-		_tile(btn, Rect2(r.position + Vector2(0, 7 - off.y), r.size), Color(0, 0, 0, 0.35), 26.0)
-		_tile(btn, r.grow(4.0), Color("#5a3a08"), 28.0)
-		_tile(btn, r.grow(1.0), Color("#ffcf3a"), 26.0)
-		var inner := r.grow(-5.0)
-		var steps := 10
-		for i in steps:
-			var y0 := inner.position.y + inner.size.y * i / steps
-			var band := Rect2(inner.position.x, y0, inner.size.x, inner.size.y / steps + 1.0)
-			_tile(btn, band, face_top.lerp(face_bot, float(i) / (steps - 1)), 20.0 if i == 0 or i == steps - 1 else 0.0)
-		_tile(btn, Rect2(inner.position + Vector2(10, 6), Vector2(inner.size.x - 20, 12)), Color(1, 1, 1, 0.55), 6.0)
-		if active:
-			btn.draw_arc(c + off + Vector2(0, 6), 66, 0, TAU, 40, Color(1, 0.95, 0.5, 0.8), 5.0, true)
-		if kind == "pause":
-			for dx in [-14.0, 14.0]:
-				_tile(btn, Rect2(c + off + Vector2(dx - 9, -22 + 6), Vector2(18, 44)), Color("#1a4f9a"), 7.0)
-				_tile(btn, Rect2(c + off + Vector2(dx - 8, -24 + 6), Vector2(16, 42)), Color.WHITE, 7.0)
-			return
-		_draw_tool_icon(btn, kind, c + off + Vector2(0, -2))
-		_draw_count(btn, c)
-		return
-		btn.draw_circle(c + off, 54, Color("#ffcf5a"))
-		btn.draw_circle(c + off, 49, col.darkened(0.45))
-		btn.draw_circle(c + off + Vector2(0, -3), 45, col)
-		btn.draw_circle(c + off + Vector2(0, -12), 34, col.lightened(0.22))
-		btn.draw_set_transform(c + off + Vector2(-14, -26), -0.4, Vector2(1.0, 0.5))
-		btn.draw_circle(Vector2.ZERO, 16, Color(1, 1, 1, 0.45))
+		var lift := Vector2(0, -12) if active else Vector2.ZERO
+		# мягкая тень-«лужица» под слотом
+		btn.draw_set_transform(c + Vector2(0, 54), 0.0, Vector2(1.0, 0.26))
+		btn.draw_circle(Vector2.ZERO, 50.0 if not is_pause else 38.0, Color(0, 0, 0, 0.32 if not active else 0.2))
 		btn.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-		_draw_tool_icon(btn, kind, c + off)
-		_draw_count(btn, c))
-	btn.button_down.connect(btn.queue_redraw)
-	btn.button_up.connect(btn.queue_redraw)
+		if is_pause:
+			if not Zoo.draw_art(btn, "ui_pause", c, 90.0):
+				btn.draw_circle(c, 44, Color("#2f7fe0"))
+			return
+		# выбранный бустер: золотое сияние за слотом
+		if active:
+			var g: float = btn.get_meta("glow")
+			for i in 5:
+				btn.draw_circle(c + lift, 70.0 - i * 5.0 + g * 6.0, Color(1.0, 0.86, 0.3, 0.07 + i * 0.03))
+		if not Zoo.draw_art(btn, "ui_slot_round", c + lift, 124.0):
+			btn.draw_circle(c + lift, 58, Color("#8a5a2b"))
+		_draw_tool_icon(btn, kind, c + lift + Vector2(0, -2))
+		_draw_count(btn, c + lift))
+	# отклик нажатия: кнопка вжимается и пружинит обратно
+	btn.button_down.connect(func() -> void:
+		btn.pivot_offset = btn.size / 2.0
+		var t := btn.create_tween()
+		t.tween_property(btn, "scale", Vector2(0.86, 0.86), 0.07).set_ease(Tween.EASE_OUT))
+	btn.button_up.connect(func() -> void:
+		btn.pivot_offset = btn.size / 2.0
+		var t := btn.create_tween()
+		t.tween_property(btn, "scale", Vector2.ONE, 0.45).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT))
 	return btn
 
 
@@ -1137,20 +1249,31 @@ func _tile(ci: CanvasItem, r: Rect2, col: Color, radius: float) -> void:
 	ci.draw_style_box(sb, r)
 
 
-## Красный кружок с количеством бустера (или «+», если их нет).
+## Кружок с количеством бустера (зелёный) или «+» (оранжевый), если их нет.
 func _draw_count(btn: Button, c: Vector2) -> void:
-		var n: int = btn.get_meta("count")
-		if n >= 0:
-			var bc := c + Vector2(44, 50)
-			var green := n == 0
-			btn.draw_circle(bc + Vector2(0, 3), 22, Color(0, 0, 0, 0.3))
-			btn.draw_circle(bc, 22, Color.WHITE)
-			btn.draw_circle(bc, 18, Color("#2f9e3a") if green else Color("#e8283c"))
-			btn.draw_circle(bc + Vector2(0, -5), 11, Color(1, 1, 1, 0.25))
-			var f: Font = UiTheme.title_font()
-			var t := str(n) if n > 0 else "+"
-			var ts := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 22)
-			btn.draw_string(f, bc + Vector2(-ts.x / 2, 7), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE)
+	var n: int = btn.get_meta("count")
+	if n < 0:
+		return
+	var bc := c + Vector2(42, 42)
+	var buy := n == 0
+	var rim := Color("#ffffff")
+	var lo := Color("#c25a00") if buy else Color("#1f7a2c")
+	var hi := Color("#ffb21e") if buy else Color("#5fd34a")
+	btn.draw_circle(bc + Vector2(0, 4), 26, Color(0, 0, 0, 0.3))
+	btn.draw_circle(bc, 26, Color("#5a3a08"))
+	btn.draw_circle(bc, 24, rim)
+	btn.draw_circle(bc, 20, lo)
+	btn.draw_circle(bc + Vector2(0, -2), 18, hi)
+	btn.draw_set_transform(bc + Vector2(-5, -9), -0.5, Vector2(1.0, 0.55))
+	btn.draw_circle(Vector2.ZERO, 8, Color(1, 1, 1, 0.45))
+	btn.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	var f: Font = UiTheme.title_font()
+	var t := "+" if buy else str(n)
+	var fs := 30 if buy else (26 if n < 10 else 21)
+	var ts := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+	var pos := bc + Vector2(-ts.x / 2, fs * 0.36)
+	btn.draw_string_outline(f, pos, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 6, lo.darkened(0.35))
+	btn.draw_string(f, pos, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
 
 
 func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
@@ -1198,10 +1321,31 @@ func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 
 
 func _layout_bar() -> void:
-	_booster_bar.size = Vector2(_level_screen.size.x, 136)
-	_booster_bar.position = Vector2(0, _level_screen.size.y - 136.0 - 14.0)
+	_booster_bar.size = Vector2(_level_screen.size.x, 140)
+	_booster_bar.position = Vector2(0, _level_screen.size.y - 140.0 - 22.0)
 	if _bands:
 		_bands.queue_redraw()
+
+
+## Подставка бустеров: «парящий» лоток с закруглёнными углами, золотой кантом и бликом,
+## а не сплошная полоса во всю ширину.
+func _draw_tray(ci: CanvasItem, r: Rect2) -> void:
+	_tile(ci, Rect2(r.position + Vector2(0, 8), r.size), Color(0, 0, 0, 0.38), 40.0)
+	_tile(ci, r.grow(5.0), Color("#5a3a08"), 44.0)
+	_tile(ci, r.grow(2.0), Color("#ffcf3a"), 42.0)
+	_tile(ci, r.grow(0.0), Color("#fff1a8"), 40.0)
+	var inner := r.grow(-3.0)
+	var top_c := Color("#3aa152")
+	var bot_c := Color("#14532a")
+	var steps := 14
+	for i in steps:
+		var y0 := inner.position.y + inner.size.y * i / steps
+		var band := Rect2(inner.position.x, y0, inner.size.x, inner.size.y / steps + 1.0)
+		var rad := 37.0 if i == 0 or i == steps - 1 else 0.0
+		_tile(ci, band, top_c.lerp(bot_c, float(i) / (steps - 1)), rad)
+	# мягкий блик по верхнему краю и тёмная «ложбина» под кнопками
+	_tile(ci, Rect2(inner.position + Vector2(26, 6), Vector2(inner.size.x - 52, 10)), Color(1, 1, 1, 0.22), 5.0)
+	_tile(ci, Rect2(inner.position.x + 18, inner.end.y - 30, inner.size.x - 36, 18), Color(0, 0, 0, 0.16), 9.0)
 
 
 ## Полоса интерфейса: тёмно-зелёный градиент, золотая кайма со стороны поля.
@@ -1226,6 +1370,9 @@ func _refresh_boosters() -> void:
 		var btn: Button = _booster_btns[b[0]]
 		btn.set_meta("count", int(Save.boosters.get(b[0], 0)))
 		btn.set_meta("active", _aiming == b[0])
+		# пока целимся бустером — остальные кнопки приглушены
+		var dim: bool = _aiming != "" and _aiming != b[0]
+		btn.create_tween().tween_property(btn, "modulate", Color(1, 1, 1, 0.55) if dim else Color.WHITE, 0.15)
 		btn.queue_redraw()
 
 
@@ -2079,6 +2226,45 @@ func _banner(l: Label) -> void:
 	tw.chain().tween_callback(l.queue_free)
 
 
+## «Осталось 5 ходов!» — красная плашка выезжает из-под шапки, держится и уезжает обратно (ввод не блокирует).
+func _low_moves_banner() -> void:
+	if _bot:
+		return
+	var b := Control.new()
+	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.size = Vector2(440, 76)
+	var y0 := 168.0
+	b.position = Vector2((_level_screen.size.x - b.size.x) / 2.0, y0 - 90.0)
+	b.modulate.a = 0.0
+	var font: Font = UiTheme.title_font()
+	b.draw.connect(func() -> void:
+		var r := Rect2(Vector2.ZERO, b.size)
+		_tile(b, Rect2(r.position + Vector2(0, 6), r.size), Color(0, 0, 0, 0.35), 38.0)
+		_tile(b, r, Color("#5a1208"), 38.0)
+		_tile(b, r.grow(-4), Color("#ffcf3a"), 34.0)
+		_tile(b, r.grow(-7), Color("#c8261c"), 31.0)
+		_tile(b, Rect2(r.position + Vector2(7, 7), Vector2(r.size.x - 14, r.size.y * 0.45)), Color("#ff6a4a"), 28.0)
+		_tile(b, Rect2(r.position + Vector2(30, 11), Vector2(r.size.x - 60, 8)), Color(1, 1, 1, 0.35), 4.0)
+		var t := "Осталось 5 ходов!"
+		var fs := 36
+		var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var p := Vector2((b.size.x - ts.x) / 2.0, b.size.y / 2.0 + fs * 0.36)
+		b.draw_string_outline(font, p + Vector2(0, 3), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color(0.25, 0.02, 0.0, 0.6))
+		b.draw_string_outline(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 9, Color("#5a1208"))
+		b.draw_string(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	_level_screen.add_child(b)
+	b.position.y = y0 + 84.0
+	b.pivot_offset = b.size / 2.0
+	b.scale = Vector2(0.3, 0.3)
+	var t := b.create_tween()
+	t.tween_property(b, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.parallel().tween_property(b, "modulate:a", 1.0, 0.12)
+	t.tween_interval(1.3)
+	t.tween_property(b, "position:y", y0 + 40.0, 0.3).set_ease(Tween.EASE_IN)
+	t.parallel().tween_property(b, "modulate:a", 0.0, 0.3)
+	t.tween_callback(b.queue_free)
+
+
 # ---------- игровые события ----------
 
 ## Объёмная надпись: «выдавленная» тень вниз, толстый тёмный контур, светлая заливка сверху и тёмная снизу, блик.
@@ -2214,7 +2400,7 @@ func _slowmo() -> void:
 func _on_combo(n: int) -> void:
 	if n < 3 or _state != "play":
 		return
-	_panda_react("combo")
+	_panda_react("bigcombo" if n >= 5 else "combo")
 	var i := mini(n - 3, 3)
 	var l := _big_text(["Отлично!", "Супер!", "Невероятно!", "Потрясающе!"][i], 78 + mini(n, 6) * 5,
 		[Color("#ffe14d"), Color("#8dff6a"), Color("#ff8ad8"), Color("#7fe3ff")][i],
@@ -2242,6 +2428,7 @@ func _on_move() -> void:
 		_panda_react("nervous")
 	if _moves == 5:
 		Sfx.tense(true)
+		_low_moves_banner()
 	var tw := _moves_label.create_tween()
 	tw.tween_property(_moves_label, "scale", Vector2(1.25, 1.25), 0.07)
 	tw.tween_property(_moves_label, "scale", Vector2.ONE, 0.12)
@@ -2331,9 +2518,18 @@ func _goal_tick(gv: Dictionary) -> void:
 		gv["done"] = true
 		l.text = " "
 		_check_badge(icon)
+		if _state == "play" and not _goals_done():
+			_panda_react("goal")
 		return
 	if gv.shown > 0:
 		l.text = str(gv.shown)
+		# число цели «подпрыгивает» и вспыхивает золотом
+		l.pivot_offset = l.size / 2
+		var lt := l.create_tween()
+		lt.tween_property(l, "scale", Vector2(1.3, 1.3), 0.06)
+		lt.parallel().tween_property(l, "modulate", Color(1.5, 1.3, 0.6), 0.06)
+		lt.tween_property(l, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		lt.parallel().tween_property(l, "modulate", Color.WHITE, 0.2)
 	var tw := icon.create_tween()
 	tw.tween_property(icon, "scale", Vector2(1.25, 1.25), 0.06)
 	tw.tween_property(icon, "scale", Vector2.ONE, 0.1)
@@ -3081,6 +3277,18 @@ func _run_shots(dir: String) -> void:
 		await _snap(dir, "2_level_%d" % n)
 	_start_level(23)
 	await get_tree().create_timer(1.6).timeout
+	_clear_overlay()
+	_board.input_enabled = true
+	await get_tree().create_timer(0.3).timeout
+	await _snap(dir, "2x_bar")
+	_on_booster("hammer")
+	await get_tree().create_timer(0.5).timeout
+	await _snap(dir, "2y_aim")
+	_on_booster("hammer")
+	_moves = 6
+	_on_move()
+	await get_tree().create_timer(0.45).timeout
+	await _snap(dir, "2w_low_moves")
 	_on_combo(4)
 	_goal_views[0].goal.left = 0
 	_goal_views[0].shown = 1
