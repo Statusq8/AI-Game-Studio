@@ -1225,6 +1225,8 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 			if ice[c.x][c.y] <= 0:
 				goal_hit.emit("ice", to_global(cell_pos(c)))
 			queue_redraw()
+			# корка льда рисуется на верхнем слое — его тоже перерисовать, иначе лёд «висит»
+			_overlay.queue_redraw()
 		if g.is_power():
 			var area := _area(g.special, c)
 			if g.special == Gem.ROCKET_H or g.special == Gem.ROCKET_V:
