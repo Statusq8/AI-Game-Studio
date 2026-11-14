@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.15.1"
+const VERSION := "2.15.2"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -898,7 +898,7 @@ func _panda_react(kind: String) -> void:
 		# живая панда: реакцию играет само видео, код добавляет только облачко эмоции
 		var anim: Control = img.get_node("Anim")
 		var vid := {"combo": "happy", "bigcombo": "happy", "goal": "happy", "win": "win", "sad": "sad", "nervous": "nervous",
-			"special": "wow", "hello": "wave"}
+			"special": "wow", "hello": "wave", "yawn": "yawn"}
 		if vid.has(kind):
 			anim.play(vid[kind])
 		elif kind == "bad":

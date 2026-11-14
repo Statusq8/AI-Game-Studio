@@ -5,9 +5,9 @@ extends Control
 ## Холст кадра 320x384: в позе покоя панда занимает нижние 2/3 высоты, сверху запас под прыжки.
 
 const FPS := 10.0
-const NAMES := ["idle", "happy", "win", "sad", "nervous", "wave", "wow"]
+const NAMES := ["idle", "happy", "win", "sad", "nervous", "wave", "wow", "yawn"]
 ## важные реакции (победа, проигрыш) не перебиваются мелкими (комбо, «вау», привет)
-const PRIORITY := {"idle": 0, "wave": 1, "wow": 1, "happy": 2, "nervous": 2, "sad": 3, "win": 3}
+const PRIORITY := {"idle": 0, "wave": 1, "wow": 1, "yawn": 1, "happy": 2, "nervous": 2, "sad": 3, "win": 3}
 static var _cache := {}
 
 var _cur: TextureRect
