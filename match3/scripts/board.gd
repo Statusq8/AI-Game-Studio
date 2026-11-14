@@ -1587,6 +1587,18 @@ func _gravity() -> void:
 					changed = true
 					continue
 				var up := Vector2i(x, y - 1)
+				# над клеткой дыра: фишка (и яйцо) пролетает сквозь пустоту сверху
+				if inside(up) and hole[up.x][up.y]:
+					var sy := up.y
+					while sy >= 0 and hole[x][sy]:
+						sy -= 1
+					var src_up := Vector2i(x, sy)
+					if sy >= 0 and _fillable(src_up) and not _chained(src_up):
+						if gem_at(src_up) != null:
+							_move_gem(src_up, c)
+							moved[gem_at(c)] = true
+							changed = true
+						continue
 				if _fillable(up) and not _chained(up):
 					if gem_at(up) != null:
 						_move_gem(up, c)

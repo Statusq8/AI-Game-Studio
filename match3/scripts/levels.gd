@@ -225,7 +225,7 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 		"item":
 			lv.items = clampi(2 + n / 10, 2, 4)
 			lv.goals.append({"kind": "item", "left": lv.items})
-			lv.moves += 4
+			lv.moves += 3 * lv.items + 2
 		"chain":
 			var count := clampi(5 + n / 4, 5, 12)
 			var cells: Array = []
