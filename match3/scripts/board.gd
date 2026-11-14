@@ -1841,6 +1841,9 @@ func _merge_into(creations: Array) -> void:
 	var any := false
 	for cr in creations:
 		var target := cell_pos(cr.cell)
+		if fx:
+			# золотой вихрь втягивается в клетку и вспыхивает, когда появляется бонус
+			_flipbook("birth", fx.to_local(to_global(target)), CELL * 3.0 * get_global_transform().get_scale().x, 0.7, Color.WHITE, true, 8)
 		for c: Vector2i in cr.cells:
 			var g := gem_at(c)
 			if g == null or g.special != Gem.NONE or g.color < 0 or g.has_meta("merged"):
@@ -1948,6 +1951,42 @@ func _fx_sprite(kind: String, at: Vector2, color: Color, px: float, additive := 
 	return sp
 
 
+## Покадровые эффекты (заранее отрисованы tools/gen_vfx.py): имя → [колонки, ряды, кадров].
+const FLIPBOOKS := {"explosion": [6, 4, 22], "pop": [4, 3, 12], "birth": [6, 3, 18], "smoke": [4, 4, 16]}
+static var _fb_tex := {}
+
+
+## Проигрывает покадровый эффект в точке at (координаты слоя fx), размером px, за time секунд.
+func _flipbook(name: String, at: Vector2, px: float, time: float, tint := Color.WHITE, additive := false, z := 7) -> Sprite2D:
+	if fx == null or not FLIPBOOKS.has(name):
+		return null
+	if not _fb_tex.has(name):
+		var path := "res://assets/vfx/%s.png" % name
+		_fb_tex[name] = load(path) if ResourceLoader.exists(path) else null
+	var tex: Texture2D = _fb_tex[name]
+	if tex == null:
+		return null
+	var info: Array = FLIPBOOKS[name]
+	var sp := Sprite2D.new()
+	sp.texture = tex
+	sp.hframes = info[0]
+	sp.vframes = info[1]
+	sp.frame = 0
+	sp.position = at
+	sp.modulate = tint
+	sp.z_index = z
+	var k := px / (tex.get_width() / float(info[0]))
+	sp.scale = Vector2(k, k)
+	if additive:
+		sp.material = _additive()
+	fx.add_child(sp)
+	var last: int = info[2] - 1
+	var tw := sp.create_tween()
+	tw.tween_method(func(v: float) -> void: sp.frame = clampi(int(v), 0, last), 0.0, float(last) + 0.99, time)
+	tw.tween_callback(sp.queue_free)
+	return sp
+
+
 ## Вспышка-свечение (аддитивная): светлое пятно, расширяется и гаснет.
 func _glow_flash(at: Vector2, color: Color, size: float, time := 0.25) -> void:
 	if fx == null:
@@ -2041,8 +2080,10 @@ func _pop_fx(cell: Vector2i, col: int, shards: int) -> void:
 		return
 	var at := fx.to_local(to_global(cell_pos(cell)))
 	var color: Color = Gem.COLORS[col] if col >= 0 else Color.WHITE
-	_glow_flash(at, color.lerp(Color.WHITE, 0.35), CELL * 1.3, 0.22)
-	var ring := _fx_sprite("ring", at, color.lerp(Color.WHITE, 0.3), CELL * 1.0, true)
+	var gk := get_global_transform().get_scale().x
+	_flipbook("pop", at, CELL * 2.0 * gk, 0.36, color.lerp(Color.WHITE, 0.35), true, 6)
+	_glow_flash(at, color.lerp(Color.WHITE, 0.35), CELL * 1.1 * gk, 0.2)
+	var ring := _fx_sprite("ring", at, color.lerp(Color.WHITE, 0.3), CELL * 0.6, true)
 	ring.z_index = 6
 	var rk := ring.scale
 	ring.scale = rk * 0.35
@@ -2165,18 +2206,14 @@ func _flame(at: Vector2) -> void:
 
 
 func _puff(at: Vector2) -> void:
-	# дымок — объёмные шарики (свет сверху, тень снизу), растут и тают
-	var p := _fx_sprite("sphere", at + Vector2(randf_range(-4, 4), randf_range(-4, 4)), Color(1.0, 0.95, 0.85, 0.8), randf_range(18, 26))
-	p.z_index = 4
-	var k := p.scale
-	var t := p.create_tween().set_parallel(true)
-	t.tween_property(p, "scale", k * 2.0, 0.4).set_ease(Tween.EASE_OUT)
-	t.tween_property(p, "position:y", p.position.y - 10, 0.4)
-	t.tween_property(p, "modulate", Color(0.75, 0.75, 0.8, 0.0), 0.4)
-	t.chain().tween_callback(p.queue_free)
+	# клуб мультяшного дыма (покадровый, объёмный)
+	var sp := _flipbook("smoke", at + Vector2(randf_range(-4, 4), randf_range(-4, 4)), randf_range(52, 66), 0.5, Color(1, 1, 1, 0.9), false, 4)
+	if sp:
+		sp.rotation = randf() * TAU
 
 
 ## Объёмная молния: широкое свечение, цветное тело, белая сердцевина, вспышки на изломах.
+
 func _lightning(a: Vector2, b: Vector2, color: Color, width: float) -> void:
 	var pts := PackedVector2Array()
 	var n := maxi(6, int(a.distance_to(b) / 26.0))
@@ -2237,14 +2274,16 @@ func _bomb_fx(cell: Vector2i, power: float) -> void:
 	if fx == null:
 		return
 	var at := fx.to_local(to_global(cell_pos(cell)))
+	var gsc := get_global_transform().get_scale().x
+	# объёмный мультяшный взрыв (покадровый) + свечение
+	_flipbook("explosion", at, CELL * 3.6 * power * gsc, 0.75)
+	_glow_flash(at, Color(1.0, 0.75, 0.35), CELL * 3.0 * power * gsc, 0.3)
 	var flash := Node2D.new()
 	flash.position = at
 	flash.z_index = 5
 	var rad := CELL * 1.6 * power
 	flash.draw.connect(func() -> void:
-		flash.draw_circle(Vector2.ZERO, rad, Color(1, 0.95, 0.7, 0.75))
-		flash.draw_arc(Vector2.ZERO, rad, 0, TAU, 48, Color(1, 0.55, 0.15), 18.0, true)
-		flash.draw_arc(Vector2.ZERO, rad * 0.82, 0, TAU, 48, Color(1, 1, 1, 0.95), 7.0, true))
+		flash.draw_arc(Vector2.ZERO, rad, 0, TAU, 48, Color(1, 0.85, 0.5, 0.7), 10.0, true))
 	# вторая, широкая волна-кольцо, догоняет первую
 	var wave := Node2D.new()
 	wave.position = at

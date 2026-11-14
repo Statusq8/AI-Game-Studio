@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "2.5.0"
+const VERSION := "2.6.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -2585,6 +2585,12 @@ func _show_win() -> void:
 	box.resized.connect(place)
 	place.call_deferred()
 	get_tree().process_frame.connect(place, CONNECT_ONE_SHOT)
+	# крестик показываем, когда окно уже встало на место (иначе мелькает в углу)
+	close.modulate.a = 0.0
+	var ct := close.create_tween()
+	ct.tween_interval(0.45)
+	ct.tween_callback(place)
+	ct.tween_property(close, "modulate:a", 1.0, 0.15)
 	# звезда и монеты летят вверх, конфетти
 	var c := size / 2
 	for i in 70:
