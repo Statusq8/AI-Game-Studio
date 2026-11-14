@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "2.6.1"
+const VERSION := "2.7.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -2437,6 +2437,10 @@ func _show_win() -> void:
 	var praise := _big_text(["Отлично!", "Здорово!", "Супер!", "Молодец!"][_level.n % 4], 88, Color("#ffe14d"), Color("#ff9a1a"))
 	praise.custom_minimum_size = Vector2(0, 130)
 	praise.set_meta("no_banner", true)
+	# отступ сверху: звезда на окне не должна закрывать надпись
+	var star_gap := Control.new()
+	star_gap.custom_minimum_size = Vector2(0, 50)
+	v.add_child(star_gap)
 	v.add_child(praise)
 	# большое число монет рядом с горкой монет на пеньке, число «набегает»
 	var pile := Control.new()

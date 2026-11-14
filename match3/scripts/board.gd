@@ -981,7 +981,8 @@ func _cascade(prefer: Array) -> void:
 				ng.scale = Vector2.ZERO
 				ng.rotation = -0.6
 				ng.modulate = Color(2.2, 2.2, 2.2)
-				var ct := create_tween().set_parallel(true)
+				# твин живёт на самой фишке: если бонус сразу взорвётся, анимация просто остановится
+				var ct := ng.create_tween().set_parallel(true)
 				ct.tween_property(ng, "scale", Vector2(1.55, 1.55), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 				ct.tween_property(ng, "rotation", 0.0, 0.3).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 				ct.tween_property(ng, "modulate", Color.WHITE, 0.3)
@@ -1437,12 +1438,33 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 	var area := {}
 	if k1 == Gem.ORB and k2 == Gem.ORB:
 		big_hit.emit(4.0)
-		for x in W:
-			for y in H:
-				area[Vector2i(x, y)] = true
 		for g in [g1, g2]:
 			g.set_special(Gem.NONE)
 			g.color = -1
+		# радужная цепная молния: из точки обмена разом бегут цепи по фишкам каждого цвета
+		var by_col := {}
+		for x in W:
+			for y in H:
+				var c := Vector2i(x, y)
+				var g := gem_at(c)
+				if g and g != g1 and g != g2 and g.color >= 0:
+					if not by_col.has(g.color):
+						by_col[g.color] = []
+					by_col[g.color].append(c)
+		if fx:
+			var at_fx := fx.to_local(to_global(cell_pos(at)))
+			var gk := get_global_transform().get_scale().x
+			_glow_flash(at_fx, Color(1, 1, 1), CELL * 4.0 * gk, 0.5)
+			_flipbook("birth", at_fx, CELL * 4.0 * gk, 0.7, Color.WHITE, true, 8)
+		var longest := 0.0
+		for col in by_col:
+			var n: int = by_col[col].size()
+			longest = maxf(longest, n * clampf(0.75 / maxf(1.0, n), 0.04, 0.09))
+			_chain_lightning(at, by_col[col], col)
+		await get_tree().create_timer(longest + 0.25).timeout
+		for x in W:
+			for y in H:
+				area[Vector2i(x, y)] = true
 		await _clear(area)
 		return
 	if k1 == Gem.ORB or k2 == Gem.ORB:
