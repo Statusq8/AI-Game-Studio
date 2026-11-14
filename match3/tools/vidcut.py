@@ -81,6 +81,7 @@ def main() -> None:
     ap.add_argument("--start", type=float, default=0)
     ap.add_argument("--dur", type=float, default=0)
     ap.add_argument("--quality", type=int, default=86)
+    ap.add_argument("--norm", action="store_true", help="гасить «наезд камеры»: каждый кадр к высоте покоя (сглажено)")
     o = ap.parse_args()
     cw, ch = (int(v) for v in o.canvas.split("x"))
     tmp = tempfile.mkdtemp()
@@ -94,21 +95,33 @@ def main() -> None:
         sys.exit("нет кадров")
     frames = [key(Image.open(os.path.join(tmp, n))) for n in names]
     b0 = bbox(frames[0])
-    k = o.rest / (b0[3] - b0[1])
-    cx = (b0[0] + b0[2]) / 2.0
-    foot = b0[3]
+    boxes = [bbox(f) or b0 for f in frames]
+    if o.norm:
+        hs = np.array([b[3] - b[1] for b in boxes], float)
+        cxs = np.array([(b[0] + b[2]) / 2.0 for b in boxes], float)
+        fts = np.array([b[3] for b in boxes], float)
+        ker = np.ones(5) / 5.0
+        sm = lambda v: np.convolve(np.pad(v, 2, mode="edge"), ker, mode="valid")
+        hs, cxs, fts = sm(hs), sm(cxs), sm(fts)
+    else:
+        hs = np.full(len(frames), b0[3] - b0[1], float)
+        cxs = np.full(len(frames), (b0[0] + b0[2]) / 2.0)
+        fts = np.full(len(frames), float(b0[3]))
     out = os.path.join(ROOT, "assets", "anim", o.name)
     shutil.rmtree(out, ignore_errors=True)
     os.makedirs(out)
     clipped = 0
     for i, f in enumerate(frames):
+        k = o.rest / hs[i]
+        cx = cxs[i]
+        foot = fts[i]
         s = f.resize((round(f.width * k), round(f.height * k)), Image.LANCZOS)
         canvas = Image.new("RGBA", (cw, ch), (0, 0, 0, 0))
         ox = round(cw / 2 - cx * k)
         oy = round((ch - 4) - foot * k)
         canvas.paste(s, (ox, oy), s)
         bb = bbox(s)
-        if bb and (bb[0] + ox < 0 or bb[1] + oy < 0 or bb[2] + ox > cw):
+        if bb and (bb[0] + ox < 0 or bb[1] + oy < 0 or bb[2] + ox > cw or bb[3] + oy > ch):
             clipped += 1
         canvas.save(os.path.join(out, "%02d.webp" % i), quality=o.quality, method=6)
     shutil.rmtree(tmp)

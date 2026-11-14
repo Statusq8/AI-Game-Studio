@@ -5,7 +5,9 @@ extends Control
 ## Холст кадра 320x384: в позе покоя панда занимает нижние 2/3 высоты, сверху запас под прыжки.
 
 const FPS := 10.0
-const NAMES := ["idle", "happy", "win", "sad", "nervous"]
+const NAMES := ["idle", "happy", "win", "sad", "nervous", "wave", "wow"]
+## важные реакции (победа, проигрыш) не перебиваются мелкими (комбо, «вау», привет)
+const PRIORITY := {"idle": 0, "wave": 1, "wow": 1, "happy": 2, "nervous": 2, "sad": 3, "win": 3}
 static var _cache := {}
 
 var _cur: TextureRect
@@ -59,6 +61,8 @@ func play(name: String) -> void:
 	if frames(name).is_empty():
 		return
 	if name == _anim and name != "idle" and _frame < 4:
+		return
+	if name != "idle" and int(PRIORITY.get(name, 1)) < int(PRIORITY.get(_anim, 0)):
 		return
 	_switch(name)
 

@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.15.0"
+const VERSION := "2.15.1"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -897,7 +897,8 @@ func _panda_react(kind: String) -> void:
 	if img.has_node("Anim"):
 		# живая панда: реакцию играет само видео, код добавляет только облачко эмоции
 		var anim: Control = img.get_node("Anim")
-		var vid := {"combo": "happy", "bigcombo": "happy", "goal": "happy", "win": "win", "sad": "sad", "nervous": "nervous"}
+		var vid := {"combo": "happy", "bigcombo": "happy", "goal": "happy", "win": "win", "sad": "sad", "nervous": "nervous",
+			"special": "wow", "hello": "wave"}
 		if vid.has(kind):
 			anim.play(vid[kind])
 		elif kind == "bad":
@@ -1114,6 +1115,11 @@ func _hud_panda() -> Control:
 	img.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	c.add_child(img)
 	if _attach_panda_anim(img):
+		# нажатие на панду — машет «привет»
+		c.mouse_filter = Control.MOUSE_FILTER_STOP
+		c.gui_input.connect(func(ev: InputEvent) -> void:
+			if (ev is InputEventMouseButton or ev is InputEventScreenTouch) and ev.pressed:
+				_panda_react("hello"))
 		return c
 	var idle := img.create_tween().set_loops()
 	idle.tween_property(img, "scale", Vector2(1.03, 0.97), 0.8).set_trans(Tween.TRANS_SINE)
@@ -2195,6 +2201,7 @@ func _intro_banner() -> void:
 	l.add_theme_font_size_override("font_size", 80)
 	l.add_theme_constant_override("outline_size", 14)
 	_banner(l)
+	_panda_react("hello")
 	await get_tree().create_timer(1.0).timeout
 	if _state == "play":
 		_board.input_enabled = true
