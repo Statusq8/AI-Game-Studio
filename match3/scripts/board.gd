@@ -1011,7 +1011,7 @@ func _spread_honey() -> void:
 			for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 				var n: Vector2i = Vector2i(x, y) + d
 				var g := gem_at(n)
-				if g and g.special == Gem.NONE and not _chained(n):
+				if g and g.special == Gem.NONE and not _chained(n) and ice[n.x][n.y] <= 0:
 					cand.append(n)
 	if cand.is_empty():
 		return
@@ -1283,11 +1283,12 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 		if dl > 0.0:
 			tw.tween_interval(dl)
 			tw.chain()
-		tw.tween_property(g, "scale", Vector2(1.3, 1.3), 0.08).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		tw.tween_property(g, "modulate", Color(1.6, 1.6, 1.6), 0.08)
-		tw.chain().tween_property(g, "scale", Vector2(0.0, 0.0), 0.14).set_ease(Tween.EASE_IN)
-		tw.tween_property(g, "rotation", randf_range(-0.6, 0.6), 0.14)
-		tw.tween_property(g, "modulate:a", 0.0, 0.14)
+		# «к камере»: фишка приподнимается и растёт, затем поворачивается ребром (сжатие по X) и тает
+		tw.tween_property(g, "scale", Vector2(1.35, 1.35), 0.09).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(g, "position:y", g.position.y - 8, 0.09).set_ease(Tween.EASE_OUT)
+		tw.tween_property(g, "modulate", Color(1.7, 1.7, 1.7), 0.09)
+		tw.chain().tween_property(g, "scale", Vector2(0.0, 1.25), 0.13).set_ease(Tween.EASE_IN)
+		tw.tween_property(g, "modulate", Color(2.2, 2.2, 2.2, 0.0), 0.13).set_ease(Tween.EASE_IN)
 		tw.chain().tween_callback(g.queue_free)
 		last = tw
 	if _grass_carry:
@@ -1767,30 +1768,118 @@ func detonate_all_specials() -> void:
 
 # ---------- эффекты ----------
 
+# ---------- объёмные эффекты: шарики со светом и тенью, свечение (аддитивно), искры ----------
+static var _fx_tex := {}
+static var _add_mat: CanvasItemMaterial
+
+
+static func _additive() -> CanvasItemMaterial:
+	if _add_mat == null:
+		_add_mat = CanvasItemMaterial.new()
+		_add_mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
+	return _add_mat
+
+
+## Процедурные текстуры: sphere — шарик с бликом и тенью (объём), glow — мягкое свечение,
+## spark — четырёхлучевая искра, ring — мягкое кольцо ударной волны.
+static func fx_tex(kind: String) -> Texture2D:
+	if _fx_tex.has(kind):
+		return _fx_tex[kind]
+	var n := 64 if kind in ["sphere", "spark"] else 128
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var c := Vector2(n, n) / 2.0
+	for y in n:
+		for x in n:
+			var p := (Vector2(x, y) + Vector2(0.5, 0.5) - c) / (n / 2.0)
+			var d := p.length()
+			var col := Color(0, 0, 0, 0)
+			match kind:
+				"sphere":
+					if d < 1.0:
+						# освещение сверху-слева: ламберт + блик + тёмный край
+						var z := sqrt(maxf(0.0, 1.0 - d * d))
+						var nrm := Vector3(p.x, p.y, z)
+						var l := Vector3(-0.5, -0.6, 0.62).normalized()
+						var diff := clampf(nrm.dot(l), 0.0, 1.0)
+						var spec := pow(clampf(nrm.dot((l + Vector3(0, 0, 1)).normalized()), 0.0, 1.0), 28.0)
+						var v := 0.38 + 0.62 * diff
+						col = Color(v + spec, v + spec, v + spec, clampf((1.0 - d) * 18.0, 0.0, 1.0))
+				"glow":
+					col = Color(1, 1, 1, pow(clampf(1.0 - d, 0.0, 1.0), 2.2))
+				"ring":
+					col = Color(1, 1, 1, exp(-pow((d - 0.78) / 0.09, 2.0)) * clampf((1.0 - d) * 8.0, 0.0, 1.0))
+				"spark":
+					var ax := absf(p.x)
+					var ay := absf(p.y)
+					var ray := maxf(exp(-ax * 14.0) * (1.0 - ay), exp(-ay * 14.0) * (1.0 - ax))
+					col = Color(1, 1, 1, clampf(ray + pow(clampf(1.0 - d, 0.0, 1.0), 3.0), 0.0, 1.0))
+			img.set_pixel(x, y, col)
+	var t := ImageTexture.create_from_image(img)
+	_fx_tex[kind] = t
+	return t
+
+
+func _fx_sprite(kind: String, at: Vector2, color: Color, px: float, additive := false) -> Sprite2D:
+	var sp := Sprite2D.new()
+	sp.texture = fx_tex(kind)
+	sp.position = at
+	sp.modulate = color
+	var k := px / sp.texture.get_width()
+	sp.scale = Vector2(k, k)
+	if additive:
+		sp.material = _additive()
+	fx.add_child(sp)
+	return sp
+
+
+## Вспышка-свечение (аддитивная): светлое пятно, расширяется и гаснет.
+func _glow_flash(at: Vector2, color: Color, size: float, time := 0.25) -> void:
+	if fx == null:
+		return
+	var g := _fx_sprite("glow", at, color, size * 0.5, true)
+	g.z_index = 6
+	var k0 := g.scale
+	var t := g.create_tween().set_parallel(true)
+	t.tween_property(g, "scale", k0 * 2.0, time).set_ease(Tween.EASE_OUT)
+	t.tween_property(g, "modulate:a", 0.0, time).set_ease(Tween.EASE_IN)
+	t.chain().tween_callback(g.queue_free)
+
+
+## Объёмная капля/осколок: летит по дуге (вверх и падает), к «камере» растёт, у вершины — максимум,
+## под ней бежит тень — читается глубина.
+func _droplet(at: Vector2, color: Color, size: float, vel: Vector2, life: float) -> void:
+	var sh := _fx_sprite("sphere", at, Color(0, 0, 0, 0.32), size * 0.9)
+	sh.z_index = 4
+	var b := _fx_sprite("sphere", at, color, size)
+	b.z_index = 5
+	var k := b.scale
+	var ks := sh.scale
+	var tw := b.create_tween()
+	tw.tween_method(func(t: float) -> void:
+		var tt := t * life
+		var pos := at + vel * tt + Vector2(0, 900.0) * tt * tt * 0.5
+		b.position = pos
+		var lift := 4.0 * t * (1.0 - t)   # 0 → 1 → 0: «подлёт к камере»
+		b.scale = k * (1.0 + 0.5 * lift) * (1.0 - 0.55 * t)
+		b.modulate.a = 1.0 - pow(t, 3.0)
+		sh.position = pos + Vector2(4, 6 + 18.0 * lift)
+		sh.scale = ks * (1.0 - 0.3 * lift) * (1.0 - 0.55 * t)
+		sh.modulate.a = 0.32 * (1.0 - t), 0.0, 1.0, life)
+	tw.tween_callback(func() -> void:
+		b.queue_free()
+		sh.queue_free())
+
+
 func _burst(pos: Vector2, color: Color, amount: int) -> void:
 	if fx == null:
 		return
-	var p := CPUParticles2D.new()
-	p.position = fx.to_local(to_global(pos))
-	p.one_shot = true
-	p.explosiveness = 1.0
-	p.amount = amount if Save.particles else maxi(2, amount / 3)
-	p.lifetime = 0.5
-	p.direction = Vector2.UP
-	p.spread = 180.0
-	p.initial_velocity_min = 120.0
-	p.initial_velocity_max = 260.0
-	p.gravity = Vector2(0, 600)
-	p.scale_amount_min = 4.0
-	p.scale_amount_max = 8.0
-	p.color = color
-	var curve := Curve.new()
-	curve.add_point(Vector2(0, 1))
-	curve.add_point(Vector2(1, 0))
-	p.scale_amount_curve = curve
-	fx.add_child(p)
-	p.emitting = true
-	p.finished.connect(p.queue_free)
+	var at := fx.to_local(to_global(pos))
+	var n := amount if Save.particles else maxi(2, amount / 3)
+	n = mini(n, 14)
+	for i in n:
+		var ang := randf_range(-PI * 0.95, -PI * 0.05) if i % 3 != 0 else randf() * TAU
+		var sp := randf_range(160.0, 360.0)
+		_droplet(at, color.lerp(Color.WHITE, randf() * 0.25), randf_range(9.0, 16.0), Vector2(cos(ang), sin(ang)) * sp, randf_range(0.45, 0.65))
 
 
 func _beam_fx(cell: Vector2i, kind: int, col: int, scale_k: float = 1.0) -> void:
@@ -1836,16 +1925,14 @@ func _pop_fx(cell: Vector2i, col: int, shards: int) -> void:
 		return
 	var at := fx.to_local(to_global(cell_pos(cell)))
 	var color: Color = Gem.COLORS[col] if col >= 0 else Color.WHITE
-	var ring := Node2D.new()
-	ring.position = at
-	ring.draw.connect(func() -> void:
-		ring.draw_circle(Vector2.ZERO, CELL * 0.42, Color(color.lightened(0.55), 0.6))
-		ring.draw_arc(Vector2.ZERO, CELL * 0.42, 0, TAU, 28, color.lightened(0.25), 6.0, true))
-	ring.scale = Vector2(0.3, 0.3)
-	fx.add_child(ring)
+	_glow_flash(at, color.lerp(Color.WHITE, 0.35), CELL * 1.3, 0.22)
+	var ring := _fx_sprite("ring", at, color.lerp(Color.WHITE, 0.3), CELL * 1.0, true)
+	ring.z_index = 6
+	var rk := ring.scale
+	ring.scale = rk * 0.35
 	var rt := ring.create_tween().set_parallel(true)
-	rt.tween_property(ring, "scale", Vector2(1.15, 1.15), 0.22).set_ease(Tween.EASE_OUT)
-	rt.tween_property(ring, "modulate:a", 0.0, 0.22)
+	rt.tween_property(ring, "scale", rk * 1.15, 0.24).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	rt.tween_property(ring, "modulate:a", 0.0, 0.24).set_ease(Tween.EASE_IN)
 	rt.chain().tween_callback(ring.queue_free)
 	var tex: Texture2D = Gem.tex("gem_%d" % col) if col >= 0 else null
 	for i in shards:
@@ -1857,36 +1944,52 @@ func _pop_fx(cell: Vector2i, col: int, shards: int) -> void:
 		sh.scale = Vector2(k, k)
 		sh.position = at
 		fx.add_child(sh)
-		var ang := TAU * i / shards + randf_range(-0.4, 0.4)
-		var dist := CELL * randf_range(0.7, 1.2)
-		var t := sh.create_tween().set_parallel(true)
-		t.tween_property(sh, "position", at + Vector2(cos(ang), sin(ang)) * dist, 0.38).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-		t.tween_property(sh, "rotation", randf_range(-4, 4), 0.38)
-		t.tween_property(sh, "scale", Vector2(k * 0.2, k * 0.2), 0.38).set_ease(Tween.EASE_IN)
-		t.tween_property(sh, "modulate:a", 0.0, 0.38).set_ease(Tween.EASE_IN)
-		t.chain().tween_callback(sh.queue_free)
+		sh.z_index = 5
+		# осколок-мини-фишка летит по дуге вверх и падает, крутится «в 3D» (сплющивается по X) и отбрасывает тень
+		var shadow := Sprite2D.new()
+		shadow.texture = tex
+		shadow.modulate = Color(0, 0, 0, 0.3)
+		shadow.scale = sh.scale
+		shadow.position = at
+		shadow.z_index = 4
+		fx.add_child(shadow)
+		var ang := randf_range(-PI * 0.9, -PI * 0.1)
+		var vel := Vector2(cos(ang), sin(ang)) * randf_range(220.0, 380.0)
+		var spin := randf_range(10.0, 18.0) * (1.0 if randf() < 0.5 else -1.0)
+		var life := randf_range(0.5, 0.65)
+		var t := sh.create_tween()
+		t.tween_method(func(u: float) -> void:
+			var tt := u * life
+			var pos := at + vel * tt + Vector2(0, 1000.0) * tt * tt * 0.5
+			var lift := 4.0 * u * (1.0 - u)
+			var flip := cos(tt * spin)
+			sh.position = pos
+			sh.scale = Vector2(k * flip, k) * (1.0 + 0.4 * lift) * (1.0 - 0.5 * u)
+			sh.modulate = Color(1.0 + 0.4 * (1.0 - absf(flip)), 1.0 + 0.4 * (1.0 - absf(flip)), 1.0 + 0.4 * (1.0 - absf(flip)), 1.0 - pow(u, 3.0))
+			shadow.position = pos + Vector2(5, 8 + 22.0 * lift)
+			shadow.scale = Vector2(k * flip, k) * (1.0 - 0.5 * u) * 0.9
+			shadow.modulate.a = 0.3 * (1.0 - u), 0.0, 1.0, life)
+		t.tween_callback(func() -> void:
+			sh.queue_free()
+			shadow.queue_free())
 	_sparkles(at, color.lightened(0.3), 6 if shards > 2 else 3)
 	_burst(cell_pos(cell), color.lightened(0.15), 8)
 
 
 func _sparkles(at: Vector2, color: Color, n: int) -> void:
+	if fx == null:
+		return
 	for i in n:
-		var st := Node2D.new()
-		st.position = at
-		var r := randf_range(6, 11)
-		st.draw.connect(func() -> void:
-			var pts := PackedVector2Array()
-			for k in 8:
-				var a := TAU * k / 8.0
-				pts.append(Vector2(cos(a), sin(a)) * (r if k % 2 == 0 else r * 0.35))
-			st.draw_colored_polygon(pts, Color(1, 1, 0.85))
-			st.draw_circle(Vector2.ZERO, r * 0.3, color.lightened(0.6)))
-		fx.add_child(st)
+		var st := _fx_sprite("spark", at, color.lerp(Color.WHITE, 0.5), randf_range(26.0, 42.0), true)
+		st.z_index = 6
+		var k := st.scale
+		st.scale = k * 0.2
 		var ang := randf() * TAU
 		var t := st.create_tween().set_parallel(true)
 		t.tween_property(st, "position", at + Vector2(cos(ang), sin(ang)) * CELL * randf_range(0.5, 1.0), 0.45).set_ease(Tween.EASE_OUT)
-		t.tween_property(st, "rotation", PI, 0.45)
-		t.tween_property(st, "modulate:a", 0.0, 0.45).set_ease(Tween.EASE_IN)
+		t.tween_property(st, "scale", k, 0.12).set_trans(Tween.TRANS_BACK)
+		t.tween_property(st, "rotation", randf_range(-1.5, 1.5), 0.45)
+		t.tween_property(st, "modulate:a", 0.0, 0.3).set_delay(0.15)
 		t.chain().tween_callback(st.queue_free)
 
 
@@ -1932,33 +2035,28 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 
 ## Язычок пламени за ракетой: жёлто-оранжевый, быстро гаснет и краснеет.
 func _flame(at: Vector2) -> void:
-	var p := Node2D.new()
-	p.position = at + Vector2(randf_range(-5, 5), randf_range(-5, 5))
-	p.z_index = 4
-	var rad := randf_range(10, 16)
-	p.draw.connect(func() -> void:
-		p.draw_circle(Vector2.ZERO, rad, Color(1.0, 0.45, 0.1, 0.85))
-		p.draw_circle(Vector2.ZERO, rad * 0.6, Color(1.0, 0.85, 0.2, 0.95))
-		p.draw_circle(Vector2.ZERO, rad * 0.28, Color(1, 1, 0.9, 1.0)))
-	fx.add_child(p)
-	var t := p.create_tween().set_parallel(true)
-	t.tween_property(p, "scale", Vector2(0.2, 0.2), 0.22).set_ease(Tween.EASE_IN)
-	t.tween_property(p, "modulate", Color(1, 0.3, 0.2, 0.0), 0.22)
-	t.chain().tween_callback(p.queue_free)
+	var pos := at + Vector2(randf_range(-5, 5), randf_range(-5, 5))
+	var g := _fx_sprite("glow", pos, Color(1.0, 0.5, 0.15), randf_range(40, 56), true)
+	g.z_index = 4
+	var core := _fx_sprite("sphere", pos, Color(1.0, 0.9, 0.5), randf_range(12, 18))
+	core.z_index = 5
+	for sp in [g, core]:
+		var k: Vector2 = sp.scale
+		var t: Tween = sp.create_tween().set_parallel(true)
+		t.tween_property(sp, "scale", k * 0.2, 0.22).set_ease(Tween.EASE_IN)
+		t.tween_property(sp, "modulate", Color(1, 0.3, 0.2, 0.0), 0.22)
+		t.chain().tween_callback(sp.queue_free)
 
 
 func _puff(at: Vector2) -> void:
-	var p := Node2D.new()
-	p.position = at
+	# дымок — объёмные шарики (свет сверху, тень снизу), растут и тают
+	var p := _fx_sprite("sphere", at + Vector2(randf_range(-4, 4), randf_range(-4, 4)), Color(1.0, 0.95, 0.85, 0.8), randf_range(18, 26))
 	p.z_index = 4
-	var rad := randf_range(9, 14)
-	p.draw.connect(func() -> void:
-		p.draw_circle(Vector2.ZERO, rad, Color(1, 0.85, 0.5, 0.75))
-		p.draw_circle(Vector2(-2, -2), rad * 0.55, Color(1, 1, 0.95, 0.9)))
-	fx.add_child(p)
+	var k := p.scale
 	var t := p.create_tween().set_parallel(true)
-	t.tween_property(p, "scale", Vector2(1.8, 1.8), 0.35).set_ease(Tween.EASE_OUT)
-	t.tween_property(p, "modulate", Color(0.9, 0.9, 0.95, 0.0), 0.35)
+	t.tween_property(p, "scale", k * 2.0, 0.4).set_ease(Tween.EASE_OUT)
+	t.tween_property(p, "position:y", p.position.y - 10, 0.4)
+	t.tween_property(p, "modulate", Color(0.75, 0.75, 0.8, 0.0), 0.4)
 	t.chain().tween_callback(p.queue_free)
 
 
@@ -2117,18 +2215,17 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int, delay: float = 0.0) -
 
 
 func _pop_ring(at: Vector2, color: Color) -> void:
-	var ring := Node2D.new()
-	ring.position = at
-	ring.z_index = 5
-	ring.draw.connect(func() -> void:
-		ring.draw_circle(Vector2.ZERO, CELL * 0.5, Color(1, 1, 1, 0.5))
-		ring.draw_arc(Vector2.ZERO, CELL * 0.5, 0, TAU, 32, color, 6.0, true))
-	ring.scale = Vector2(0.3, 0.3)
-	fx.add_child(ring)
+	if fx == null:
+		return
+	var ring := _fx_sprite("ring", at, color.lerp(Color.WHITE, 0.4), CELL * 1.2, true)
+	ring.z_index = 6
+	var k := ring.scale
+	ring.scale = k * 0.3
 	var t := ring.create_tween().set_parallel(true)
-	t.tween_property(ring, "scale", Vector2(1.3, 1.3), 0.25).set_ease(Tween.EASE_OUT)
-	t.tween_property(ring, "modulate:a", 0.0, 0.25)
+	t.tween_property(ring, "scale", k * 1.3, 0.28).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	t.tween_property(ring, "modulate:a", 0.0, 0.28).set_ease(Tween.EASE_IN)
 	t.chain().tween_callback(ring.queue_free)
+	_glow_flash(at, color.lerp(Color.WHITE, 0.5), CELL * 1.1, 0.2)
 
 
 func _zap(from: Vector2, to: Vector2, color: Color) -> void:

@@ -183,7 +183,7 @@ static func _add_big(lv: Dictionary, kind: String, n: int, rng: RandomNumberGene
 					var nb: Vector2i = c + Vector2i(dx, dy)
 					if lv.blocks.has(nb) and lv.blocks[nb].has("anchor"):
 						free = false
-			if lv.blocks.has(c):
+			if not _free(lv, c):
 				free = false
 		if not free:
 			continue
@@ -194,6 +194,11 @@ static func _add_big(lv: Dictionary, kind: String, n: int, rng: RandomNumberGene
 			break
 	lv.goals.append({"kind": kind, "left": count})
 	lv.moves += 4 * count
+
+
+## Клетка свободна от любых препятствий — на одной клетке не больше одного препятствия.
+static func _free(lv: Dictionary, c: Vector2i) -> bool:
+	return not lv.blocks.has(c) and not lv.chains.has(c) and not lv.ice.has(c) and c not in lv.honey
 
 
 static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumberGenerator) -> void:
@@ -207,7 +212,7 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 			var count := 0
 			var want := 2 if kind == "birdhouse" else width + (2 if kind in ["crate", "vase"] and n > 20 else 0)
 			for c: Vector2i in _pattern(n + kind.length(), want, rng):
-				if lv.blocks.has(c):
+				if not _free(lv, c):
 					continue
 				var hp: int = info[1]
 				if kind == "crate" and n >= 12:
@@ -231,17 +236,19 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 			for y in range(H - 3, H):
 				for x in W:
 					var c := Vector2i(x, y)
-					if not lv.blocks.has(c):
+					if _free(lv, c):
 						lv.ice[c] = 2 if (n >= 20 and rng.randf() < 0.3) else 1
 						count += 1
 			lv.goals.append({"kind": "ice", "left": count})
 			lv.moves += 4
 		"honey":
-			while lv.honey.size() < 3:
-				var c := Vector2i(rng.randi_range(1, W - 2), rng.randi_range(2, 5))
-				if c not in lv.honey and not lv.chains.has(c):
+			for tries in 200:
+				if lv.honey.size() >= 3:
+					break
+				var c := Vector2i(rng.randi_range(1, W - 2), rng.randi_range(2, 6))
+				if _free(lv, c):
 					lv.honey.append(c)
-			lv.goals.append({"kind": "honey", "left": 3})
+			lv.goals.append({"kind": "honey", "left": lv.honey.size()})
 			lv.moves += 3
 		"grass":
 			var rows := 3
@@ -263,9 +270,11 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 		"chain":
 			var count := clampi(5 + n / 4, 5, 12)
 			var cells: Array = []
-			while cells.size() < count:
+			for tries in 400:
+				if cells.size() >= count:
+					break
 				var c := Vector2i(rng.randi_range(0, W - 1), rng.randi_range(2, 5))
-				if c in cells:
+				if c in cells or not _free(lv, c):
 					continue
 				# не перекрываем целый ряд, чтобы фишки могли падать по диагонали
 				var row := 0
