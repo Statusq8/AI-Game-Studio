@@ -1697,6 +1697,10 @@ func _chain_lightning(start: Vector2i, targets: Array, col: int) -> void:
 	var color: Color = Gem.COLORS[col].lightened(0.45) if col >= 0 else Color("#bfe9ff")
 	var left := targets.duplicate()
 	var cur := start
+	if fx:
+		var gk := get_global_transform().get_scale().x
+		_flipbook("zap", fx.to_local(to_global(cell_pos(start))), CELL * 3.2 * gk, 0.5, Color.WHITE, true, 9)
+		_glow_flash(fx.to_local(to_global(cell_pos(start))), color, CELL * 2.5 * gk, 0.35)
 	var step := clampf(0.75 / maxf(1.0, left.size()), 0.04, 0.09)
 	while not left.is_empty():
 		var best := 0
@@ -1710,6 +1714,7 @@ func _chain_lightning(start: Vector2i, targets: Array, col: int) -> void:
 		left.remove_at(best)
 		if fx:
 			_lightning(fx.to_local(to_global(cell_pos(cur))), fx.to_local(to_global(cell_pos(nxt))), color, 8)
+			_flipbook("zap", fx.to_local(to_global(cell_pos(nxt))), CELL * 1.7 * get_global_transform().get_scale().x, 0.35, color.lerp(Color.WHITE, 0.4), true, 8)
 			_sparkles(fx.to_local(to_global(cell_pos(nxt))), color, 2)
 		var g := gem_at(nxt)
 		if g:
@@ -2099,7 +2104,7 @@ func _fx_sprite(kind: String, at: Vector2, color: Color, px: float, additive := 
 
 
 ## Покадровые эффекты (заранее отрисованы tools/gen_vfx.py): имя → [колонки, ряды, кадров].
-const FLIPBOOKS := {"explosion": [6, 4, 24], "pop": [4, 3, 12], "birth": [6, 3, 18], "smoke": [4, 4, 16]}
+const FLIPBOOKS := {"explosion": [6, 4, 24], "fireball": [4, 4, 16], "zap": [4, 3, 12], "pop": [4, 3, 12], "birth": [6, 3, 18], "smoke": [4, 4, 16]}
 static var _fb_tex := {}
 
 
@@ -2360,6 +2365,9 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 	Sfx.play("rocket", 1.0, -3.0)
 	var c := cell_pos(cell)
 	var tex: Texture2D = Gem.tex("rocket")
+	var rgs := get_global_transform().get_scale().x
+	_flipbook("fireball", fx.to_local(to_global(c)), CELL * 2.2 * rgs, 0.5)
+	var trail_i := [0]
 	for sgn in [-1.0, 1.0]:
 		var dir := Vector2(0, sgn) if vertical else Vector2(sgn, 0)
 		var start := fx.to_local(to_global(c))
@@ -2401,7 +2409,11 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 				_flame(r.position - dir * 44.0)
 			if r.position.distance_to(last[0]) > 26.0:
 				last[0] = r.position
-				_puff(r.position - dir * 60.0)
+				trail_i[0] += 1
+				if trail_i[0] % 2 == 0:
+					_flipbook("fireball", r.position - dir * 50.0, CELL * 1.25 * rgs, 0.42, Color.WHITE, false, 5)
+				else:
+					_puff(r.position - dir * 60.0)
 				_sparkles(r.position - dir * 30.0, Color("#ffd27a"), 1), 0.0, 1.0, ROCKET_CELL_TIME * cells)
 		tw.tween_callback(r.queue_free)
 		for bs in [beam, core]:
@@ -2601,7 +2613,9 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int, delay: float = 0.0) -
 	tw.parallel().tween_property(p, "scale", Vector2(0.7, 0.7) * gs, 0.14)
 	tw.tween_callback(func() -> void:
 		shadow.queue_free()
+		_flipbook("fireball", b, CELL * 2.0 * gs, 0.45, Color.WHITE, false, 8)
 		_flipbook("pop", b, CELL * 2.2 * gs, 0.36, Color(1.0, 0.85, 0.4), true, 8)
+		shake.emit(5.0)
 		_burst(cell_pos(to), Color("#ffb020"), 10)
 		_pop_ring(b, Color("#ffd23f")))
 	tw.tween_property(p, "modulate:a", 0.0, 0.08)

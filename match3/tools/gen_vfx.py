@@ -118,7 +118,7 @@ def fbm(x, y, t, tex=None):
             + sample(tex, x * 4.3 - 0.2 * t, y * 4.3 + 0.5) * 0.15)
 
 
-def explosion(size=256, n=24):
+def explosion(size=256, n=24, name="explosion", cols=6):
     """Мультяшный огненный взрыв: вспышка → клубящийся огненный шар с рваным краем и языками пламени
     (горячее ядро белое→жёлтое, край оранжево-красный) → остывает в тёмный дым и тает. Плюс искры."""
     x, y, r = grid(size)
@@ -178,7 +178,37 @@ def explosion(size=256, n=24):
             f[..., :3] = f[..., :3] * (1 - fl[..., None]) + fl[..., None]
             f[..., 3] = np.maximum(f[..., 3], fl)
         frames.append(f)
-    save("explosion", frames, 6)
+    save(name, frames, cols)
+
+
+def zap(size=192, n=12):
+    """Электрическая вспышка: бело-голубое ядро, ломаные молнии-лучи во все стороны, кольцо, затухание."""
+    x, y, r = grid(size)
+    ang = np.arctan2(y, x)
+    bolts = [(k / 7 * 2 * np.pi + rng.uniform(-0.25, 0.25), rng.uniform(0.6, 0.95)) for k in range(7)]
+    frames = []
+    for i in range(n):
+        t = i / (n - 1)
+        a = np.exp(-(r / (0.2 + 0.25 * t)) ** 2) * (1 - t) ** 1.2 * 1.3
+        ring = np.exp(-((r - (0.15 + 0.75 * (1 - (1 - t) ** 2))) / 0.05) ** 2) * (1 - t)
+        a = a + ring * 0.7
+        for th0, ln in bolts:
+            # ломаная: угол дрожит с расстоянием (свой узор на каждом кадре)
+            jag = (sample(NOISE, r * 1.8 + th0, np.full_like(r, 0.37 * i)) - 0.5) * 0.9
+            th = th0 + jag * r
+            d = np.abs(np.angle(np.exp(1j * (ang - th))))
+            reach = ln * (0.35 + 0.65 * min(1.0, t / 0.35))
+            w = 0.035 * (1 - r) + 0.01
+            m = np.exp(-(d * r / w) ** 2) * smooth(reach, reach - 0.1, r) * (1 - smooth(0.4, 1.0, t))
+            a = np.maximum(a, m)
+        a = np.clip(a, 0, 1)
+        f = np.zeros((size, size, 4))
+        f[..., 0] = 0.75 + 0.25 * a
+        f[..., 1] = 0.9 + 0.1 * a
+        f[..., 2] = 1.0
+        f[..., 3] = a
+        frames.append(f)
+    save("zap", frames, 4)
 
 
 def pop(size=192, n=12):
@@ -254,4 +284,4 @@ def smoke(size=160, n=16):
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
-    explosion(); pop(); birth(); smoke()
+    explosion(); explosion(160, 16, "fireball", 4); zap(); pop(); birth(); smoke()
