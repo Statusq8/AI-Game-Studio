@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.9.1"
+const VERSION := "2.0.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -47,6 +47,8 @@ var _booster_btns := {}
 var _aiming := ""
 var _pre_selected := {}
 var _board_frame: Control
+var _board_clip: Control
+var _pause_btn: Control
 var _moves_label: Label
 var _level_label: Label
 var _goals_box: HBoxContainer
@@ -657,6 +659,12 @@ func _build_level_screen() -> void:
 	_level_screen.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_level_screen.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_level_screen)
+	# фон уровня приглушён — внимание на поле
+	var dim := ColorRect.new()
+	dim.color = Color(0.02, 0.06, 0.12, 0.28)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_level_screen.add_child(dim)
 
 	var top := MarginContainer.new()
 	top.set_anchors_preset(Control.PRESET_TOP_WIDE)
@@ -682,6 +690,13 @@ func _build_level_screen() -> void:
 	goal_card.get_node("Body").add_child(_goals_box)
 	_portrait_node = _hud_panda()
 	hud.add_child(_portrait_node)
+	# мягкая тень под ногами панды — стоит, а не парит
+	_portrait_node.draw.connect(func() -> void:
+		var pn := _portrait_node
+		pn.draw_set_transform(Vector2(pn.size.x / 2, pn.size.y - 6), 0.0, Vector2(1.0, 0.22))
+		pn.draw_circle(Vector2.ZERO, pn.size.x * 0.36, Color(0, 0, 0, 0.35))
+		pn.draw_circle(Vector2.ZERO, pn.size.x * 0.26, Color(0, 0, 0, 0.25))
+		pn.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE))
 	var moves_card := _hud_card("Ходы")
 	moves_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hud.add_child(moves_card)
@@ -698,7 +713,22 @@ func _build_level_screen() -> void:
 	_level_label.theme_type_variation = "TitleLabel"
 	_level_label.add_theme_font_size_override("font_size", 26)
 	_level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	col.add_child(_level_label)
+	# номер уровня — на тёмной плашке, а не «в воздухе»
+	var plaque := PanelContainer.new()
+	var psb := StyleBoxFlat.new()
+	psb.bg_color = Color(0.05, 0.12, 0.22, 0.72)
+	psb.set_corner_radius_all(18)
+	psb.border_color = Color("#bfe3ff", 0.6)
+	psb.set_border_width_all(2)
+	psb.content_margin_left = 22
+	psb.content_margin_right = 22
+	psb.content_margin_top = 2
+	psb.content_margin_bottom = 4
+	plaque.add_theme_stylebox_override("panel", psb)
+	plaque.add_child(_level_label)
+	var pc := CenterContainer.new()
+	pc.add_child(plaque)
+	col.add_child(pc)
 
 	_board_frame = PanelContainer.new()
 	_board_frame.theme_type_variation = "BoardPanel"
@@ -709,6 +739,7 @@ func _build_level_screen() -> void:
 	clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	clip.custom_minimum_size = Vector2(8, 10) * Board.CELL
 	_board_frame.add_child(clip)
+	_board_clip = clip
 	# рамка поля — ИИ-картинка (дерево, лианы, золотой кант), растягивается по 9 частям поверх края поля
 	var ft: Texture2D = load("res://assets/art/ui_board_frame.png")
 	var frame := NinePatchRect.new()
@@ -757,10 +788,10 @@ func _build_level_screen() -> void:
 	# пауза — маленькая, в левом верхнем углу
 	var pause := _round_button("pause", Color("#3f8cff"))
 	pause.pressed.connect(_show_pause)
-	pause.scale = Vector2(0.52, 0.52)
-	pause.position = Vector2(2, 2)
+	pause.scale = Vector2(0.5, 0.5)
 	pause.z_index = 4
 	_level_screen.add_child(pause)
+	_pause_btn = pause
 	_panda = _make_panda(200.0)
 	_panda.visible = false  # на уровне панда — портрет в шапке
 	_level_screen.add_child(_panda)
@@ -776,6 +807,7 @@ func _build_level_screen() -> void:
 		Save.vibrate(40))
 	_level_screen.resized.connect(func() -> void:
 		_board_frame.position = _board_rest()
+		_place_pause()
 		_panda.position = _panda_rest()
 		_layout_bar())
 
@@ -1176,20 +1208,49 @@ func _close_dialog() -> void:
 		_board.input_enabled = true
 
 
+## Рамка поля обнимает только занятые клетки (поле 6×10, 8×8 и т.п. — без пустых полос внутри рамки).
+func _fit_board_to_shape() -> void:
+	var lo := Vector2i(Levels.W, Levels.H)
+	var hi := Vector2i(-1, -1)
+	for x in Levels.W:
+		for y in Levels.H:
+			if not _board.hole[x][y]:
+				lo = Vector2i(mini(lo.x, x), mini(lo.y, y))
+				hi = Vector2i(maxi(hi.x, x), maxi(hi.y, y))
+	if hi.x < 0:
+		return
+	_board_clip.custom_minimum_size = Vector2(hi - lo + Vector2i.ONE) * Board.CELL
+	_board.position = -Vector2(lo) * Board.CELL
+	_board_clip.size = _board_clip.custom_minimum_size
+	_board_frame.reset_size()
+	_place_pause()
+
+
+## Пауза — над левым верхним углом рамки поля, рядом с плашкой уровня.
+func _place_pause() -> void:
+	if _pause_btn == null:
+		return
+	var r := _board_rest()
+	_pause_btn.position = Vector2(maxf(4.0, r.x - 4.0), r.y - 70.0)
+
+
 ## Поле масштабируется под экран: занимает всю ширину и свободную высоту между шапкой и бустерами.
+## Клетки не крупнее, чем у полного поля 8 в ширину — узкое поле не раздувается.
 func _board_scale() -> float:
 	var s := _board_frame.get_combined_minimum_size()
-	var free_top := 245.0
+	var free_top := 264.0
 	var free_bottom := 140.0
 	var k := minf((_level_screen.size.x - 8.0) / s.x, (_level_screen.size.y - free_top - free_bottom) / s.y)
-	return clampf(k, 0.6, 1.35)
+	var pad := s.x - _board_clip.custom_minimum_size.x
+	var k8 := (_level_screen.size.x - 8.0) / (8.0 * Board.CELL + pad)
+	return clampf(minf(k, k8), 0.6, 1.35)
 
 
 func _board_rest() -> Vector2:
 	var k := _board_scale()
 	_board_frame.scale = Vector2(k, k)
 	var s := _board_frame.get_combined_minimum_size() * k
-	var free_top := 245.0
+	var free_top := 264.0
 	var y := free_top + maxf(0.0, (_level_screen.size.y - free_top - 140.0 - s.y) * 0.3)
 	return Vector2((_level_screen.size.x - s.x) / 2.0, y)
 
@@ -1520,6 +1581,7 @@ func _start_level(n: int) -> void:
 	_level_label.text = "Уровень %d" % n
 	_board.fx = _fx
 	_board.setup(_level)
+	_fit_board_to_shape()
 	_board.input_enabled = true
 	_board_frame.position = _board_rest() + Vector2(0, size.y)
 	var fly := _board_frame.create_tween()

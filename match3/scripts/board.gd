@@ -187,7 +187,7 @@ func _would_match(x: int, y: int, c: int) -> bool:
 func _new_gem(c: int, kind: int = Gem.NONE) -> Node2D:
 	var g: Node2D = Gem.new()
 	g.color = c
-	g.size = CELL
+	g.size = CELL * 0.9
 	add_child(g)
 	if kind != Gem.NONE:
 		g.set_special(kind)
@@ -394,47 +394,48 @@ func _tile_box(col: Color) -> StyleBoxFlat:
 func _draw() -> void:
 	var r := Rect2(Vector2.ZERO, board_size())
 	var gap := 2.5
-	for x in W:
-		for y in H:
-			if not hole[x][y]:
-				draw_rect(Rect2(Vector2(x, y) * CELL - Vector2(1, 1), Vector2(CELL, CELL) + Vector2(2, 2)), Color("#123247", 0.6))
+	# единая доска: тёмно-синие клетки «шахматкой» без зазоров — фишки на ней ярче
 	for x in W:
 		for y in H:
 			if hole[x][y]:
 				continue
-			var rect := Rect2(Vector2(x, y) * CELL + Vector2(gap, gap), Vector2(CELL, CELL) - Vector2(gap, gap) * 2)
+			var rect := Rect2(Vector2(x, y) * CELL, Vector2(CELL, CELL))
 			var even := (x + y) % 2 == 0
-			var top := Color("#e6f3fa") if even else Color("#d3e7f2")
-			var bottom := Color("#b7d3e2") if even else Color("#a6c6d8")
+			var col := Color("#2f6596", 0.86) if even else Color("#285883", 0.86)
 			if grass[x][y]:
-				top = Color("#8be36e") if even else Color("#7ad85e")
-				bottom = Color("#4fb33c") if even else Color("#43a533")
+				col = Color("#5cc24a") if even else Color("#4fb33f")
 			elif grass_target[x][y]:
-				top = Color("#a07850") if even else Color("#96704a")
-				bottom = Color("#6e4e30") if even else Color("#654729")
-			var rim := StyleBoxFlat.new()
-			rim.bg_color = bottom.darkened(0.25)
-			rim.set_corner_radius_all(15)
-			draw_style_box(rim, rect)
-			var body := StyleBoxFlat.new()
-			body.bg_color = bottom
-			body.set_corner_radius_all(13)
-			draw_style_box(body, rect.grow(-2.0))
-			var face := StyleBoxFlat.new()
-			face.bg_color = top
-			face.set_corner_radius_all(12)
-			draw_style_box(face, Rect2(rect.position + Vector2(3, 3), rect.size - Vector2(6, 11)))
-			draw_rect(Rect2(rect.position + Vector2(12, 6), Vector2(rect.size.x - 24, 4)), Color(1, 1, 1, 0.55))
-			if not grass[x][y] and not grass_target[x][y]:
-				# узор клетки: светлая лапка на чётных, ромбик на нечётных
-				var pc := rect.get_center() + Vector2(0, -2)
-				var ink := Color(1, 1, 1, 0.32) if even else Color("#7fa9c2", 0.28)
-				if even:
-					draw_circle(pc + Vector2(0, 6), 8.0, ink)
-					for d in [Vector2(-9, -4), Vector2(-3, -10), Vector2(3, -10), Vector2(9, -4)]:
-						draw_circle(pc + d, 3.4, ink)
-				else:
-					draw_colored_polygon(PackedVector2Array([pc + Vector2(0, -9), pc + Vector2(9, 0), pc + Vector2(0, 9), pc + Vector2(-9, 0)]), ink)
+				col = Color("#8a6440") if even else Color("#7d5a39")
+			draw_rect(rect, col)
+			# мягкая тень сверху клетки — объём
+			draw_rect(Rect2(rect.position, Vector2(CELL, 6)), Color(0, 0, 0, 0.12))
+	# контур доски по форме поля: тёмная кайма снаружи + светлая линия
+	var edges: Array = []
+	for x in W:
+		for y in H:
+			if hole[x][y]:
+				continue
+			var p0 := Vector2(x, y) * CELL
+			for d: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+				var nb: Vector2i = Vector2i(x, y) + d
+				if inside(nb) and not hole[nb.x][nb.y]:
+					continue
+				match d:
+					Vector2i.LEFT: edges.append([p0, p0 + Vector2(0, CELL), Vector2(-1, 0)])
+					Vector2i.RIGHT: edges.append([p0 + Vector2(CELL, 0), p0 + Vector2(CELL, CELL), Vector2(1, 0)])
+					Vector2i.UP: edges.append([p0, p0 + Vector2(CELL, 0), Vector2(0, -1)])
+					Vector2i.DOWN: edges.append([p0 + Vector2(0, CELL), p0 + Vector2(CELL, CELL), Vector2(0, 1)])
+	for e in edges:
+		var o: Vector2 = e[2]
+		draw_line(e[0] + o * 5 - o.orthogonal().abs() * 5, e[1] + o * 5 + o.orthogonal().abs() * 5, Color("#0b1e33", 0.9), 10.0)
+	for e in edges:
+		var o: Vector2 = e[2]
+		draw_line(e[0] + o * 1.5 - o.orthogonal().abs() * 1.5, e[1] + o * 1.5 + o.orthogonal().abs() * 1.5, Color("#bfe3ff"), 3.0)
+	for x in W:
+		for y in H:
+			if hole[x][y]:
+				continue
+			var rect := Rect2(Vector2(x, y) * CELL + Vector2(2, 2), Vector2(CELL, CELL) - Vector2(4, 4))
 			var gt := Gem.tex("ob_tile_grass") if grass[x][y] else null
 			if gt:
 				draw_texture_rect(gt, rect.grow(1.0), false)
