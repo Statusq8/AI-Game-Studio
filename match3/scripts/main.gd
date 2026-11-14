@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.3.1"
+const VERSION := "1.4.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -614,6 +614,8 @@ func _show_settings() -> void:
 		btn.pressed.connect(func() -> void:
 			Save.set(key, not bool(Save.get(key)))
 			Save.store()
+			if key == "music":
+				Sfx.refresh_music()
 			paint.call())
 		v.add_child(btn)
 		v.move_child(btn, v.get_child_count() - 2)
@@ -1000,6 +1002,7 @@ func _refresh_boosters() -> void:
 
 
 func _on_booster(kind: String) -> void:
+	Sfx.play("click")
 	if _state != "play" or _board.busy:
 		return
 	if _aiming == kind:
@@ -1063,6 +1066,8 @@ func _board_rest() -> Vector2:
 
 func _show_home() -> void:
 	_state = "idle"
+	Sfx.music("music_menu")
+	Sfx.tense(false)
 	_clear_overlay()
 	_home.visible = true
 	_level_screen.visible = false
@@ -1326,6 +1331,8 @@ func _start_level(n: int) -> void:
 	_home.visible = false
 	_level_screen.visible = true
 	_level = Levels.make(n)
+	Sfx.music("music_level")
+	Sfx.tense(false)
 	_moves = _level.moves
 	_level_label.text = "Уровень %d" % n
 	_board.fx = _fx
@@ -1616,6 +1623,8 @@ func _on_move() -> void:
 	_update_moves()
 	if _moves == 5 or _moves == 3 or _moves == 1:
 		_panda_react("nervous")
+	if _moves == 5:
+		Sfx.tense(true)
 	var tw := _moves_label.create_tween()
 	tw.tween_property(_moves_label, "scale", Vector2(1.25, 1.25), 0.07)
 	tw.tween_property(_moves_label, "scale", Vector2.ONE, 0.12)
@@ -1989,6 +1998,7 @@ func _dialog(title_text: String, lines: Array, buttons: Array) -> VBoxContainer:
 		btn.add_theme_font_size_override("font_size", 28)
 		btn.disabled = b.size() > 3 and b[3]
 		btn.pressed.connect(b[2])
+		btn.pressed.connect(Sfx.play.bind("click"))
 		v.add_child(btn)
 	# лента сверху: переставляем — сначала лента, потом окно (окно уходит под ленту за счёт отрицательного отступа)
 	box.move_child(ribbon, 0)
@@ -1999,6 +2009,8 @@ func _dialog(title_text: String, lines: Array, buttons: Array) -> VBoxContainer:
 
 
 func _show_win() -> void:
+	Sfx.tense(false)
+	Sfx.play("win")
 	var mult := 1 + int(_level.get("hard", 0))
 	var coins := WIN_COINS * mult + int(_level.get("bonus_coins", 0))
 	Save.level = _level.n + 1
@@ -2059,6 +2071,7 @@ func _show_win() -> void:
 	v.add_child(pile)
 	var pt := pile.create_tween()
 	pt.tween_interval(0.3)
+	pt.tween_callback(Sfx.play.bind("coin"))
 	pt.tween_method(func(val: float) -> void:
 		pile.set_meta("val", int(val))
 		pile.queue_redraw(), 0.0, float(coins), 0.7)
@@ -2208,6 +2221,7 @@ func _level_transition(n: int) -> void:
 func _show_lose() -> void:
 	if _state != "done":
 		return
+	Sfx.play("lose")
 	var left: Array = []
 	for g in _level.goals:
 		if g.left > 0:
@@ -2224,6 +2238,7 @@ func _show_lose() -> void:
 
 
 func _add_moves() -> void:
+	Sfx.play("coin")
 	_clear_overlay()
 	_moves += EXTRA_MOVES
 	_update_moves()

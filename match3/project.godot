@@ -19,6 +19,7 @@ boot_splash/use_filter=true
 
 Save="*res://scripts/save.gd"
 Ads="*res://scripts/ads.gd"
+Sfx="*res://scripts/sfx.gd"
 
 [display]
 window/size/viewport_width=720

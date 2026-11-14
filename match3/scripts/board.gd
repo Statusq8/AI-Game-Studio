@@ -773,6 +773,7 @@ func try_swap(a: Vector2i, b: Vector2i) -> void:
 	_hits.clear()
 	_player_move = true
 	_grass_carry = grass[a.x][a.y] or grass[b.x][b.y]
+	Sfx.play("swap")
 	await _animate_swap(ga, gb, a, b)
 	_swap_data(a, b)
 	# теперь ga стоит в b, gb — в a
@@ -799,6 +800,7 @@ func try_swap(a: Vector2i, b: Vector2i) -> void:
 		await _cascade([])
 		return
 	if find_groups().is_empty():
+		Sfx.play("bad")
 		await _animate_swap(ga, gb, b, a)
 		_swap_data(a, b)
 		var tw := create_tween()
@@ -916,6 +918,10 @@ func _cascade(prefer: Array) -> void:
 					_hit_block(n)
 		if wave >= 2:
 			combo_made.emit(wave)
+		# каскад звучит всё выше
+		Sfx.play("match_%d" % mini(wave - 1, 7))
+		if not creations.is_empty():
+			Sfx.play("special", 1.0, -2.0)
 		await _clear(to_clear, grassify)
 		for cr in creations:
 			var cell: Vector2i = cr.cell
@@ -1022,6 +1028,7 @@ func _hit_block(c: Vector2i) -> void:
 		return
 	_hits[c] = true
 	var kind: int = block_kind[c.x][c.y]
+	Sfx.play("glass" if kind in [B_VASE, B_JAR, B_SHELL] else "wood", randf_range(0.9, 1.1), -4.0)
 	block_hp[c.x][c.y] -= 1
 	var n: Node2D = block_nodes.get(c)
 	_burst(cell_pos(c), BLOCKS[kind].fx if BLOCKS.has(kind) else Color.WHITE, 12)
@@ -1460,6 +1467,7 @@ func _orb_with_color(orb: Node2D, col: int) -> void:
 ## Цепная молния: прыгает от шара к ближайшей фишке нужного цвета, потом к следующей и т. д.
 ## Каждая задетая фишка вспыхивает; убираются все вместе в конце.
 func _chain_lightning(start: Vector2i, targets: Array, col: int) -> void:
+	Sfx.play("orb")
 	var color: Color = Gem.COLORS[col].lightened(0.45) if col >= 0 else Color("#bfe9ff")
 	var left := targets.duplicate()
 	var cur := start
@@ -1809,6 +1817,7 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 		return
 	if delay > 0.0:
 		await get_tree().create_timer(delay).timeout
+	Sfx.play("rocket", 1.0, -3.0)
 	var c := cell_pos(cell)
 	var tex: Texture2D = Gem.tex("rocket")
 	for sgn in [-1.0, 1.0]:
@@ -1898,6 +1907,7 @@ func _lightning(a: Vector2, b: Vector2, color: Color, width: float) -> void:
 ## Бомба: вспышка, ударная волна, огонь и обломки.
 func _bomb_fx(cell: Vector2i, power: float) -> void:
 	shake.emit(16.0 * power)
+	Sfx.play("bomb", 1.0 / sqrt(power))
 	# ударная волна отталкивает фишки вокруг
 	for dx in range(-3, 4):
 		for dy in range(-3, 4):
@@ -1967,6 +1977,7 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int, delay: float = 0.0) -
 	var a := fx.to_local(to_global(cell_pos(from)))
 	var b := fx.to_local(to_global(cell_pos(to)))
 	p.position = a
+	Sfx.play("butterfly")
 	var lift := a + Vector2(0, -CELL * 0.7)
 	var c1 := lift + Vector2(0, -CELL * 1.2)
 	var c2 := b + Vector2(0, -CELL * 1.6)
