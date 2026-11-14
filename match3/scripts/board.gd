@@ -425,6 +425,16 @@ func _draw() -> void:
 			face.set_corner_radius_all(12)
 			draw_style_box(face, Rect2(rect.position + Vector2(3, 3), rect.size - Vector2(6, 11)))
 			draw_rect(Rect2(rect.position + Vector2(12, 6), Vector2(rect.size.x - 24, 4)), Color(1, 1, 1, 0.55))
+			if not grass[x][y] and not grass_target[x][y]:
+				# узор клетки: светлая лапка на чётных, ромбик на нечётных
+				var pc := rect.get_center() + Vector2(0, -2)
+				var ink := Color(1, 1, 1, 0.32) if even else Color("#7fa9c2", 0.28)
+				if even:
+					draw_circle(pc + Vector2(0, 6), 8.0, ink)
+					for d in [Vector2(-9, -4), Vector2(-3, -10), Vector2(3, -10), Vector2(9, -4)]:
+						draw_circle(pc + d, 3.4, ink)
+				else:
+					draw_colored_polygon(PackedVector2Array([pc + Vector2(0, -9), pc + Vector2(9, 0), pc + Vector2(0, 9), pc + Vector2(-9, 0)]), ink)
 			var gt := Gem.tex("ob_tile_grass") if grass[x][y] else null
 			if gt:
 				draw_texture_rect(gt, rect.grow(1.0), false)
@@ -432,6 +442,14 @@ func _draw() -> void:
 				var it := Gem.tex("ob_tile_ice")
 				if it:
 					draw_texture_rect(it, rect.grow(2.0), false, Color(1, 1, 1, 1.0))
+				var ib := StyleBoxFlat.new()
+				ib.draw_center = true
+				ib.bg_color = Color("#bfeeff", 0.28)
+				ib.set_border_width_all(4)
+				ib.border_color = Color("#e8fbff", 0.95)
+				ib.set_corner_radius_all(13)
+				draw_style_box(ib, rect.grow(-1.0))
+				draw_line(rect.position + Vector2(14, rect.size.y - 18), rect.position + Vector2(rect.size.x - 22, 12), Color(1, 1, 1, 0.6), 4.0, true)
 			if grass[x][y] and gt == null:
 				for k in 3:
 					var bx := rect.position.x + 14 + k * 22
@@ -733,14 +751,18 @@ func show_hint() -> void:
 		var g := gem_at(c)
 		if g == null:
 			continue
-		var d := Vector2(m[1] - m[0]) * 8.0 * (1.0 if c == m[0] else -1.0)
+		var d := Vector2(m[1] - m[0]) * 14.0 * (1.0 if c == m[0] else -1.0)
 		if d == Vector2.ZERO:
-			d = Vector2(0, -8)
+			d = Vector2(0, -14)
 		var base := cell_pos(c)
 		var t := create_tween()
-		for i in 2:
-			t.tween_property(g, "position", base + d, 0.15)
-			t.tween_property(g, "position", base, 0.15)
+		for i in 3:
+			t.tween_property(g, "position", base + d, 0.16)
+			t.parallel().tween_property(g, "scale", Vector2(1.16, 1.16), 0.16)
+			t.tween_property(g, "position", base, 0.16)
+			t.parallel().tween_property(g, "scale", Vector2.ONE, 0.16)
+		if fx and c == m[0]:
+			_pop_ring(fx.to_local(to_global(base)), Color("#fff3a0"))
 		_hint_tweens.append(t)
 		if m[0] == m[1]:
 			break
@@ -929,7 +951,13 @@ func _cascade(prefer: Array) -> void:
 				var ng := _new_gem(cr.color, cr.kind)
 				_place(ng, cell)
 				ng.scale = Vector2(0.2, 0.2)
-				create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT).tween_property(ng, "scale", Vector2.ONE, 0.25)
+				var ct := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+				ct.tween_property(ng, "scale", Vector2(1.35, 1.35), 0.2)
+				ct.tween_property(ng, "scale", Vector2.ONE, 0.15)
+				if fx:
+					var at := fx.to_local(to_global(cell_pos(cell)))
+					_pop_ring(at, Color("#fff6b0"))
+					_sparkles(at, Color("#fff6b0"), 8)
 		await _gravity()
 		prefer = []
 	if _player_move:
@@ -1594,9 +1622,10 @@ func _gravity() -> void:
 		var tw := create_tween()
 		tw.tween_property(g, "position", target, t).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		# «желе»: сплющивается при приземлении и пружинит
-		tw.tween_property(g, "scale", Vector2(1.18, 0.8), 0.06)
-		tw.tween_property(g, "scale", Vector2(0.92, 1.1), 0.08)
-		tw.tween_property(g, "scale", Vector2.ONE, 0.08)
+		tw.tween_property(g, "scale", Vector2(1.26, 0.72), 0.06)
+		tw.tween_property(g, "scale", Vector2(0.88, 1.14), 0.09)
+		tw.tween_property(g, "scale", Vector2(1.05, 0.96), 0.07)
+		tw.tween_property(g, "scale", Vector2.ONE, 0.07)
 	await get_tree().create_timer(longest + 0.12).timeout
 
 
@@ -1761,8 +1790,8 @@ func _pop_fx(cell: Vector2i, col: int, shards: int) -> void:
 	var ring := Node2D.new()
 	ring.position = at
 	ring.draw.connect(func() -> void:
-		ring.draw_circle(Vector2.ZERO, CELL * 0.42, Color(1, 1, 1, 0.55))
-		ring.draw_arc(Vector2.ZERO, CELL * 0.42, 0, TAU, 28, color.lightened(0.4), 5.0, true))
+		ring.draw_circle(Vector2.ZERO, CELL * 0.42, Color(color.lightened(0.55), 0.6))
+		ring.draw_arc(Vector2.ZERO, CELL * 0.42, 0, TAU, 28, color.lightened(0.25), 6.0, true))
 	ring.scale = Vector2(0.3, 0.3)
 	fx.add_child(ring)
 	var rt := ring.create_tween().set_parallel(true)
@@ -1787,7 +1816,8 @@ func _pop_fx(cell: Vector2i, col: int, shards: int) -> void:
 		t.tween_property(sh, "scale", Vector2(k * 0.2, k * 0.2), 0.38).set_ease(Tween.EASE_IN)
 		t.tween_property(sh, "modulate:a", 0.0, 0.38).set_ease(Tween.EASE_IN)
 		t.chain().tween_callback(sh.queue_free)
-	_sparkles(at, color, 4 if shards > 2 else 2)
+	_sparkles(at, color.lightened(0.3), 6 if shards > 2 else 3)
+	_burst(cell_pos(cell), color.lightened(0.15), 8)
 
 
 func _sparkles(at: Vector2, color: Color, n: int) -> void:
@@ -1826,7 +1856,7 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 		var end := fx.to_local(to_global(c + dir * (H if vertical else W) * CELL))
 		var r := Sprite2D.new()
 		r.texture = tex
-		var k := CELL * 0.9 / maxf(tex.get_width(), tex.get_height()) if tex else 1.0
+		var k := CELL * 1.2 / maxf(tex.get_width(), tex.get_height()) if tex else 1.0
 		# картинка смотрит вправо: влево — зеркалим, вверх/вниз — поворачиваем
 		if vertical:
 			r.rotation = PI / 2.0 * sgn
@@ -1840,12 +1870,32 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 		var last := [start]
 		var tw := r.create_tween()
 		tw.tween_method(func(t: float) -> void:
+			var prev: Vector2 = r.position
 			r.position = start.lerp(end, t)
-			# дымок: круглые облачка позади ракеты
+			# огненный след сразу за соплом + дымок дальше
+			if r.position.distance_to(prev) > 0.0:
+				_flame(r.position - dir * 44.0)
 			if r.position.distance_to(last[0]) > 26.0:
 				last[0] = r.position
-				_puff(r.position - dir * 30.0), 0.0, 1.0, ROCKET_CELL_TIME * cells)
+				_puff(r.position - dir * 60.0), 0.0, 1.0, ROCKET_CELL_TIME * cells)
 		tw.tween_callback(r.queue_free)
+
+
+## Язычок пламени за ракетой: жёлто-оранжевый, быстро гаснет и краснеет.
+func _flame(at: Vector2) -> void:
+	var p := Node2D.new()
+	p.position = at + Vector2(randf_range(-5, 5), randf_range(-5, 5))
+	p.z_index = 4
+	var rad := randf_range(10, 16)
+	p.draw.connect(func() -> void:
+		p.draw_circle(Vector2.ZERO, rad, Color(1.0, 0.45, 0.1, 0.85))
+		p.draw_circle(Vector2.ZERO, rad * 0.6, Color(1.0, 0.85, 0.2, 0.95))
+		p.draw_circle(Vector2.ZERO, rad * 0.28, Color(1, 1, 0.9, 1.0)))
+	fx.add_child(p)
+	var t := p.create_tween().set_parallel(true)
+	t.tween_property(p, "scale", Vector2(0.2, 0.2), 0.22).set_ease(Tween.EASE_IN)
+	t.tween_property(p, "modulate", Color(1, 0.3, 0.2, 0.0), 0.22)
+	t.chain().tween_callback(p.queue_free)
 
 
 func _puff(at: Vector2) -> void:
@@ -1873,7 +1923,7 @@ func _lightning(a: Vector2, b: Vector2, color: Color, width: float) -> void:
 		if i > 0 and i < n:
 			p += nrm * randf_range(-16, 16)
 		pts.append(p)
-	var w := width * 2.2
+	var w := width * 3.2
 	var layers := [[w * 2.6, Color(color, 0.28)], [w * 1.5, Color(color, 0.6)], [w, color], [w * 0.45, Color(1, 1, 1, 0.95)]]
 	for L in layers:
 		var line := Line2D.new()
@@ -1906,7 +1956,7 @@ func _lightning(a: Vector2, b: Vector2, color: Color, width: float) -> void:
 
 ## Бомба: вспышка, ударная волна, огонь и обломки.
 func _bomb_fx(cell: Vector2i, power: float) -> void:
-	shake.emit(16.0 * power)
+	shake.emit(24.0 * power)
 	Sfx.play("bomb", 1.0 / sqrt(power))
 	# ударная волна отталкивает фишки вокруг
 	for dx in range(-3, 4):
@@ -1929,9 +1979,21 @@ func _bomb_fx(cell: Vector2i, power: float) -> void:
 	flash.z_index = 5
 	var rad := CELL * 1.6 * power
 	flash.draw.connect(func() -> void:
-		flash.draw_circle(Vector2.ZERO, rad, Color(1, 0.95, 0.7, 0.7))
-		flash.draw_arc(Vector2.ZERO, rad, 0, TAU, 48, Color(1, 0.6, 0.2), 10.0, true)
-		flash.draw_arc(Vector2.ZERO, rad * 0.8, 0, TAU, 48, Color(1, 1, 1, 0.9), 4.0, true))
+		flash.draw_circle(Vector2.ZERO, rad, Color(1, 0.95, 0.7, 0.75))
+		flash.draw_arc(Vector2.ZERO, rad, 0, TAU, 48, Color(1, 0.55, 0.15), 18.0, true)
+		flash.draw_arc(Vector2.ZERO, rad * 0.82, 0, TAU, 48, Color(1, 1, 1, 0.95), 7.0, true))
+	# вторая, широкая волна-кольцо, догоняет первую
+	var wave := Node2D.new()
+	wave.position = at
+	wave.z_index = 5
+	wave.draw.connect(func() -> void:
+		wave.draw_arc(Vector2.ZERO, rad * 1.5, 0, TAU, 64, Color(1, 0.9, 0.6, 0.85), 12.0, true))
+	wave.scale = Vector2(0.3, 0.3)
+	fx.add_child(wave)
+	var wt := wave.create_tween().set_parallel(true)
+	wt.tween_property(wave, "scale", Vector2.ONE, 0.4).set_delay(0.06).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	wt.tween_property(wave, "modulate:a", 0.0, 0.4).set_delay(0.12)
+	wt.chain().tween_callback(wave.queue_free)
 	flash.scale = Vector2(0.15, 0.15)
 	fx.add_child(flash)
 	var t := flash.create_tween().set_parallel(true)
@@ -1990,7 +2052,7 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int, delay: float = 0.0) -
 	tw.tween_method(func(t: float) -> void:
 		var q := lift.bezier_interpolate(c1, c2, b, t)
 		var dx := q.x - p.position.x
-		p.rotation = lerpf(p.rotation, clampf(dx * 0.03, -0.35, 0.35), 0.3)
+		p.rotation = lerpf(p.rotation, clampf(dx * 0.025, -0.3, 0.3), 0.1)
 		p.position = q
 		if q.distance_to(last[0]) > 22.0:
 			last[0] = q

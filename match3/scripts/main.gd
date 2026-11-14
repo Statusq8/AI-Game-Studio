@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.5.1"
+const VERSION := "1.6.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -99,7 +99,7 @@ func _process(delta: float) -> void:
 		return
 	if _shake > 0.0:
 		_board_frame.position = _board_rest() + Vector2(randf_range(-1, 1), randf_range(-1, 1)) * _shake
-		_shake = move_toward(_shake, 0.0, 50.0 * delta)
+		_shake = move_toward(_shake, 0.0, 40.0 * delta)
 	elif _board_frame.position != _board_rest():
 		_board_frame.position = _board_rest()
 
@@ -702,7 +702,7 @@ func _build_level_screen() -> void:
 	frame.patch_margin_bottom = 72
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	frame.z_index = 2
-	var fk := 0.36
+	var fk := 0.28
 	frame.scale = Vector2(fk, fk)
 	frame.top_level = false
 	var holder := Control.new()
@@ -710,7 +710,7 @@ func _build_level_screen() -> void:
 	holder.set_anchors_preset(Control.PRESET_FULL_RECT)
 	holder.add_child(frame)
 	holder.resized.connect(func() -> void:
-		var out := 31.0
+		var out := 24.0
 		frame.position = Vector2(-out, -out)
 		frame.size = (holder.size + Vector2(out, out) * 2) / fk)
 	_board_frame.add_child(holder)
@@ -722,10 +722,10 @@ func _build_level_screen() -> void:
 	_board.settled.connect(_on_settled)
 	_board.big_hit.connect(func(p: float) -> void:
 		if Save.shake:
-			_shake = maxf(_shake, 6.0 + p * 4.0)
+			_shake = maxf(_shake, 9.0 + p * 6.0)
 		if p >= 2.0:
-			Save.vibrate(int(20 + p * 10))
-			_flash(clampf(0.15 + p * 0.06, 0.2, 0.5))
+			Save.vibrate(int(35 + p * 15))
+			_flash(clampf(0.22 + p * 0.09, 0.3, 0.7))
 		if p >= 3.0 and not _bot:
 			_slowmo())
 	_booster_bar = HBoxContainer.new()
@@ -1344,6 +1344,33 @@ func _x2_badge() -> Button:
 	return b
 
 
+## Монеты вылетают из горки в окне победы и улетают вверх, к счётчику монет.
+func _coin_rain() -> void:
+	var tex := Zoo.art("ui_coin")
+	if tex == null or _bot:
+		return
+	var from := size / 2 + Vector2(60, 0)
+	var to := Vector2(size.x * 0.5, 40)
+	for i in 14:
+		var s := Sprite2D.new()
+		s.texture = tex
+		var k := 46.0 / tex.get_width()
+		s.scale = Vector2(k, k) * 0.2
+		s.position = from
+		s.z_index = 30
+		_overlay.add_child(s)
+		var mid := from + Vector2(randf_range(-220, 220), randf_range(-200, -60))
+		var tw := s.create_tween()
+		tw.tween_interval(0.9 + i * 0.06)
+		tw.tween_property(s, "scale", Vector2(k, k), 0.12).set_trans(Tween.TRANS_BACK)
+		tw.parallel().tween_property(s, "position", mid, 0.3).set_ease(Tween.EASE_OUT)
+		tw.tween_property(s, "position", to, 0.45).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		tw.parallel().tween_property(s, "scale", Vector2(k, k) * 0.6, 0.45)
+		tw.tween_callback(func() -> void:
+			Sfx.play("coin", 1.0 + i * 0.03, -10.0)
+			s.queue_free())
+
+
 ## Выход из уровня без победы стоит жизнь.
 func _quit_level(then: Callable) -> void:
 	Save.lose_heart()
@@ -1482,6 +1509,21 @@ func _draw_goal_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 func _update_moves() -> void:
 	_moves_label.text = str(_moves)
 	_moves_label.add_theme_color_override("font_color", Color("#ff6b6b") if _moves <= 5 else Color.WHITE)
+	# последние 5 ходов: счётчик пульсирует и мигает красным
+	if _moves <= 5 and _moves > 0 and not _moves_label.has_meta("blink"):
+		var bt := _moves_label.create_tween().set_loops()
+		bt.tween_property(_moves_label, "modulate", Color(1.4, 0.7, 0.7), 0.35)
+		bt.parallel().tween_property(_moves_label, "scale", Vector2(1.12, 1.12), 0.35)
+		bt.tween_property(_moves_label, "modulate", Color.WHITE, 0.35)
+		bt.parallel().tween_property(_moves_label, "scale", Vector2.ONE, 0.35)
+		_moves_label.set_meta("blink", bt)
+	elif (_moves > 5 or _moves == 0) and _moves_label.has_meta("blink"):
+		var old: Tween = _moves_label.get_meta("blink")
+		if old and old.is_valid():
+			old.kill()
+		_moves_label.remove_meta("blink")
+		_moves_label.modulate = Color.WHITE
+		_moves_label.scale = Vector2.ONE
 
 
 func _intro_banner() -> void:
@@ -1691,16 +1733,16 @@ func _flash(strength: float) -> void:
 
 ## Замедление на секунду для больших комбо.
 func _slowmo() -> void:
-	Engine.time_scale = 0.45
-	await get_tree().create_timer(0.35, true, false, true).timeout
+	Engine.time_scale = 0.4
+	await get_tree().create_timer(0.6, true, false, true).timeout
 	Engine.time_scale = 1.0
 
 
 func _on_combo(n: int) -> void:
-	if n < 2 or _state != "play":
+	if n < 3 or _state != "play":
 		return
 	_panda_react("combo")
-	var i := mini(n - 2, 3)
+	var i := mini(n - 3, 3)
 	var l := _big_text(["Отлично!", "Супер!", "Невероятно!", "Потрясающе!"][i], 78 + mini(n, 6) * 5,
 		[Color("#ffe14d"), Color("#8dff6a"), Color("#ff8ad8"), Color("#7fe3ff")][i],
 		[Color("#ff9a1a"), Color("#21a83a"), Color("#c0359a"), Color("#2a7bd8")][i])
@@ -1777,7 +1819,7 @@ func _fly_to_goal(gv: Dictionary, from: Vector2, color: int, kind: String = "col
 	if color >= 0 or kind == "item":
 		n = Gem.new()
 		n.color = color
-		n.size = 70.0
+		n.size = 84.0
 	else:
 		n = Node2D.new()
 		n.draw.connect(func() -> void: _draw_goal_icon(n, kind, Vector2.ZERO))
@@ -1785,11 +1827,20 @@ func _fly_to_goal(gv: Dictionary, from: Vector2, color: int, kind: String = "col
 	_fx.add_child(n)
 	if kind == "item":
 		n.set_special(Gem.ITEM)
-	var mid := n.position.lerp(_fx.to_local(target), 0.5) + Vector2(randf_range(-120, 120), -80)
+	var p0 := n.position
+	var p2 := _fx.to_local(target)
+	var p1 := p0.lerp(p2, 0.5) + Vector2(randf_range(-140, 140), -60)
+	n.z_index = 8
+	var last := [p0]
 	var tw := n.create_tween()
-	tw.tween_property(n, "position", mid, 0.22).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
-	tw.tween_property(n, "position", _fx.to_local(target), 0.25).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
-	tw.parallel().tween_property(n, "scale", Vector2(0.7, 0.7), 0.25)
+	tw.tween_property(n, "scale", Vector2(1.25, 1.25), 0.1).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_method(func(t: float) -> void:
+		var q := p0.lerp(p1, t).lerp(p1.lerp(p2, t), t)
+		n.position = q
+		n.scale = Vector2.ONE * lerpf(1.25, 0.65, t)
+		if q.distance_to(last[0]) > 30.0 and _board:
+			last[0] = q
+			_board._sparkles(q, Color("#fff3b0"), 1), 0.0, 1.0, 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	tw.tween_callback(func() -> void:
 		_flying -= 1
 		n.queue_free()
@@ -2280,17 +2331,27 @@ func _show_win() -> void:
 	get_tree().process_frame.connect(place, CONNECT_ONE_SHOT)
 	# звезда и монеты летят вверх, конфетти
 	var c := size / 2
-	for i in 24:
+	for i in 70:
 		var conf := ColorRect.new()
-		conf.color = [Color("#ffe14d"), Color("#ff6b9d"), Color("#5fc4ff"), Color("#7dff8a")][i % 4]
-		conf.size = Vector2(12, 18)
-		conf.position = Vector2(randf() * size.x, -30)
+		conf.color = [Color("#ffe14d"), Color("#ff6b9d"), Color("#5fc4ff"), Color("#7dff8a"), Color("#c47dff"), Color("#ff9a3a")][i % 6]
+		conf.size = Vector2(randf_range(9, 15), randf_range(14, 22))
+		conf.pivot_offset = conf.size / 2
+		# залп из двух нижних углов + дождь сверху
+		var burst := i < 40
+		var from := Vector2(0 if i % 2 == 0 else size.x, size.y * 0.75) if burst else Vector2(randf() * size.x, -30)
+		conf.position = from
 		conf.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_overlay.add_child(conf)
 		var tw := conf.create_tween().set_parallel(true)
-		tw.tween_property(conf, "position:y", size.y + 40, randf_range(1.4, 2.4))
-		tw.tween_property(conf, "rotation", randf_range(-8, 8), 2.0)
+		if burst:
+			var peak := Vector2(size.x * randf_range(0.15, 0.85), size.y * randf_range(0.05, 0.4))
+			tw.tween_property(conf, "position", peak, randf_range(0.45, 0.7)).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+			tw.chain().tween_property(conf, "position:y", size.y + 40, randf_range(1.4, 2.2)).set_ease(Tween.EASE_IN)
+		else:
+			tw.tween_property(conf, "position:y", size.y + 40, randf_range(1.6, 2.6)).set_delay(randf() * 0.6)
+		tw.tween_property(conf, "rotation", randf_range(-10, 10), 2.4)
 		tw.chain().tween_callback(conf.queue_free)
+	_coin_rain()
 	var star := Control.new()
 	star.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	star.draw.connect(func() -> void: Zoo.draw_star(star, Vector2.ZERO, 60.0))

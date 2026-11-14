@@ -82,7 +82,7 @@ func _draw() -> void:
 		ROCKET_H, ROCKET_V:
 			t = tex("rocket")
 			if t:
-				_draw_tex(t, box * 1.3, PI / 2.0 if special == ROCKET_V else 0.0, pulse)
+				_draw_tex(t, box * 1.5, PI / 2.0 if special == ROCKET_V else 0.0, pulse)
 				return
 		BOMB, ORB, PROPELLER:
 			t = tex({BOMB: "bomb", ORB: "orb", PROPELLER: "propeller"}[special])
@@ -99,6 +99,14 @@ func _draw() -> void:
 					draw_set_transform(Vector2(-size * 0.05, size * 0.06), 0.0, Vector2.ONE)
 					_draw_tex(t, box * 1.25, 0.0, pulse)
 					draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+					# искрящий фитиль
+					var fz := Vector2(size * 0.33, -size * 0.43)
+					var fl := 0.7 + 0.3 * sin(_t * 30.0)
+					draw_circle(fz, size * 0.13 * fl, Color(1, 0.6, 0.1, 0.55))
+					draw_circle(fz, size * 0.07 * fl, Color(1, 0.95, 0.4, 0.95))
+					for k in 4:
+						var a := _t * 9.0 + k * TAU / 4.0
+						draw_line(fz, fz + Vector2(cos(a), sin(a)) * size * 0.16 * fl, Color(1, 1, 0.7, 0.9), 2.0, true)
 				else:
 					_draw_tex(t, box * 1.08, 0.0, pulse)
 				return
@@ -258,7 +266,10 @@ func _draw_propeller(r: float) -> void:
 func _draw_item(r: float) -> void:
 	var t := tex("item_egg")
 	if t:
-		_draw_tex(t, r * 2.15)
+		var gl := 0.5 + 0.5 * sin(_t * 4.0)
+		draw_circle(Vector2.ZERO, size * 0.48, Color(1, 0.85, 0.3, 0.22 + 0.18 * gl))
+		draw_circle(Vector2.ZERO, size * 0.38, Color(1, 0.95, 0.6, 0.25 + 0.15 * gl))
+		_draw_tex(t, r * 2.3)
 		return
 	var egg := PackedVector2Array()
 	for i in 32:
