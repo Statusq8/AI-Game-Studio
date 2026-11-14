@@ -1120,10 +1120,18 @@ func _hit_block(c0: Vector2i) -> void:
 	_hits[c] = true
 	var kind: int = block_kind[c.x][c.y]
 	Sfx.play("glass" if kind in [B_VASE, B_JAR, B_SHELL] else "wood", randf_range(0.9, 1.1), -4.0)
+	var stage_tex := block_tex(kind, block_max[c.x][c.y] - block_hp[c.x][c.y])
 	block_hp[c.x][c.y] -= 1
 	var n: Node2D = block_nodes.get(c)
 	var center := cell_pos(c) + (Vector2(CELL, CELL) / 2.0 if big else Vector2.ZERO)
-	_burst(center, BLOCKS[kind].fx if BLOCKS.has(kind) else Color.WHITE, 20 if big else 12)
+	var gone: bool = block_hp[c.x][c.y] <= 0
+	# препятствие разлетается на куски из своего материала (щепки ящика, черепки горшка…)
+	if stage_tex and fx:
+		var pieces := (16 if big else 10) if gone else (6 if big else 4)
+		_shatter(stage_tex, fx.to_local(to_global(center)), CELL * (2.0 if big else 1.0), pieces, 1.0 if gone else 0.6)
+		_burst(center, BLOCKS[kind].fx if BLOCKS.has(kind) else Color.WHITE, 6 if big else 4)
+	else:
+		_burst(center, BLOCKS[kind].fx if BLOCKS.has(kind) else Color.WHITE, 20 if big else 12)
 	if block_hp[c.x][c.y] <= 0:
 		if big:
 			for d in [Vector2i(0, 0), Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1)]:
@@ -2059,6 +2067,60 @@ func _flipbook(name: String, at: Vector2, px: float, time: float, tint := Color.
 	return sp
 
 
+## Осколки из самой картинки препятствия: кусочки текстуры разлетаются вверх-в стороны,
+## падают под гравитацией, крутятся (с «3D»-сплющиванием) и отбрасывают тень.
+func _shatter(tex: Texture2D, at: Vector2, px: float, n: int, power := 1.0) -> void:
+	var gs := get_global_transform().get_scale().x
+	var tw0 := tex.get_size()
+	var k := px * gs / maxf(tw0.x, tw0.y)
+	for i in n:
+		var pw := tw0.x * randf_range(0.22, 0.38)
+		var ph := tw0.y * randf_range(0.22, 0.38)
+		var rx := randf_range(0.05, 0.95) * (tw0.x - pw)
+		var ry := randf_range(0.05, 0.95) * (tw0.y - ph)
+		var region := Rect2(rx, ry, pw, ph)
+		var start := at + (Vector2(rx + pw / 2.0, ry + ph / 2.0) - tw0 / 2.0) * k
+		var piece := Sprite2D.new()
+		piece.texture = tex
+		piece.region_enabled = true
+		piece.region_rect = region
+		piece.scale = Vector2(k, k)
+		piece.position = start
+		piece.z_index = 7
+		var shadow := Sprite2D.new()
+		shadow.texture = tex
+		shadow.region_enabled = true
+		shadow.region_rect = region
+		shadow.scale = Vector2(k, k)
+		shadow.modulate = Color(0, 0, 0, 0.3)
+		shadow.z_index = 6
+		fx.add_child(shadow)
+		fx.add_child(piece)
+		var out := (start - at).normalized()
+		if out == Vector2.ZERO:
+			out = Vector2.UP
+		var vel := (out * randf_range(140, 300) + Vector2(randf_range(-80, 80), -randf_range(260, 460))) * power * gs
+		var spin := randf_range(6.0, 14.0) * (1.0 if randf() < 0.5 else -1.0)
+		var life := randf_range(0.6, 0.85)
+		var tw := piece.create_tween()
+		tw.tween_method(func(u: float) -> void:
+			var tt := u * life
+			var pos := start + vel * tt + Vector2(0, 1500.0 * gs) * tt * tt * 0.5
+			var lift := 4.0 * u * (1.0 - u)
+			var flip := cos(tt * spin * 0.7)
+			piece.position = pos
+			piece.rotation = tt * spin
+			piece.scale = Vector2(k * flip, k) * (1.0 + 0.25 * lift)
+			piece.modulate = Color(1, 1, 1, 1.0 - pow(u, 4.0))
+			shadow.position = pos + Vector2(6, 10 + 26.0 * lift) * gs
+			shadow.rotation = piece.rotation
+			shadow.scale = piece.scale * 0.9
+			shadow.modulate.a = 0.3 * (1.0 - u), 0.0, 1.0, life)
+		tw.tween_callback(func() -> void:
+			piece.queue_free()
+			shadow.queue_free())
+
+
 ## Вспышка-свечение (аддитивная): светлое пятно, расширяется и гаснет.
 func _glow_flash(at: Vector2, color: Color, size: float, time := 0.25) -> void:
 	if fx == null:
@@ -2249,17 +2311,38 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 		fx.add_child(r)
 		var cells := float(H if vertical else W)
 		var last := [start]
+		# огненный луч: от места взрыва до головы ракеты, светится (аддитивно), потом гаснет
+		var beam := _fx_sprite("glow", start, Color(1.0, 0.62, 0.2), 10.0, true)
+		var core := _fx_sprite("glow", start, Color(1.0, 0.95, 0.7), 10.0, true)
+		beam.z_index = 4
+		core.z_index = 4
+		var gw := float(beam.texture.get_width())
+		var thick := CELL * 0.9 * get_global_transform().get_scale().x
+		for bs in [beam, core]:
+			bs.rotation = PI / 2.0 if vertical else 0.0
 		var tw := r.create_tween()
 		tw.tween_method(func(t: float) -> void:
 			var prev: Vector2 = r.position
 			r.position = start.lerp(end, t)
+			var len := start.distance_to(r.position) * 2.0 + thick
+			beam.position = (start + r.position) / 2.0
+			core.position = beam.position
+			beam.scale = Vector2(len / gw, thick / gw)
+			core.scale = Vector2(len / gw, thick * 0.35 / gw)
 			# огненный след сразу за соплом + дымок дальше
 			if r.position.distance_to(prev) > 0.0:
 				_flame(r.position - dir * 44.0)
 			if r.position.distance_to(last[0]) > 26.0:
 				last[0] = r.position
-				_puff(r.position - dir * 60.0), 0.0, 1.0, ROCKET_CELL_TIME * cells)
+				_puff(r.position - dir * 60.0)
+				_sparkles(r.position - dir * 30.0, Color("#ffd27a"), 1), 0.0, 1.0, ROCKET_CELL_TIME * cells)
 		tw.tween_callback(r.queue_free)
+		for bs in [beam, core]:
+			var ft: Tween = bs.create_tween()
+			ft.tween_interval(ROCKET_CELL_TIME * cells)
+			ft.tween_property(bs, "modulate:a", 0.0, 0.3)
+			ft.parallel().tween_property(bs, "scale:y", 0.0, 0.3)
+			ft.tween_callback(bs.queue_free)
 
 
 ## Язычок пламени за ракетой: жёлто-оранжевый, быстро гаснет и краснеет.
