@@ -174,3 +174,16 @@
 
 Что значат промпты (по-русски): шаг 1 — «милое мультяшное животное, вид сверху под углом как на карте, целиком, по центру, объёмный глянцевый игрушечный стиль, свет слева сверху, чёткий контур, яркие цвета, фон сплошной зелёный без земли, теней, травы и надписей, квадрат». Шаг 2 — «камера неподвижна; животное делает [действие] медленно и мило, видео зациклено (последний кадр как первый), животное не уходит с места и не выходит за кадр, фон всё время сплошной зелёный, стиль и цвета не меняются».
 
+## Пачка 13 — живая панда (решение №27: ИИ-видео → покадровые спрайты)
+Исходная картинка для PixVerse (image-to-video): `docs/games/match3/sources/panda_green.png` — наша панда на зелёном фоне, квадрат.
+Каждое видео: 5 с, формат 1:1, камера неподвижна. Нарезка: `python3 match3/tools/vidcut.py ВИДЕО panda_<имя>`.
+Общий хвост для всех промптов: `Static camera, no zoom, no pan, no camera movement. The panda stays in the same spot, fully inside the frame, feet on the same ground line. Background stays plain flat chroma green #00FF00 the whole time, unchanged. Keep the exact same character design, outfit, art style and colors. Smooth cute cartoon motion.`
+
+1. **idle** (стоит всегда; главный экран и шапка уровня): `The panda stands and breathes gently, blinks, slightly tilts its head and shifts its weight from foot to foot. Seamless loop: the last frame matches the first frame.` + хвост
+2. **happy** (комбо): `The panda squats a little, then jumps up joyfully with both arms raised, lands softly and smiles, ending in the same pose as the start.` + хвост
+3. **win** (победа): `The panda does a happy little dance: claps its paws, hops from side to side and waves both arms, ending in the same pose as the start.` + хвост
+4. **sad** (проигрыш): `The panda becomes sad: its shoulders drop, its ears droop, it lowers its head and sighs, then slowly looks up again and returns to the start pose.` + хвост
+5. **nervous** (мало ходов): `The panda gets nervous: it bites its claws, glances left and right with wide eyes and fidgets, then returns to the start pose.` + хвост
+
+По-русски: 1 — спокойно дышит, моргает, наклоняет голову, переминается (зациклено); 2 — приседает и радостно подпрыгивает с поднятыми лапами; 3 — танцует: хлопает, прыгает из стороны в сторону, машет лапами; 4 — грустит: опускает плечи, уши и голову, вздыхает; 5 — нервничает: грызёт когти, оглядывается, ёрзает. Хвост: камера неподвижна, панда на месте и в кадре, ноги на одной линии, фон всё время зелёный, внешность и стиль те же, движение плавное. Действия 2–5 заканчиваются в той же позе, что и начало, — чтобы плавно возвращаться к idle.
+
