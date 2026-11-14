@@ -14,18 +14,31 @@ const BUTTONS := {
 }
 
 
+## Заголовочный шрифт: Rubik на максимальной толщине — круглый, «мультяшный» (вместо угловатого Russo One).
+static var _title: Font
+
+
+static func title_font() -> Font:
+	if _title == null:
+		var f := FontVariation.new()
+		f.base_font = load("res://assets/fonts/Rubik-Variable.ttf")
+		f.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 900}
+		_title = f
+	return _title
+
+
 static func build() -> Theme:
 	var t := Theme.new()
 	var body := FontVariation.new()
 	body.base_font = load("res://assets/fonts/Rubik-Variable.ttf")
 	body.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 700}
 	t.default_font = body
-	t.default_font_size = 26
+	t.default_font_size = 28
 	t.set_color("font_color", "Label", Color.WHITE)
 	t.set_color("font_outline_color", "Label", Color(0.1, 0.08, 0.25, 0.85))
 	t.set_constant("outline_size", "Label", 6)
 
-	var title: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	var title: Font = title_font()
 	t.set_type_variation("TitleLabel", "Label")
 	t.set_font("font", "TitleLabel", title)
 	t.set_type_variation("InkLabel", "Label")

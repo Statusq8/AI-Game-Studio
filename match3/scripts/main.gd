@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.7.0"
+const VERSION := "1.8.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -148,7 +148,7 @@ func _coin_pill() -> Control:
 	icon.custom_minimum_size = Vector2(40, 40)
 	icon.draw.connect(func() -> void:
 		var c := icon.size / 2
-		if Zoo.draw_art(icon, "ui_coin", c, 44.0):
+		if Zoo.draw_art(icon, "ui_coin", c, 38.0):
 			return
 		icon.draw_circle(c, 19, Color("#c98a12"))
 		icon.draw_circle(c, 15, Color("#ffd23f"))
@@ -159,6 +159,7 @@ func _coin_pill() -> Control:
 	l.add_theme_font_size_override("font_size", 30)
 	row.add_child(l)
 	_coin_labels.append(l)
+	row.add_child(_plus_button())
 	return pill
 
 
@@ -170,7 +171,7 @@ func _hearts_pill() -> Control:
 	pill.add_child(row)
 	var icon := Control.new()
 	icon.custom_minimum_size = Vector2(40, 40)
-	icon.draw.connect(func() -> void: draw_heart(icon, icon.size / 2, 18.0))
+	icon.draw.connect(func() -> void: draw_heart(icon, icon.size / 2, 15.0))
 	row.add_child(icon)
 	_hearts_label = Label.new()
 	_hearts_label.theme_type_variation = "TitleLabel"
@@ -179,7 +180,27 @@ func _hearts_pill() -> Control:
 	_hearts_timer = Label.new()
 	_hearts_timer.add_theme_font_size_override("font_size", 22)
 	row.add_child(_hearts_timer)
+	row.add_child(_plus_button())
 	return pill
+
+
+## Зелёный кружок «+» на плашке валюты — ведёт в магазин.
+func _plus_button() -> Button:
+	var b := Button.new()
+	b.flat = true
+	for st in ["normal", "hover", "pressed", "focus"]:
+		b.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+	b.custom_minimum_size = Vector2(34, 34)
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	b.draw.connect(func() -> void:
+		var c := b.size / 2
+		b.draw_circle(c + Vector2(0, 2), 16, Color("#1e5a14"))
+		b.draw_circle(c, 16, Color("#3fc25a"))
+		b.draw_circle(c + Vector2(0, -4), 10, Color("#6fe07f"))
+		b.draw_rect(Rect2(c - Vector2(9, 2.5), Vector2(18, 5)), Color.WHITE)
+		b.draw_rect(Rect2(c - Vector2(2.5, 9), Vector2(5, 18)), Color.WHITE))
+	b.pressed.connect(_show_shop)
+	return b
 
 
 static func draw_heart(ci: CanvasItem, c: Vector2, r: float) -> void:
@@ -280,15 +301,11 @@ func _build_home() -> void:
 	side.position = Vector2(-110, -40)
 	side.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_home.add_child(side)
-	for b in [["Почта", _show_soon.bind("Почта")], ["Друзья", _show_soon.bind("Друзья")], ["Рейтинг", _show_soon.bind("Рейтинг")], ["Опции", _show_settings]]:
-		var btn := Button.new()
-		btn.text = b[0]
-		btn.theme_type_variation = "PurpleButton"
-		btn.custom_minimum_size = Vector2(96, 64)
-		btn.add_theme_font_size_override("font_size", 18)
+	for b in [["mail", _show_soon.bind("Почта")], ["friends", _show_soon.bind("Друзья")], ["rating", _show_soon.bind("Рейтинг")], ["settings", _show_settings]]:
+		var btn := _icon_button(b[0], 88.0, Color("#9b5cff"))
 		btn.pressed.connect(b[1])
 		side.add_child(btn)
-	_home.resized.connect(func() -> void: side.position = Vector2(_home.size.x - 108, _home.size.y * 0.30))
+	_home.resized.connect(func() -> void: side.position = Vector2(_home.size.x - 100, _home.size.y * 0.30))
 
 	# панда в левом нижнем углу
 	_home_panda = _make_panda(250.0)
@@ -303,13 +320,13 @@ func _build_home() -> void:
 	_home.add_child(_home_level_btn)
 	var pulse := _home_level_btn.create_tween().set_loops()
 	_home_level_btn.pivot_offset = Vector2(165, 55)
-	pulse.tween_property(_home_level_btn, "scale", Vector2(1.05, 1.05), 0.6).set_trans(Tween.TRANS_SINE)
-	pulse.tween_property(_home_level_btn, "scale", Vector2.ONE, 0.6).set_trans(Tween.TRANS_SINE)
+	pulse.tween_property(_home_level_btn, "scale", Vector2(1.09, 1.09), 0.45).set_trans(Tween.TRANS_SINE)
+	pulse.parallel().tween_property(_home_level_btn, "modulate", Color(1.15, 1.15, 1.05), 0.45)
+	pulse.tween_property(_home_level_btn, "scale", Vector2.ONE, 0.45).set_trans(Tween.TRANS_SINE)
+	pulse.parallel().tween_property(_home_level_btn, "modulate", Color.WHITE, 0.45)
+	pulse.tween_interval(0.4)
 
-	_repair_btn = Button.new()
-	_repair_btn.theme_type_variation = "OrangeButton"
-	_repair_btn.custom_minimum_size = Vector2(250, 110)
-	_repair_btn.add_theme_font_size_override("font_size", 34)
+	_repair_btn = _icon_button("repair", 116.0, Color("#ff9a2a"))
 	_repair_btn.pressed.connect(func() -> void: _transition(_set_repair_mode.bind(not _repair_mode)))
 	_home.add_child(_repair_btn)
 
@@ -386,7 +403,7 @@ func _stars_pill() -> Control:
 	pill.add_child(row)
 	var icon := Control.new()
 	icon.custom_minimum_size = Vector2(36, 40)
-	icon.draw.connect(func() -> void: Zoo.draw_star(icon, icon.size / 2, 17.0))
+	icon.draw.connect(func() -> void: Zoo.draw_star(icon, icon.size / 2, 15.0))
 	row.add_child(icon)
 	_stars_label = Label.new()
 	_stars_label.theme_type_variation = "TitleLabel"
@@ -410,7 +427,7 @@ func _refresh_home() -> void:
 	_home_panda.visible = _repair_mode
 	_zone_title.visible = _repair_mode
 	_zone_box.visible = _repair_mode
-	_repair_btn.text = "← Назад" if _repair_mode else "Ремонт: %d зв." % Save.stars
+	_repair_btn.queue_redraw()
 	_refresh_coins()
 	_refresh_hearts()
 	if _stars_label:
@@ -737,9 +754,13 @@ func _build_level_screen() -> void:
 		btn.pressed.connect(_on_booster.bind(b[0]))
 		_booster_bar.add_child(btn)
 		_booster_btns[b[0]] = btn
+	# пауза — маленькая, в левом верхнем углу
 	var pause := _round_button("pause", Color("#3f8cff"))
 	pause.pressed.connect(_show_pause)
-	_booster_bar.add_child(pause)
+	pause.scale = Vector2(0.52, 0.52)
+	pause.position = Vector2(2, 2)
+	pause.z_index = 4
+	_level_screen.add_child(pause)
 	_panda = _make_panda(200.0)
 	_panda.visible = false  # на уровне панда — портрет в шапке
 	_level_screen.add_child(_panda)
@@ -853,7 +874,7 @@ func _hud_card(title: String) -> PanelContainer:
 	inner.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	outer.add_child(inner)
 	var tex: Texture2D = load("res://assets/art/ui_card.png")
-	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	var font: Font = UiTheme.title_font()
 	outer.draw.connect(func() -> void:
 		outer.draw_texture_rect(tex, Rect2(Vector2.ZERO, outer.size), false)
 		var ts := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 26)
@@ -919,10 +940,91 @@ func _portrait() -> Control:
 	return c
 
 
+## Круглая кнопка-иконка главного экрана (почта, друзья, рейтинг, настройки, ремонт).
+func _icon_button(kind: String, d: float, base: Color) -> Button:
+	var btn := Button.new()
+	btn.flat = true
+	for st in ["normal", "hover", "pressed", "focus"]:
+		btn.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+	btn.custom_minimum_size = Vector2(d, d)
+	btn.size = Vector2(d, d)
+	btn.draw.connect(_draw_icon_button.bind(btn, kind, d, base))
+	btn.button_down.connect(btn.queue_redraw)
+	btn.button_up.connect(btn.queue_redraw)
+	return btn
+
+
+## Рисует круглую кнопку-иконку (см. _icon_button).
+func _draw_icon_button(btn: Button, kind: String, d: float, base: Color) -> void:
+	var font: Font = UiTheme.title_font()
+	var c := btn.size / 2 + (Vector2(0, 3) if btn.is_pressed() else Vector2.ZERO)
+	var r := d * 0.46
+	btn.draw_circle(c + Vector2(0, 5), r, Color(0, 0, 0, 0.3))
+	btn.draw_circle(c, r, Color("#ffcf5a"))
+	btn.draw_circle(c, r * 0.88, base.darkened(0.4))
+	btn.draw_circle(c + Vector2(0, -2), r * 0.82, base)
+	btn.draw_circle(c + Vector2(0, -r * 0.2), r * 0.6, base.lightened(0.18))
+	btn.draw_set_transform(c + Vector2(-r * 0.3, -r * 0.5), -0.4, Vector2(1.0, 0.5))
+	btn.draw_circle(Vector2.ZERO, r * 0.3, Color(1, 1, 1, 0.4))
+	btn.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	var k := r / 40.0
+	var ink := Color("#2b1a4a")
+	var wh := Color.WHITE
+	var mode := kind
+	if kind == "repair" and _repair_mode:
+		mode = "back"
+	match mode:
+		"mail":
+			var rc := Rect2(c + Vector2(-20, -14) * k, Vector2(40, 28) * k)
+			btn.draw_rect(rc.grow(2.5 * k), ink)
+			btn.draw_rect(rc, wh)
+			btn.draw_polyline(PackedVector2Array([rc.position, c + Vector2(0, 3) * k, rc.position + Vector2(rc.size.x, 0)]), ink, 3.0 * k, true)
+		"friends":
+			for dx in [-11.0, 11.0]:
+				var hc := c + Vector2(dx, -7) * k
+				btn.draw_circle(hc, 10 * k, ink)
+				btn.draw_circle(hc, 8 * k, wh)
+				btn.draw_circle(c + Vector2(dx, 17) * k, 13 * k, ink)
+				btn.draw_circle(c + Vector2(dx, 17) * k, 11 * k, wh)
+			btn.draw_rect(Rect2(c + Vector2(-26, 17) * k, Vector2(52, 14) * k), base)
+		"rating":
+			var cup := PackedVector2Array([c + Vector2(-17, -18) * k, c + Vector2(17, -18) * k, c + Vector2(11, 4) * k, c + Vector2(-11, 4) * k])
+			btn.draw_colored_polygon(cup, Color("#ffd23f"))
+			btn.draw_polyline(PackedVector2Array([cup[0], cup[1], cup[2], cup[3], cup[0]]), Color("#8a4a0a"), 3.0 * k, true)
+			btn.draw_rect(Rect2(c + Vector2(-3, 4) * k, Vector2(6, 9) * k), Color("#ffd23f"))
+			btn.draw_rect(Rect2(c + Vector2(-12, 13) * k, Vector2(24, 7) * k), Color("#ffd23f"))
+			btn.draw_arc(c + Vector2(-17, -10) * k, 7 * k, PI / 2, PI * 1.5, 12, Color("#ffd23f"), 3.5 * k, true)
+			btn.draw_arc(c + Vector2(17, -10) * k, 7 * k, -PI / 2, PI / 2, 12, Color("#ffd23f"), 3.5 * k, true)
+		"settings":
+			for i in 8:
+				var a := TAU * i / 8.0
+				btn.draw_set_transform(c + Vector2(cos(a), sin(a)) * 17 * k, a, Vector2.ONE)
+				btn.draw_rect(Rect2(Vector2(-6, -5) * k, Vector2(12, 10) * k), wh)
+				btn.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			btn.draw_circle(c, 17 * k, wh)
+			btn.draw_circle(c, 7 * k, base.darkened(0.3))
+		"repair":
+			if not Zoo.draw_art(btn, "ui_hammer", c + Vector2(0, -6) * k, 52 * k):
+				btn.draw_circle(c, 12 * k, wh)
+			# звёзды на ремонт
+			var t := str(Save.stars)
+			var bc := c + Vector2(0, 24) * k
+			Zoo.draw_star(btn, bc + Vector2(-14, 0) * k, 11 * k)
+			btn.draw_string_outline(font, bc + Vector2(-2, 8) * k, t, HORIZONTAL_ALIGNMENT_LEFT, -1, int(24 * k), int(7 * k), Color("#5a2a00"))
+			btn.draw_string(font, bc + Vector2(-2, 8) * k, t, HORIZONTAL_ALIGNMENT_LEFT, -1, int(24 * k), Color.WHITE)
+		"back":
+			var pts := PackedVector2Array([c + Vector2(-20, 0) * k, c + Vector2(-2, -18) * k, c + Vector2(-2, -8) * k, c + Vector2(20, -8) * k,
+				c + Vector2(20, 8) * k, c + Vector2(-2, 8) * k, c + Vector2(-2, 18) * k])
+			btn.draw_colored_polygon(pts, wh)
+			var cl := pts.duplicate()
+			cl.append(pts[0])
+			btn.draw_polyline(cl, ink, 3.0 * k, true)
+
+
 ## Круглая объёмная кнопка бустера: обод, глянец, иконка, красный кружок с количеством.
 func _round_button(kind: String, base: Color) -> Button:
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(118, 118)
+	btn.custom_minimum_size = Vector2(132, 132)
 	btn.flat = true
 	for st in ["normal", "hover", "pressed", "focus", "disabled"]:
 		btn.add_theme_stylebox_override(st, StyleBoxEmpty.new())
@@ -934,14 +1036,14 @@ func _round_button(kind: String, base: Color) -> Button:
 		var off := Vector2(0, 4) if pressed else Vector2.ZERO
 		var active: bool = btn.get_meta("active")
 		var col := Color("#ffb020") if active else base
-		btn.draw_circle(c + Vector2(0, 7), 54, Color(0, 0, 0, 0.3))
+		btn.draw_circle(c + Vector2(0, 7), 60, Color(0, 0, 0, 0.3))
 		if kind == "pause" and Zoo.art("ui_pause"):
-			Zoo.draw_art(btn, "ui_pause", c + off, 112.0)
+			Zoo.draw_art(btn, "ui_pause", c + off, 126.0)
 			return
 		if Zoo.art("ui_round_btn"):
 			if active:
-				btn.draw_circle(c + off, 58, Color("#ffe14d"))
-			Zoo.draw_art(btn, "ui_round_btn", c + off, 112.0)
+				btn.draw_circle(c + off, 65, Color("#ffe14d"))
+			Zoo.draw_art(btn, "ui_round_btn", c + off, 126.0)
 			_draw_tool_icon(btn, kind, c + off)
 			_draw_count(btn, c)
 			return
@@ -963,10 +1065,10 @@ func _round_button(kind: String, base: Color) -> Button:
 func _draw_count(btn: Button, c: Vector2) -> void:
 		var n: int = btn.get_meta("count")
 		if n >= 0:
-			var bc := c + Vector2(36, 38)
+			var bc := c + Vector2(42, 44)
 			btn.draw_circle(bc, 22, Color("#7a0f1c"))
 			btn.draw_circle(bc + Vector2(0, -2), 19, Color("#e8283c"))
-			var f: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+			var f: Font = UiTheme.title_font()
 			var t := str(n) if n > 0 else "+"
 			var ts := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 22)
 			btn.draw_string(f, bc + Vector2(-ts.x / 2, 7), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE)
@@ -978,10 +1080,10 @@ func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 	if art.has(kind) and Zoo.art(art[kind]):
 		if kind == "cannon":
 			ci.draw_set_transform(c, PI / 2.0, Vector2.ONE)
-			Zoo.draw_art(ci, art[kind], Vector2.ZERO, 70.0)
+			Zoo.draw_art(ci, art[kind], Vector2.ZERO, 80.0)
 			ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		else:
-			Zoo.draw_art(ci, art[kind], c, 70.0)
+			Zoo.draw_art(ci, art[kind], c, 80.0)
 		return
 	match kind:
 		"hammer":
@@ -1019,8 +1121,8 @@ func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 func _layout_bar() -> void:
 	var r := _board_rest()
 	var bottom := r.y + _board_frame.get_combined_minimum_size().y * _board_frame.scale.y
-	_booster_bar.size = Vector2(_level_screen.size.x, 124)
-	_booster_bar.position = Vector2(0, bottom + maxf(10.0, (_level_screen.size.y - bottom - 124.0) * 0.4))
+	_booster_bar.size = Vector2(_level_screen.size.x, 136)
+	_booster_bar.position = Vector2(0, bottom + maxf(8.0, (_level_screen.size.y - bottom - 136.0) * 0.4))
 
 
 func _refresh_boosters() -> void:
@@ -1133,7 +1235,7 @@ func _show_prelevel(n: int) -> void:
 			_level_transition(n)],
 		["Закрыть", "Button", _show_home],
 	])
-	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	var font: Font = UiTheme.title_font()
 	var at := 0
 	# плашка сложности
 	if hard > 0:
@@ -1149,7 +1251,28 @@ func _show_prelevel(n: int) -> void:
 			var ts := font.get_string_size(htxt, HORIZONTAL_ALIGNMENT_LEFT, -1, 30)
 			var p := Vector2(hb.size.x / 2 - ts.x / 2, hb.size.y / 2 + 11)
 			hb.draw_string_outline(font, p, htxt, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, 9, Color("#5a0a0a"))
-			hb.draw_string(font, p, htxt, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color.WHITE))
+			hb.draw_string(font, p, htxt, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color.WHITE)
+			# пляшущие язычки огня по краям плашки и черепок-значок
+			var tt := Time.get_ticks_msec() / 1000.0
+			for side in [-1.0, 1.0]:
+				var fc := Vector2(hb.size.x / 2 + side * (w / 2 - 6), hb.size.y / 2 + 6)
+				for j in 3:
+					var fh := 22.0 + 8.0 * sin(tt * 9.0 + j * 2.1 + side)
+					var fx := fc + Vector2(side * (j - 1) * 9, 0)
+					hb.draw_colored_polygon(PackedVector2Array([fx + Vector2(-9, 0), fx + Vector2(0, -fh), fx + Vector2(9, 0)]), Color(1, 0.4, 0.1, 0.9))
+					hb.draw_colored_polygon(PackedVector2Array([fx + Vector2(-5, 0), fx + Vector2(0, -fh * 0.6), fx + Vector2(5, 0)]), Color(1, 0.9, 0.3))
+			if hard >= 1:
+				var sc := Vector2(hb.size.x / 2 - ts.x / 2 - 30, hb.size.y / 2)
+				hb.draw_circle(sc, 15, Color("#3a0a0a"))
+				hb.draw_circle(sc, 13, Color.WHITE)
+				hb.draw_rect(Rect2(sc + Vector2(-8, 6), Vector2(16, 9)), Color.WHITE)
+				for ex in [-5.0, 5.0]:
+					hb.draw_circle(sc + Vector2(ex, -1), 4, Color("#3a0a0a"))
+				for tx in [-4.0, 0.0, 4.0]:
+					hb.draw_line(sc + Vector2(tx, 9), sc + Vector2(tx, 15), Color("#3a0a0a"), 1.5))
+		var ft := hb.create_tween().set_loops()
+		ft.tween_callback(hb.queue_redraw)
+		ft.tween_interval(0.05)
 		v.add_child(hb)
 		v.move_child(hb, at)
 		at += 1
@@ -1258,7 +1381,7 @@ func _reward_row(items: Array) -> HBoxContainer:
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 14)
 	var slot_t: Texture2D = load("res://assets/art/ui_slot_goal.png")
-	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	var font: Font = UiTheme.title_font()
 	var names := {"star": "звезда", "coin": "монеты", "streak": "серия"}
 	for it in items:
 		var kind: String = it[0]
@@ -1320,7 +1443,8 @@ func _x2_badge() -> Button:
 	b.custom_minimum_size = Vector2(62, 62)
 	b.size = Vector2(62, 62)
 	b.pivot_offset = Vector2(31, 31)
-	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	b.scale = Vector2(0.78, 0.78)
+	var font: Font = UiTheme.title_font()
 	b.draw.connect(func() -> void:
 		var c := Vector2(31, 31)
 		b.draw_circle(c + Vector2(0, 4), 29, Color(0, 0, 0, 0.3))
@@ -1452,7 +1576,9 @@ func _build_goals() -> void:
 			icon.draw.connect(func() -> void: _draw_goal_icon(icon, kind, Vector2(35, 31)))
 		var l := Label.new()
 		l.theme_type_variation = "TitleLabel"
-		l.add_theme_font_size_override("font_size", 30)
+		l.add_theme_font_size_override("font_size", 36)
+		l.add_theme_constant_override("outline_size", 12)
+		l.add_theme_color_override("font_outline_color", Color("#2a1440"))
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.text = str(goal.left)
 		v.add_child(l)
@@ -1614,7 +1740,7 @@ func _banner(l: Label) -> void:
 func _big_text(text: String, fsize: int, top: Color, bottom: Color) -> Control:
 	var c := Control.new()
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	var font: Font = UiTheme.title_font()
 	var banner: Texture2D = load("res://assets/art/ui_banner.png")
 	c.draw.connect(func() -> void:
 		if _draw_word_art(c, text, fsize, font):
@@ -2111,18 +2237,18 @@ func _dialog(title_text: String, lines: Array, buttons: Array) -> VBoxContainer:
 	cc.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_overlay.add_child(cc)
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", -46)
+	box.add_theme_constant_override("separation", -38)
 	cc.add_child(box)
 	# лента-заголовок поверх окна
 	var ribbon := Control.new()
-	ribbon.custom_minimum_size = Vector2(600, 150)
+	ribbon.custom_minimum_size = Vector2(480, 120)
 	ribbon.z_index = 1
 	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var rt: Texture2D = load("res://assets/art/ui_ribbon.png")
-	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	var font: Font = UiTheme.title_font()
 	ribbon.draw.connect(func() -> void:
 		ribbon.draw_texture_rect(rt, Rect2(Vector2.ZERO, ribbon.size), false)
-		var fs := 48
+		var fs := 40
 		var ts := font.get_string_size(title_text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 		while ts.x > ribbon.size.x * 0.62 and fs > 26:
 			fs -= 2
@@ -2193,7 +2319,7 @@ func _show_win() -> void:
 	Save.add_coins(coins)
 	Save.vibrate(60)
 	var v := _dialog("Уровень %d" % _level.n, [], [])
-	var font: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
+	var font: Font = UiTheme.title_font()
 	# крупная объёмная похвала
 	var praise := _big_text(["Отлично!", "Здорово!", "Супер!", "Молодец!"][_level.n % 4], 66, Color("#ffe14d"), Color("#ff9a1a"))
 	praise.custom_minimum_size = Vector2(0, 96)
@@ -2288,7 +2414,7 @@ func _show_win() -> void:
 			ad.draw_rect(Rect2(c - Vector2(17, 11), Vector2(34, 22)), Color("#5fa8ff"))
 			ad.draw_colored_polygon(PackedVector2Array([c + Vector2(-6, -8), c + Vector2(9, 0), c + Vector2(-6, 8)]), Color.WHITE)
 		var bc := Vector2(ad.size.x - 26, 18)
-		if not Zoo.draw_art(ad, "ui_x2", bc, 46.0):
+		if not Zoo.draw_art(ad, "ui_x2", bc, 38.0):
 			ad.draw_circle(bc, 20, Color("#8a2a9a"))
 			ad.draw_circle(bc, 16, Color("#c04ad8"))
 		var ts := font.get_string_size("x2", HORIZONTAL_ALIGNMENT_LEFT, -1, 22)
@@ -2314,8 +2440,8 @@ func _show_win() -> void:
 	close.size = Vector2(76, 76)
 	close.draw.connect(func() -> void:
 		var c := Vector2(38, 38)
-		close.draw_circle(c + Vector2(0, 4), 34, Color(0, 0, 0, 0.3))
-		if Zoo.draw_art(close, "ui_close", c, 76.0):
+		close.draw_circle(c + Vector2(0, 4), 27, Color(0, 0, 0, 0.3))
+		if Zoo.draw_art(close, "ui_close", c, 60.0):
 			return
 		close.draw_circle(c, 34, Color("#ffcf3a"))
 		close.draw_circle(c, 29, Color("#a0101c"))
