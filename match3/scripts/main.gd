@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "2.7.0"
+const VERSION := "2.7.1"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1793,7 +1793,7 @@ const TIPS := {
 	"jar": "Разбей банку — получишь монеты!",
 	"safe": "Сейф прочный: нужно много ударов рядом или бустерами.",
 	"colorbox": "Цветной ящик ломается только от совпадения своего цвета рядом (или от бустеров).",
-	"birdhouse": "Скворечник: собирай фишки рядом. Сломаешь — вылетят 3 птицы, доведи их до низа!",
+	"birdhouse": "Скворечник: собирай фишки рядом. Сломаешь — вылетят 3 синие птички. Спусти их до низа поля!",
 	"honey_more": "",
 }
 

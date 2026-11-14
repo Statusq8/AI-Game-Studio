@@ -223,11 +223,14 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 				count += 1
 				if count >= want:
 					break
+			# куст раскидывает газон — значит, на уровне с кустами всегда есть цель «газон»
+			if kind in ["bush", "vase"] and not lv.goals.any(func(gg: Dictionary) -> bool: return gg.kind == "grass"):
+				_add_obstacle(lv, "grass", n, rng)
 			if kind == "birdhouse":
 				lv["birdhouse"] = true
 				# цель — птицы: каждый скворечник выпускает 3 птицы, их надо спустить вниз
 				lv.goals.append({"kind": "item", "left": count * 3})
-				lv.moves += 7
+				lv.moves += 7 + 4 * count
 			else:
 				lv.goals.append({"kind": kind, "left": count})
 				lv.moves += 7 if kind in ["safe", "stone"] else (5 if kind == "vase" else 3)
@@ -262,7 +265,7 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 				if c not in lv.grass_start:
 					lv.grass_start.append(c)
 			lv.goals.append({"kind": "grass", "left": lv.grass_target.size() - lv.grass_start.size()})
-			lv.moves += 6
+			lv.moves += 9
 		"item":
 			lv.items = clampi(2 + n / 10, 2, 4)
 			lv.goals.append({"kind": "item", "left": lv.items})

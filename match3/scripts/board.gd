@@ -1152,13 +1152,28 @@ func _on_block_destroyed(kind: int, c: Vector2i) -> void:
 				if g and g.special == Gem.NONE and not _chained(Vector2i(x, y)):
 					pool.append(g)
 		pool.shuffle()
+		# 3 птицы вылетают из скворечника и садятся на фишки сверху поля — их надо спустить вниз
+		var home := cell_pos(c)
 		for i in mini(3, pool.size()):
 			var g: Node2D = pool[i]
 			g.set_special(Gem.ITEM)
-			g.scale = Vector2(0.2, 0.2)
-			create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT).tween_property(g, "scale", Vector2.ONE, 0.35)
-			if fx:
-				_sparkles(fx.to_local(to_global(g.position)), Color("#7fd0ff"), 4)
+			g.bird = true
+			var dest: Vector2 = cell_pos(g.cell)
+			var mid := (home + dest) / 2.0 + Vector2(randf_range(-80, 80), -CELL * 1.5)
+			g.position = home
+			g.z_index = 5
+			g.scale = Vector2(0.4, 0.4)
+			var tw := g.create_tween()
+			tw.tween_interval(i * 0.12)
+			tw.tween_method(func(t: float) -> void:
+				var d := cell_pos(g.cell)  # фишка могла сдвинуться — летим к её текущей клетке
+				g.position = home.lerp(mid, t).lerp(mid.lerp(d, t), t)
+				g.scale = Vector2.ONE * lerpf(0.4, 1.0, t), 0.0, 1.0, 0.55).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+			tw.tween_callback(func() -> void:
+				g.z_index = 0
+				g.position = cell_pos(g.cell)
+				if fx:
+					_sparkles(fx.to_local(to_global(g.position)), Color("#7fd0ff"), 5))
 
 
 func _break_chain(c: Vector2i) -> void:

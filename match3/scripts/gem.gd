@@ -22,6 +22,7 @@ var cell := Vector2i.ZERO
 var size := 80.0
 var _t := 0.0
 var _shine := randf() * 6.0
+var bird := false  # предмет-птица из скворечника (рисуется птичкой, а не яйцом)
 
 
 func _ready() -> void:
@@ -263,7 +264,44 @@ func _draw_propeller(r: float) -> void:
 
 
 ## Предмет, который нужно спустить на нижний ряд (заглушка: золотое яйцо).
+## Птичка из скворечника: круглая голубая, белое брюшко, хохолок, машет крылом.
+func _draw_bird(r: float) -> void:
+	var gl := 0.5 + 0.5 * sin(_t * 4.0)
+	draw_circle(Vector2.ZERO, size * 0.48, Color(0.6, 0.85, 1.0, 0.18 + 0.15 * gl))
+	var hop := -absf(sin(_t * 5.0)) * r * 0.08
+	var o := Vector2(0, hop)
+	draw_set_transform(o + Vector2(0, r * 0.95), 0.0, Vector2(1.0, 0.25))
+	draw_circle(Vector2.ZERO, r * 0.6, Color(0, 0, 0, 0.25))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# хвост
+	draw_colored_polygon(PackedVector2Array([o + Vector2(r * 0.55, r * 0.15), o + Vector2(r * 1.05, -r * 0.2), o + Vector2(r * 0.95, r * 0.35)]), Color("#2f7fd6"))
+	# тело
+	draw_circle(o, r * 0.82, Color("#1f5fb0"))
+	draw_circle(o + Vector2(0, -r * 0.04), r * 0.76, Color("#3f9cf0"))
+	draw_circle(o + Vector2(-r * 0.2, -r * 0.3), r * 0.42, Color("#7cc4ff"))
+	# брюшко
+	draw_set_transform(o + Vector2(-r * 0.05, r * 0.3), 0.0, Vector2(1.0, 0.75))
+	draw_circle(Vector2.ZERO, r * 0.48, Color("#fff4e0"))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# крыло машет
+	var flap := sin(_t * 14.0) * 0.5
+	draw_set_transform(o + Vector2(r * 0.25, r * 0.05), flap, Vector2.ONE)
+	draw_colored_polygon(PackedVector2Array([Vector2(-r * 0.15, -r * 0.2), Vector2(r * 0.5, -r * 0.05), Vector2(r * 0.2, r * 0.35), Vector2(-r * 0.2, r * 0.2)]), Color("#1f5fb0"))
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# хохолок
+	draw_colored_polygon(PackedVector2Array([o + Vector2(-r * 0.15, -r * 0.7), o + Vector2(-r * 0.05, -r * 1.05), o + Vector2(r * 0.1, -r * 0.72)]), Color("#1f5fb0"))
+	# глаза и клюв
+	for ex in [-0.32, 0.08]:
+		draw_circle(o + Vector2(ex * r, -r * 0.18), r * 0.16, Color.WHITE)
+		draw_circle(o + Vector2(ex * r + r * 0.03, -r * 0.16), r * 0.09, Color("#1b1b2a"))
+		draw_circle(o + Vector2(ex * r + r * 0.06, -r * 0.21), r * 0.035, Color.WHITE)
+	draw_colored_polygon(PackedVector2Array([o + Vector2(-r * 0.2, r * 0.02), o + Vector2(-r * 0.6, r * 0.1), o + Vector2(-r * 0.2, r * 0.2)]), Color("#ff9a1a"))
+
+
 func _draw_item(r: float) -> void:
+	if bird:
+		_draw_bird(r)
+		return
 	var t := tex("item_egg")
 	if t:
 		var gl := 0.5 + 0.5 * sin(_t * 4.0)
