@@ -68,7 +68,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/web/match3
-          godot --headless --path match3 --editor --quit 2>&1 | tee build/m3-import.log
+          # импорт иногда падает на многопоточном раннере (сбой самого Godot при выходе) — повторяем
+          for i in 1 2 3; do
+            if godot --headless --path match3 --editor --quit > build/m3-import.log 2>&1; then break; fi
+            echo "import attempt $i crashed, retrying"; tail -5 build/m3-import.log
+          done
+          cat build/m3-import.log
           # Бот проходит 6 уровней случайными ходами: ловим ошибки логики поля.
           timeout 300 godot --headless --path match3 -- --bot=6 2>&1 | tee build/m3-run.log || true
           if grep -E "SCRIPT ERROR|Parse Error|Failed to load script|Invalid call|Invalid access" build/m3-import.log build/m3-run.log; then
