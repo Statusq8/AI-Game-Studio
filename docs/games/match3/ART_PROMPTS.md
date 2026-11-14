@@ -151,3 +151,26 @@
 22. Скамейка: `Game decoration object, wooden park bench with curved legs, front 3/4 view, chunky puffy 3D toy-like volume, glossy, strong soft light from top-left, deep shading toward bottom-right, clean smooth surfaces, rich but not neon colors, bold simple silhouette filling the frame, no text, no letters, no numbers, centered, plain solid white background, stylized 3D render for a premium casual mobile puzzle game, 1:1`
 23. Табличка: `Game decoration object, wooden signpost with a blank board and a small paw print carving, chunky puffy 3D toy-like volume, glossy, strong soft light from top-left, deep shading toward bottom-right, clean smooth surfaces, rich but not neon colors, bold simple silhouette filling the frame, no text, no letters, no numbers, centered, plain solid white background, stylized 3D render for a premium casual mobile puzzle game, 1:1`
 24. Фонтан: `Game decoration object, round stone fountain with splashing blue water, front 3/4 view, chunky puffy 3D toy-like volume, glossy, strong soft light from top-left, deep shading toward bottom-right, clean smooth surfaces, rich but not neon colors, bold simple silhouette filling the frame, no text, no letters, no numbers, centered, plain solid white background, stylized 3D render for a premium casual mobile puzzle game, 1:1`
+
+## Пачка 12 — живые животные на карте (решение №29)
+Порядок для каждого животного: (1) картинка в ChatGPT → (2) эту картинку анимировать в PixVerse (image-to-video). Присылать видео по одному.
+Фон — сплошной ярко-зелёный: Claude вырезает его из каждого кадра. Камера не двигается, видео зациклено.
+
+**Шаг 1 — картинка (ChatGPT), шаблон.** Вместо `[ANIMAL]` вставить строку животного из списка ниже:
+`Cute cartoon [ANIMAL], seen from above at a 3/4 angle like on a game map, full body, centered with empty space around, chunky puffy 3D toy-like volume, glossy, soft light from top-left, bold clean outlines, bright rich colors, matching a cozy premium casual mobile zoo game, plain solid flat chroma green background #00FF00, no ground, no shadow on the background, no grass, no props, no text, 1:1`
+
+**Шаг 2 — видео (PixVerse), шаблон.** Вместо `[ACTION]` вставить действие из списка; длина 5 с, формат 1:1:
+`Static camera, no zoom, no pan, no camera movement. [ACTION]. Gentle, slow, cute cartoon motion in a seamless loop: the last frame matches the first frame. The animal stays in the same place and fully inside the frame. Background stays plain flat chroma green #00FF00 the whole time, unchanged. Keep the exact same art style and colors.`
+
+| № | Вольер | [ANIMAL] (шаг 1) | [ACTION] (шаг 2) |
+|---|---|---|---|
+| 1 | Панды | `giant panda sitting and holding a bamboo stalk` | `The panda chews the bamboo, blinks and sways its head happily` |
+| 2 | Слоны | `mother elephant with a baby elephant standing next to her` | `The mother elephant lifts her trunk and sprays a small fountain of water, the baby flaps its ears and wiggles its tail` |
+| 3 | Обезьяны | `two little monkeys sitting side by side, one holding a banana` | `One monkey peels and nibbles the banana, the other scratches its head and waves` |
+| 4 | Фламинго | `two pink flamingos standing on one leg` | `The flamingos slowly bob their necks, one preens its feathers, the other flutters its wings a little` |
+| 5 | Пингвины | `three penguins standing in a little group` | `The penguins waddle in place, flap their small wings and tilt their heads` |
+| 6 | Жирафы | `mother giraffe with a baby giraffe` | `The mother giraffe chews leaves and nods, the baby swings its tail and blinks` |
+| 7 | Львы | `lion lying down with a lion cub beside him` | `The lion slowly breathes and flicks his tail, the cub playfully paws at his mane` |
+
+Что значат промпты (по-русски): шаг 1 — «милое мультяшное животное, вид сверху под углом как на карте, целиком, по центру, объёмный глянцевый игрушечный стиль, свет слева сверху, чёткий контур, яркие цвета, фон сплошной зелёный без земли, теней, травы и надписей, квадрат». Шаг 2 — «камера неподвижна; животное делает [действие] медленно и мило, видео зациклено (последний кадр как первый), животное не уходит с места и не выходит за кадр, фон всё время сплошной зелёный, стиль и цвета не меняются».
+
