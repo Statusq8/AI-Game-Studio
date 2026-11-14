@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "2.11.0"
+const VERSION := "2.12.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -45,6 +45,7 @@ var _portrait_node: Control
 var _booster_bar: HBoxContainer
 var _booster_btns := {}
 var _aiming := ""
+var _fly_reward := {}  # награда победы — прилетит в счётчики на главном экране
 var _pre_selected := {}
 var _board_frame: Control
 var _board_clip: Control
@@ -1276,6 +1277,60 @@ const AIM_TEXT := {"hammer": ["Молот", "Коснись фишки или п
 	"cannon": ["Стрела", "Коснись клетки — очистит весь столбец!"]}
 
 
+## Монеты и звезда вылетают из центра экрана в счётчики; счётчики «набегают» с прошлых значений.
+func _play_reward_fly(rw: Dictionary) -> void:
+	if not _home.visible:
+		return
+	var coins: int = rw.get("coins", 0)
+	var stars: int = rw.get("stars", 0)
+	var from := size / 2.0
+	var c_from := Save.coins - coins
+	var s_from := Save.stars - stars
+	for l in _coin_labels:
+		l.text = str(c_from)
+	if _stars_label:
+		_stars_label.text = str(s_from)
+	var targets := []
+	if not _coin_labels.is_empty():
+		targets.append(["ui_coin", _coin_labels[0], mini(12, maxi(4, coins / 15)), c_from, Save.coins])
+	if _stars_label and stars > 0:
+		targets.append(["ui_star", _stars_label, 1, s_from, Save.stars])
+	for tg in targets:
+		var tex := Zoo.art(tg[0])
+		var lbl: Label = tg[1]
+		var n: int = tg[2]
+		var to := lbl.get_global_rect().position + Vector2(-20, lbl.size.y / 2)
+		for i in n:
+			var sp := Sprite2D.new()
+			sp.texture = tex
+			var k := (70.0 if tg[0] == "ui_star" else 48.0) / maxf(tex.get_width(), 1.0)
+			sp.scale = Vector2(k, k) * 0.2
+			sp.position = from
+			sp.z_index = 70
+			add_child(sp)
+			var spread := from + Vector2(randf_range(-160, 160), randf_range(-140, 60))
+			var tw := sp.create_tween()
+			tw.tween_interval(i * 0.06)
+			tw.tween_property(sp, "scale", Vector2(k, k) * 1.2, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			tw.parallel().tween_property(sp, "position", spread, 0.3).set_ease(Tween.EASE_OUT)
+			tw.tween_property(sp, "position", to, 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+			tw.parallel().tween_property(sp, "scale", Vector2(k, k) * 0.7, 0.45)
+			var idx := i
+			tw.tween_callback(func() -> void:
+				sp.queue_free()
+				Sfx.play("coin", 1.0 + idx * 0.04, -8.0)
+				var val := int(lerpf(tg[3], tg[4], float(idx + 1) / n))
+				if lbl == _stars_label:
+					lbl.text = str(val)
+				else:
+					for l in _coin_labels:
+						l.text = str(val)
+				lbl.pivot_offset = lbl.size / 2
+				var bt := lbl.create_tween()
+				bt.tween_property(lbl, "scale", Vector2(1.3, 1.3), 0.06)
+				bt.tween_property(lbl, "scale", Vector2.ONE, 0.12))
+
+
 ## Плашка выбранного бустера: выезжает сверху на место шапки, крупная иконка + подсказка.
 func _show_aim_banner(kind: String) -> void:
 	_hide_aim_banner()
@@ -1398,6 +1453,10 @@ func _show_home() -> void:
 	_level_screen.visible = false
 	_board.input_enabled = false
 	_refresh_home()
+	if not _fly_reward.is_empty() and not _bot:
+		var rw := _fly_reward
+		_fly_reward = {}
+		get_tree().create_timer(0.5).timeout.connect(_play_reward_fly.bind(rw))
 
 
 func _try_play() -> void:
@@ -1426,8 +1485,8 @@ func _show_prelevel(n: int) -> void:
 		["Играть", "GreenButton", func() -> void:
 			_clear_overlay()
 			_level_transition(n)],
-		["Закрыть", "Button", _show_home],
 	])
+	_add_close_x(v, _show_home)
 	var font: Font = UiTheme.title_font()
 	var at := 0
 	# плашка сложности
@@ -1469,42 +1528,33 @@ func _show_prelevel(n: int) -> void:
 		v.add_child(hb)
 		v.move_child(hb, at)
 		at += 1
-	# цели в ячейках
-	var gl := Label.new()
-	gl.text = "Цели"
-	gl.theme_type_variation = "InkLabel"
-	gl.add_theme_font_size_override("font_size", 28)
-	gl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(gl)
-	v.move_child(gl, at)
+	# цели — на кремовой карточке
+	var gcard := _cream_card("Цель")
+	v.add_child(gcard)
+	v.move_child(gcard, at)
 	at += 1
 	var grow := HBoxContainer.new()
 	grow.alignment = BoxContainer.ALIGNMENT_CENTER
-	grow.add_theme_constant_override("separation", 10)
-	v.add_child(grow)
-	v.move_child(grow, at)
-	at += 1
-	var slot_t: Texture2D = load("res://assets/art/ui_slot_goal.png")
+	grow.add_theme_constant_override("separation", 16)
+	gcard.get_child(0).add_child(grow)
 	for g in lv.goals:
 		var cell := Control.new()
-		cell.custom_minimum_size = Vector2(104, 112)
+		cell.custom_minimum_size = Vector2(104, 108)
 		var kind: String = g.kind
 		var col: int = int(g.get("color", -1))
 		var cnt := str(g.left)
 		cell.draw.connect(func() -> void:
-			cell.draw_texture_rect(slot_t, Rect2(Vector2(2, 0), Vector2(100, 100)), false)
-			if kind == "color" or kind == "item":
-				var gt: Texture2D = Gem.tex("gem_%d" % col) if kind == "color" else null
+			cell.draw_texture_rect(Board.fx_tex("glow"), Rect2(Vector2(2, -6), Vector2(100, 100)), false, Color(1, 0.9, 0.6, 0.5))
+			if kind == "color":
+				var gt: Texture2D = Gem.tex("gem_%d" % col)
 				if gt:
-					cell.draw_texture_rect(gt, Rect2(Vector2(22, 16), Vector2(60, 60)), false)
-				else:
-					_draw_goal_icon(cell, "crate", Vector2(52, 46))
+					cell.draw_texture_rect(gt, Rect2(Vector2(17, 6), Vector2(70, 70)), false)
 			else:
-				_draw_goal_icon(cell, kind, Vector2(52, 46))
-			var ts := font.get_string_size(cnt, HORIZONTAL_ALIGNMENT_LEFT, -1, 28)
+				_draw_goal_icon(cell, "birdhouse" if kind == "item" and _level_has_birds(lv) else kind, Vector2(52, 42))
+			var ts := font.get_string_size(cnt, HORIZONTAL_ALIGNMENT_LEFT, -1, 34)
 			var p := Vector2(52 - ts.x / 2, 104)
-			cell.draw_string_outline(font, p, cnt, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, 8, Color("#2b2350"))
-			cell.draw_string(font, p, cnt, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, Color.WHITE))
+			cell.draw_string_outline(font, p, cnt, HORIZONTAL_ALIGNMENT_LEFT, -1, 34, 10, Color("#2b2350"))
+			cell.draw_string(font, p, cnt, HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color.WHITE))
 		grow.add_child(cell)
 	if Save.streak > 0:
 		var sl := Label.new()
@@ -1516,21 +1566,14 @@ func _show_prelevel(n: int) -> void:
 		v.add_child(sl)
 		v.move_child(sl, at)
 		at += 1
-	# бустеры на старт в круглых ячейках
-	var bl := Label.new()
-	bl.text = "Бустеры на старт"
-	bl.theme_type_variation = "InkLabel"
-	bl.add_theme_font_size_override("font_size", 24)
-	bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(bl)
-	v.move_child(bl, at)
-	at += 1
+	# бустеры на старт — объёмные плитки на кремовой карточке, выбранный — с зелёной галочкой
+	var bcard := _cream_card("Выбери бустеры")
+	v.add_child(bcard)
+	v.move_child(bcard, at)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 18)
-	v.add_child(row)
-	v.move_child(row, at)
-	var rs: Texture2D = load("res://assets/art/ui_slot_round.png")
+	bcard.get_child(0).add_child(row)
 	for b in PRE_BOOSTERS:
 		var kind: String = b[0]
 		var tex_name: String = {"pre_rocket": "rocket", "pre_bomb": "bomb", "pre_orb": "orb"}[kind]
@@ -1539,33 +1582,119 @@ func _show_prelevel(n: int) -> void:
 		t.flat = true
 		for st in ["normal", "hover", "pressed", "focus", "disabled", "hover_pressed"]:
 			t.add_theme_stylebox_override(st, StyleBoxEmpty.new())
-		t.custom_minimum_size = Vector2(112, 116)
+		t.custom_minimum_size = Vector2(124, 128)
 		var cnt := int(Save.boosters.get(kind, 0))
 		t.disabled = cnt <= 0
 		t.draw.connect(func() -> void:
 			var on := t.button_pressed
+			var c := Vector2(62, 60)
+			var r := Rect2(c - Vector2(54, 54), Vector2(108, 108))
 			if on:
-				t.draw_circle(Vector2(56, 56), 58, Color("#7dff8a", 0.55))
-			t.draw_texture_rect(rs, Rect2(Vector2(4, 4), Vector2(104, 104)), false, Color(1, 1, 1, 0.45) if t.disabled else Color.WHITE)
+				t.draw_texture_rect(Board.fx_tex("glow"), r.grow(28), false, Color(0.6, 1.0, 0.5, 0.8))
+			_tile(t, Rect2(r.position + Vector2(0, 7), r.size), Color(0, 0, 0, 0.3), 26.0)
+			_tile(t, r.grow(4.0), Color("#1e6b2a") if on else Color("#5a3a08"), 28.0)
+			_tile(t, r.grow(1.0), Color("#7dff8a") if on else Color("#ffcf3a"), 26.0)
+			var inner := r.grow(-5.0)
+			var top := Color("#eaffdd") if on else Color("#fff3d6")
+			var bot := Color("#7fd86a") if on else Color("#f2b866")
+			for i in 10:
+				var y0 := inner.position.y + inner.size.y * i / 10.0
+				_tile(t, Rect2(inner.position.x, y0, inner.size.x, inner.size.y / 10.0 + 1.0), top.lerp(bot, i / 9.0), 20.0 if i == 0 or i == 9 else 0.0)
+			_tile(t, Rect2(inner.position + Vector2(10, 6), Vector2(inner.size.x - 20, 12)), Color(1, 1, 1, 0.55), 6.0)
 			var it: Texture2D = Gem.tex(tex_name)
+			var fade := Color(1, 1, 1, 0.45) if t.disabled else Color.WHITE
 			if it:
-				var k := 62.0 / maxf(it.get_width(), it.get_height())
+				var k := 82.0 / maxf(it.get_width(), it.get_height())
 				var sz := it.get_size() * k
-				t.draw_texture_rect(it, Rect2(Vector2(56, 56) - sz / 2, sz), false, Color(1, 1, 1, 0.45) if t.disabled else Color.WHITE)
-			var bc := Vector2(92, 94)
-			t.draw_circle(bc, 18, Color("#7a0f1c"))
-			t.draw_circle(bc + Vector2(0, -2), 16, Color("#e8283c") if not on else Color("#3fc25a"))
-			var txt := "✓" if on else str(cnt)
-			var ts := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 20)
-			t.draw_string(font, bc + Vector2(-ts.x / 2, 6), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE))
+				t.draw_texture_rect(it, Rect2(c - sz / 2, sz), false, fade)
+			var bc := Vector2(104, 106)
+			t.draw_circle(bc + Vector2(0, 3), 20, Color(0, 0, 0, 0.3))
+			t.draw_circle(bc, 20, Color.WHITE)
+			t.draw_circle(bc, 16, Color("#2f9e3a") if on else Color("#e8283c"))
+			if on:
+				t.draw_polyline(PackedVector2Array([bc + Vector2(-8, 0), bc + Vector2(-2, 7), bc + Vector2(9, -7)]), Color.WHITE, 4.5, true)
+			else:
+				var txt := str(cnt)
+				var ts := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 22)
+				t.draw_string(font, bc + Vector2(-ts.x / 2, 8), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE))
 		t.toggled.connect(func(on: bool) -> void:
 			_pre_selected[kind] = on
+			Sfx.play("special" if on else "click")
 			t.queue_redraw()
 			t.pivot_offset = t.size / 2
 			var tw := t.create_tween()
-			tw.tween_property(t, "scale", Vector2(1.15, 1.15), 0.08)
-			tw.tween_property(t, "scale", Vector2.ONE, 0.1))
+			tw.tween_property(t, "scale", Vector2(1.18, 1.18), 0.08)
+			tw.tween_property(t, "scale", Vector2.ONE, 0.14).set_trans(Tween.TRANS_BACK))
 		row.add_child(t)
+
+
+## Кремовая карточка с заголовком (внутри окна): VBox — первый ребёнок.
+func _cream_card(title: String) -> PanelContainer:
+	var card := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color("#fff6e3")
+	sb.border_color = Color("#e6b45c")
+	sb.set_border_width_all(4)
+	sb.set_corner_radius_all(22)
+	sb.shadow_color = Color(0.35, 0.2, 0.05, 0.25)
+	sb.shadow_size = 6
+	sb.shadow_offset = Vector2(0, 4)
+	sb.content_margin_left = 14
+	sb.content_margin_right = 14
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 12
+	card.add_theme_stylebox_override("panel", sb)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 6)
+	card.add_child(vb)
+	var l := Label.new()
+	l.text = title
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_override("font", UiTheme.title_font())
+	l.add_theme_font_size_override("font_size", 28)
+	l.add_theme_color_override("font_color", Color("#7a3d0a"))
+	vb.add_child(l)
+	return card
+
+
+func _level_has_birds(lv: Dictionary) -> bool:
+	return lv.get("birdhouse", false)
+
+
+## Красный крестик в правом верхнем углу окна (над рамкой), появляется когда окно встало.
+func _add_close_x(v: Control, on_press: Callable) -> void:
+	var close := Button.new()
+	close.flat = true
+	for st in ["normal", "hover", "pressed", "focus"]:
+		close.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+	close.custom_minimum_size = Vector2(76, 76)
+	close.z_index = 3
+	close.size = Vector2(76, 76)
+	close.draw.connect(func() -> void:
+		var c := Vector2(38, 38)
+		close.draw_circle(c + Vector2(0, 4), 27, Color(0, 0, 0, 0.3))
+		if Zoo.draw_art(close, "ui_close", c, 60.0):
+			return
+		close.draw_circle(c, 34, Color("#ffcf3a"))
+		close.draw_circle(c, 29, Color("#a0101c"))
+		close.draw_circle(c + Vector2(0, -3), 25, Color("#e8283c"))
+		for d in [Vector2(1, 1), Vector2(1, -1)]:
+			close.draw_line(c - d * 12, c + d * 12, Color("#5a0a12"), 11.0, true)
+			close.draw_line(c - d * 12, c + d * 12, Color.WHITE, 7.0, true))
+	close.pressed.connect(on_press)
+	var box: Control = v.get_parent().get_parent()
+	box.add_child(close)
+	close.top_level = false
+	var place := func() -> void: close.position = Vector2(box.size.x - 92, 112)
+	box.resized.connect(place)
+	place.call_deferred()
+	get_tree().process_frame.connect(place, CONNECT_ONE_SHOT)
+	# крестик показываем, когда окно уже встало на место (иначе мелькает в углу)
+	close.modulate.a = 0.0
+	var ct := close.create_tween()
+	ct.tween_interval(0.45)
+	ct.tween_callback(place)
+	ct.tween_property(close, "modulate:a", 1.0, 0.15)
 
 
 ## Ряд наград: золотые ячейки с объёмными значками и числами (монеты «набегают»).
@@ -2534,6 +2663,7 @@ func _show_win() -> void:
 	var coins := WIN_COINS * mult + int(_level.get("bonus_coins", 0))
 	Save.level = _level.n + 1
 	Save.stars += 1
+	_fly_reward = {"coins": coins, "stars": 1}
 	Save.streak += 1
 	Save.add_coins(coins)
 	Save.vibrate(60)
@@ -2673,38 +2803,7 @@ func _show_win() -> void:
 			get_tree().create_timer(0.9).timeout.connect(_next_level)))
 	row.add_child(ad)
 	# красный крестик «домой» в углу окна
-	var close := Button.new()
-	close.flat = true
-	for st in ["normal", "hover", "pressed", "focus"]:
-		close.add_theme_stylebox_override(st, StyleBoxEmpty.new())
-	close.custom_minimum_size = Vector2(76, 76)
-	close.z_index = 3
-	close.size = Vector2(76, 76)
-	close.draw.connect(func() -> void:
-		var c := Vector2(38, 38)
-		close.draw_circle(c + Vector2(0, 4), 27, Color(0, 0, 0, 0.3))
-		if Zoo.draw_art(close, "ui_close", c, 60.0):
-			return
-		close.draw_circle(c, 34, Color("#ffcf3a"))
-		close.draw_circle(c, 29, Color("#a0101c"))
-		close.draw_circle(c + Vector2(0, -3), 25, Color("#e8283c"))
-		for d in [Vector2(1, 1), Vector2(1, -1)]:
-			close.draw_line(c - d * 12, c + d * 12, Color("#5a0a12"), 11.0, true)
-			close.draw_line(c - d * 12, c + d * 12, Color.WHITE, 7.0, true))
-	close.pressed.connect(func() -> void: _transition(_show_home))
-	var box: Control = v.get_parent().get_parent()
-	box.add_child(close)
-	close.top_level = false
-	var place := func() -> void: close.position = Vector2(box.size.x - 104, 150)
-	box.resized.connect(place)
-	place.call_deferred()
-	get_tree().process_frame.connect(place, CONNECT_ONE_SHOT)
-	# крестик показываем, когда окно уже встало на место (иначе мелькает в углу)
-	close.modulate.a = 0.0
-	var ct := close.create_tween()
-	ct.tween_interval(0.45)
-	ct.tween_callback(place)
-	ct.tween_property(close, "modulate:a", 1.0, 0.15)
+	_add_close_x(v, func() -> void: _transition(_show_home))
 	# звезда и монеты летят вверх, конфетти
 	var c := size / 2
 	for i in 70:
