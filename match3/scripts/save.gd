@@ -25,7 +25,16 @@ var heart_at := 0.0
 var boosters := {"hammer": 2, "arrow": 2, "cannon": 2, "shuffle": 2, "pre_rocket": 2, "pre_bomb": 2, "pre_orb": 1}  # unix-время, когда придёт следующее сердце (0 — сердца полные)
 
 
+## Режим доводки первого уровня: при каждом запуске — чистый прогресс (как у нового игрока).
+## Выключить (false), когда уровень 1 будет готов.
+const FRESH_START_EACH_LAUNCH := true
+
+
 func _ready() -> void:
+	if FRESH_START_EACH_LAUNCH:
+		if FileAccess.file_exists(PATH):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(PATH))
+		return
 	if not FileAccess.file_exists(PATH):
 		return
 	var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(PATH))

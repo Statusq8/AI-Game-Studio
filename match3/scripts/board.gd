@@ -144,8 +144,25 @@ func setup(level: Dictionary) -> void:
 	_overlay.z_index = 3
 	_overlay.draw.connect(_draw_overlay)
 	add_child(_overlay)
-	_fill_initial(level.get("items", 0))
+	if level.has("layout"):
+		_fill_layout(level.layout)
+	else:
+		_fill_initial(level.get("items", 0))
+	hint_move = level.get("first_move", [])
 	queue_redraw()
+
+
+var hint_move: Array = []  # ручная подсказка первого хода (уровень 1), сбрасывается после хода
+
+
+## Ручная раскладка: строки цифр-цветов сверху вниз.
+func _fill_layout(rows: Array) -> void:
+	for y in mini(H, rows.size()):
+		var row: String = rows[y]
+		for x in mini(W, row.length()):
+			var c := Vector2i(x, y)
+			if _fillable(c) and tiles[x][y] == null:
+				_place(_new_gem(int(row[x])), c)
 
 
 func _fill_initial(items: int) -> void:
@@ -769,6 +786,8 @@ func _process(delta: float) -> void:
 
 func show_hint() -> void:
 	var m := find_move()
+	if hint_move.size() == 2:
+		m = hint_move
 	if m.is_empty():
 		return
 	_stop_hint()
@@ -827,6 +846,7 @@ func try_swap(a: Vector2i, b: Vector2i) -> void:
 	var pa: bool = ga.is_power()
 	var pb: bool = gb.is_power()
 	if pa and pb:
+		hint_move = []
 		move_made.emit()
 		await _combo(ga, gb, b)
 		await _cascade([])
@@ -835,12 +855,14 @@ func try_swap(a: Vector2i, b: Vector2i) -> void:
 		var orb := ga if ga.special == Gem.ORB else gb
 		var other := gb if orb == ga else ga
 		if other.special != Gem.ITEM:
+			hint_move = []
 			move_made.emit()
 			await _orb_with_color(orb, other.color)
 			await _cascade([])
 			return
 	if pa or pb:
 		# особая фишка, сдвинутая свапом, всегда срабатывает
+		hint_move = []
 		move_made.emit()
 		var sp := ga if pa else gb
 		await _clear({sp.cell: true})

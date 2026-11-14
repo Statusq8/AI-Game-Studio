@@ -85,7 +85,35 @@ const BLOCK := {"crate": [1, 1], "vase": [2, 2], "safe": [3, 5], "jar": [4, 1], 
 	"stone": [10, 3], "colorbox": [11, 1], "birdhouse": [12, 3]}
 
 
+## Уровень 1 — ручной: продуманная раскладка, первый ход сразу даёт ракету,
+## ещё один ход внизу — пятёрку (радужный шар). Цвета: 0 сердце, 1 капля, 2 листик, 3 звезда, 4 цветок.
+const LEVEL1_LAYOUT := [
+	"30301033",
+	"00233200",
+	"11431410",
+	"20041401",
+	"40342334",
+	"34202314",
+	"22420232",
+	"11403103",
+	"41211011",
+	"22003234",
+]
+
+
+static func make_level1() -> Dictionary:
+	return {
+		"n": 1, "colors": 5, "moves": 20,
+		"goals": [{"kind": "color", "color": 2, "left": 16}, {"kind": "color", "color": 1, "left": 12}],
+		"blocks": {}, "chains": {}, "grass_start": [], "grass_target": [], "items": 0, "ice": {}, "honey": [],
+		"layout": LEVEL1_LAYOUT, "first_move": [Vector2i(2, 5), Vector2i(2, 6)],
+		"seed": 1001, "zone": 0,
+	}
+
+
 static func make(n: int) -> Dictionary:
+	if n == 1:
+		return make_level1()
 	var rng := RandomNumberGenerator.new()
 	rng.seed = n * 7919 + 17
 	var lv := {

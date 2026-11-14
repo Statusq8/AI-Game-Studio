@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "2.7.1"
+const VERSION := "2.8.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1612,6 +1612,11 @@ func _start_level(n: int) -> void:
 	_board.fx = _fx
 	_board.setup(_level)
 	_fit_board_to_shape()
+	# уровень 1: сразу показать первый ход (он даёт ракету)
+	if _level.n == 1 and not _bot:
+		get_tree().create_timer(2.2).timeout.connect(func() -> void:
+			if is_instance_valid(_board) and _board.hint_move.size() == 2:
+				_board.show_hint())
 	_board.input_enabled = true
 	_board_frame.position = _board_rest() + Vector2(0, size.y)
 	var fly := _board_frame.create_tween()
