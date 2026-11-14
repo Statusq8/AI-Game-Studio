@@ -2099,7 +2099,7 @@ func _fx_sprite(kind: String, at: Vector2, color: Color, px: float, additive := 
 
 
 ## Покадровые эффекты (заранее отрисованы tools/gen_vfx.py): имя → [колонки, ряды, кадров].
-const FLIPBOOKS := {"explosion": [6, 4, 22], "pop": [4, 3, 12], "birth": [6, 3, 18], "smoke": [4, 4, 16]}
+const FLIPBOOKS := {"explosion": [6, 4, 24], "pop": [4, 3, 12], "birth": [6, 3, 18], "smoke": [4, 4, 16]}
 static var _fb_tex := {}
 
 

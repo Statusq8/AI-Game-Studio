@@ -112,48 +112,71 @@ def fire_color(temp):
     return tuple(ramp(np.array([[temp]]))[0, 0])
 
 
-def explosion(size=256, n=22):
-    """Мультяшный взрыв из объёмных клубов: белое ядро → жёлто-оранжевый огонь → серый дым, искры-лучи."""
+def fbm(x, y, t, tex=None):
+    tex = NOISE if tex is None else tex
+    return (sample(tex, x, y) * 0.55 + sample(NOISE2, x * 2.1 + 0.37 * t, y * 2.1 - 0.29 * t) * 0.3
+            + sample(tex, x * 4.3 - 0.2 * t, y * 4.3 + 0.5) * 0.15)
+
+
+def explosion(size=256, n=24):
+    """Мультяшный огненный взрыв: вспышка → клубящийся огненный шар с рваным краем и языками пламени
+    (горячее ядро белое→жёлтое, край оранжево-красный) → остывает в тёмный дым и тает. Плюс искры."""
     x, y, r = grid(size)
-    base = []
-    for k in range(16):
-        th = k / 16 * 2 * np.pi + rng.uniform(-0.2, 0.2)
-        base.append((th, rng.uniform(0.45, 1.0), rng.uniform(0.75, 1.15), rng.uniform(0, 0.25)))
-    inner = [(rng.uniform(0, 2 * np.pi), rng.uniform(0.0, 0.35), rng.uniform(0.9, 1.2)) for _ in range(7)]
+    ang = np.arctan2(y, x)
+    sparks = [(rng.uniform(0, 2 * np.pi), rng.uniform(0.9, 1.5), rng.uniform(0.6, 1.0)) for _ in range(18)]
     frames = []
     for i in range(n):
         t = i / (n - 1)
-        grow = 1 - (1 - min(1.0, t / 0.55)) ** 3
-        puffs = []
-        for th, dist, rs, dl in base:
-            d = dist * (0.12 + 0.55 * grow) + 0.06 * t
-            rad = rs * (0.12 + 0.22 * grow) * (1 - 0.35 * max(0, t - 0.6) / 0.4)
-            temp = (1.15 - 1.05 * t ** 0.9) * (1.1 - 0.35 * dist) - dl * t
-            puffs.append((np.cos(th) * d, np.sin(th) * d - 0.08 * t, rad, fire_color(temp), 1 - smooth(0.5, 0.95, t), -dist * 0.2))
-        for th, dist, rs in inner:
-            d = dist * (0.1 + 0.35 * grow)
-            rad = rs * (0.16 + 0.2 * grow) * (1 - 0.6 * t)
-            temp = 1.3 - 1.1 * t ** 0.8
-            puffs.append((np.cos(th) * d, np.sin(th) * d - 0.1 * t, rad, fire_color(temp), 1 - smooth(0.6, 0.95, t), 0.3))
-        f = puffs_render(size, puffs)
-        # искры-лучи
-        if t < 0.5:
-            for k in range(12):
-                th = k / 12 * 2 * np.pi + 0.13
-                d0, d1 = 0.2 + 1.2 * t, 0.36 + 1.4 * t
-                pxx = np.cos(th) * x + np.sin(th) * y
-                pyy = -np.sin(th) * x + np.cos(th) * y
-                m = np.exp(-(pyy / (0.024 * (1 - t))) ** 2) * smooth(d0, d0 + 0.04, pxx) * smooth(d1 + 0.15, d1 - 0.1, pxx) * (1 - t / 0.5)
-                f[..., :3] = f[..., :3] * (1 - m[..., None]) + np.array([1.0, 0.95, 0.65]) * m[..., None]
+        grow = 1 - (1 - min(1.0, t / 0.45)) ** 3
+        R = 0.18 + 0.62 * grow + 0.08 * t
+        # искажение пространства — клубы «текут» наружу и вверх
+        wx = (sample(NOISE, x * 0.3 + 0.1, y * 0.3 + 0.3 + 0.05 * t) - 0.5) * 0.3
+        wy = (sample(NOISE, x * 0.3 + 0.6, y * 0.3 - 0.2 - 0.05 * t) - 0.5) * 0.3
+        xx, yy = x + wx, y + wy + 0.12 * t * t
+        rr = np.sqrt(xx * xx + yy * yy)
+        billow = fbm(xx * 0.45 - 0.08 * t, yy * 0.45 + 0.15 * t, t * 3)
+        tongues = (np.sin(ang * 9 + billow * 6) * 0.5 + 0.5) ** 3 * smooth(0.0, 0.5, t) * (1 - t)
+        edge = rr / R + (billow - 0.5) * 0.7 - tongues * 0.22
+        dens = smooth(1.08, 0.62, edge)
+        # к концу середина выгорает
+        dens *= 1 - 0.6 * smooth(0.45, 1.0, t) * smooth(0.55, 0.0, rr / R)
+        heat = (1.0 - rr / R) * 1.25 + (billow - 0.5) * 0.7
+        heat = heat * (1.15 - 1.05 * t ** 0.75) + 0.35 * (1 - t)
+        col = ramp(heat)
+        # мягкий объём: подсветка сверху-слева по градиенту плотности
+        sh = shade(dens, 0.55)[..., None]
+        # объём без смены оттенка: тень — темнее, свет — к белому (иначе край зеленит)
+        col = np.where(sh < 1, col * (0.75 + 0.25 * sh), col + (1 - col) * np.clip(sh - 1, 0, 1) * 0.35)
+        col = np.clip(col, 0, 1)
+        # дым темнеет и сереет к концу
+        smoke_k = smooth(0.35, 0.9, t) * smooth(0.55, 0.15, heat)
+        col = col * (1 - smoke_k[..., None]) + np.array([0.33, 0.28, 0.34]) * smoke_k[..., None] * shade(dens, 0.9)[..., None]
+        a = dens * (1 - smooth(0.7, 1.0, t))
+        a = gaussian_filter(a, 0.8)
+        f = np.zeros((size, size, 4))
+        f[..., :3] = np.clip(col, 0, 1)
+        f[..., 3] = np.clip(a, 0, 1)
+        # свечение вокруг огня (пока горячо)
+        glow = np.exp(-(r / (R * 1.25)) ** 2) * (1 - t) ** 2 * 0.55
+        add = glow * (1 - f[..., 3])
+        f[..., :3] = (f[..., :3] * f[..., 3:4] + np.array([1.0, 0.7, 0.3]) * add[..., None]) / np.maximum(f[..., 3:4] + add[..., None], 1e-4)
+        f[..., 3] = np.clip(f[..., 3] + add, 0, 1)
+        # искры с хвостами
+        if t < 0.75:
+            for th, sp, br in sparks:
+                d1 = 0.15 + sp * (1 - (1 - t) ** 2) * 0.95
+                d0 = max(0.1, d1 - 0.18 * (1 - t))
+                px = np.cos(th) * x + np.sin(th) * y
+                py = -np.sin(th) * x + np.cos(th) * y + 0.25 * t * t * np.cos(th - np.pi / 2)
+                m = np.exp(-(py / 0.014) ** 2) * smooth(d0, d0 + 0.05, px) * smooth(d1 + 0.01, d1 - 0.02, px)
+                m = m * br * (1 - t / 0.75)
+                f[..., :3] = f[..., :3] * (1 - m[..., None]) + np.array([1.0, 0.92, 0.55]) * m[..., None]
                 f[..., 3] = np.maximum(f[..., 3], m)
-        # белая вспышка в первых кадрах
-        if t < 0.18:
-            fl = np.exp(-(r / (0.3 + 0.8 * t)) ** 2) * (1 - t / 0.18)
+        # белая вспышка в начале
+        if t < 0.15:
+            fl = np.exp(-(r / (0.25 + 1.2 * t)) ** 2) * (1 - t / 0.15)
             f[..., :3] = f[..., :3] * (1 - fl[..., None]) + fl[..., None]
             f[..., 3] = np.maximum(f[..., 3], fl)
-        # мягкость: лёгкое размытие, чтобы клубы не выглядели пластиковыми
-        for ch in range(4):
-            f[..., ch] = gaussian_filter(f[..., ch], 1.1)
         frames.append(f)
     save("explosion", frames, 6)
 
