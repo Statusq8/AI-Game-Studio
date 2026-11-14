@@ -189,8 +189,27 @@ static func make(n: int) -> Dictionary:
 	elif n % 5 == 0:
 		lv["hard"] = 1
 		lv.moves -= 2
+	_trim_goals(lv)
+	# ходов — в разумных рамках: обычный уровень 18–26, сложный 16–24, очень сложный 15–22
+	var hard := int(lv.get("hard", 0))
+	lv.moves = clampi(lv.moves, [18, 16, 15][hard], [26, 24, 22][hard])
 	lv["seed"] = rng.randi()
 	return lv
+
+
+## Не больше 3 целей (на сложных — 4). Лишние убираем, начиная с «собери цвет»:
+## при препятствиях оставляем максимум одну цель по цвету.
+static func _trim_goals(lv: Dictionary) -> void:
+	var cap := 4 if int(lv.get("hard", 0)) > 0 else 3
+	var colors: Array = lv.goals.filter(func(g: Dictionary) -> bool: return g.kind == "color")
+	var others: Array = lv.goals.filter(func(g: Dictionary) -> bool: return g.kind != "color")
+	if not others.is_empty() and colors.size() > 1:
+		colors = colors.slice(0, 1)
+	while colors.size() + others.size() > cap and not colors.is_empty():
+		colors.pop_back()
+	while others.size() > cap:
+		others.pop_back()
+	lv.goals = colors + others
 
 
 ## Большие препятствия 2×2 (как в Royal Match): камень, цветок, клетка.
