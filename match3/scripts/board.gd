@@ -1748,6 +1748,76 @@ func spawn_specials(n: int, kind: int) -> Array:
 	return out
 
 
+## Бонусы на старте прилетают на поле снизу (от панели бустеров) по дуге, крутясь, с искрами,
+## и «приземляются» в фишку со вспышкой. delay — когда стартует полёт.
+func spawn_specials_animated(n: int, kind: int, delay: float) -> void:
+	var pool: Array = []
+	for x in W:
+		for y in H:
+			var g := gem_at(Vector2i(x, y))
+			if g and g.special == Gem.NONE and not _chained(g.cell) and not g.has_meta("incoming"):
+				pool.append(g)
+	pool.shuffle()
+	for i in mini(n, pool.size()):
+		var g: Node2D = pool[i]
+		var k := kind
+		if k == Gem.ROCKET_H:
+			k = Gem.ROCKET_H if rng.randf() < 0.5 else Gem.ROCKET_V
+		g.set_meta("incoming", true)
+		get_tree().create_timer(delay + i * 0.15).timeout.connect(_fly_special_in.bind(g, k))
+
+
+func _fly_special_in(g: Node2D, k: int) -> void:
+	if not is_instance_valid(g) or tiles[g.cell.x][g.cell.y] != g or g.special != Gem.NONE:
+		# фишку уже собрали — бонус ляжет в любую другую обычную
+		var alt: Array = []
+		for x in W:
+			for y in H:
+				var o := gem_at(Vector2i(x, y))
+				if o and o.special == Gem.NONE and not _chained(o.cell):
+					alt.append(o)
+		if alt.is_empty():
+			return
+		g = alt[rng.randi_range(0, alt.size() - 1)]
+	g.remove_meta("incoming")
+	if fx == null:
+		g.set_special(k)
+		return
+	var gs := get_global_transform().get_scale()
+	var s: Node2D = Gem.new()
+	s.color = g.color
+	s.size = CELL * 0.9
+	s.set_special(k)
+	s.z_index = 10
+	fx.add_child(s)
+	var p0 := fx.to_local(to_global(Vector2(board_size().x / 2.0, board_size().y + CELL * 2.2)))
+	var p2 := fx.to_local(to_global(cell_pos(g.cell)))
+	var p1 := (p0 + p2) / 2.0 + Vector2(randf_range(-180, 180), -CELL * 3.0 * gs.y)
+	var last := [p0]
+	Sfx.play("swap", 0.8)
+	var tw := s.create_tween()
+	tw.tween_method(func(t: float) -> void:
+		var q := p0.lerp(p1, t).lerp(p1.lerp(p2, t), t)
+		s.position = q
+		s.rotation = TAU * t * 1.5
+		var lift := 4.0 * t * (1.0 - t)
+		s.scale = gs * (0.6 + 0.9 * lift + 0.4 * t)
+		if q.distance_to(last[0]) > 26.0:
+			last[0] = q
+			_sparkles(q, Color("#fff3b0"), 1), 0.0, 1.0, 0.6).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_callback(func() -> void:
+		s.queue_free()
+		if not is_instance_valid(g):
+			return
+		g.set_special(k)
+		g.scale = Vector2(1.5, 1.5)
+		var pt := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		pt.tween_property(g, "scale", Vector2.ONE, 0.3)
+		_pop_ring(p2, Color("#fff6b0"))
+		_sparkles(p2, Color("#fff6b0"), 8)
+		Sfx.play("special"))
+
+
 func spawn_bonus_rockets(n: int) -> Array:
 	return spawn_specials(n, Gem.ROCKET_H)
 

@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "2.3.0"
+const VERSION := "2.4.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1623,21 +1623,38 @@ func _start_level(n: int) -> void:
 	_update_moves()
 	_aiming = ""
 	_board.target_cb = Callable()
+	# бонусы на старте прилетают на поле по очереди (после того как упадут фишки)
+	var fly_kinds: Array = []
 	for b in PRE_BOOSTERS:
 		if _pre_selected.get(b[0], false) and Save.use_booster(b[0]):
-			_board.spawn_specials(1, b[2])
+			fly_kinds.append(b[2])
 	# серия побед (ослаблено по плейтесту): 3 победы — ракета, 5 — ещё бомба, 8 — ещё шар
 	var bonus := [[3, 1], [5, 3], [8, 4]]
 	for b in bonus:
 		if Save.streak >= b[0]:
-			_board.spawn_specials(1, b[1])
+			fly_kinds.append(b[1])
 	# супер-бонус: 10 побед подряд — ещё один радужный шар и бабочка
 	if Save.streak >= 10:
-		_board.spawn_specials(1, 4)
-		_board.spawn_specials(1, 5)
+		fly_kinds.append(4)
+		fly_kinds.append(5)
+	for i in fly_kinds.size():
+		if _bot:
+			_board.spawn_specials(1, fly_kinds[i])
+		else:
+			_board.spawn_specials_animated(1, fly_kinds[i], 1.1 + i * 0.35)
 	_pre_selected.clear()
 	_refresh_boosters()
 	_layout_bar()
+	# кнопки бустеров выпрыгивают по очереди
+	var bi := 0
+	for btn: Control in _booster_bar.get_children():
+		btn.pivot_offset = btn.custom_minimum_size / 2.0
+		btn.scale = Vector2.ZERO
+		var bt := btn.create_tween()
+		bt.tween_interval(0.35 + bi * 0.09)
+		bt.tween_property(btn, "scale", Vector2(1.15, 1.15), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		bt.tween_property(btn, "scale", Vector2.ONE, 0.1)
+		bi += 1
 	_state = "play"
 	_intro_banner()
 
@@ -2411,10 +2428,14 @@ func _show_win() -> void:
 	Save.add_coins(coins)
 	Save.vibrate(60)
 	var v := _dialog("Уровень %d" % _level.n, [], [])
+	# окно победы шире, лента выше — звезду на окне видно целиком
+	var wpanel := v.get_parent() as Control
+	wpanel.custom_minimum_size.x = 650
+	(wpanel.get_parent() as Control).add_theme_constant_override("separation", -4)
 	var font: Font = UiTheme.title_font()
 	# крупная объёмная похвала
-	var praise := _big_text(["Отлично!", "Здорово!", "Супер!", "Молодец!"][_level.n % 4], 66, Color("#ffe14d"), Color("#ff9a1a"))
-	praise.custom_minimum_size = Vector2(0, 96)
+	var praise := _big_text(["Отлично!", "Здорово!", "Супер!", "Молодец!"][_level.n % 4], 88, Color("#ffe14d"), Color("#ff9a1a"))
+	praise.custom_minimum_size = Vector2(0, 140)
 	praise.set_meta("no_banner", true)
 	v.add_child(praise)
 	# большое число монет рядом с горкой монет на пеньке, число «набегает»
