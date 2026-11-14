@@ -85,7 +85,29 @@ func _draw_star_cost(c: Vector2, cost: int) -> void:
 	draw_string(f, c + Vector2(4, 8), str(cost), HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE)
 
 
+## Картинка из assets/art/<name>.png (кэш), null — если её нет.
+static func art(name: String) -> Texture2D:
+	var key := "@" + name
+	if not _tex.has(key):
+		var path := "res://assets/art/%s.png" % name
+		_tex[key] = load(path) if ResourceLoader.exists(path) else null
+	return _tex[key]
+
+
+## Рисует картинку по центру c так, чтобы большая сторона была = box. false — если картинки нет.
+static func draw_art(ci: CanvasItem, name: String, c: Vector2, box: float) -> bool:
+	var t := art(name)
+	if t == null:
+		return false
+	var sz := t.get_size()
+	var k := box / maxf(sz.x, sz.y)
+	ci.draw_texture_rect(t, Rect2(c - sz * k / 2.0, sz * k), false)
+	return true
+
+
 static func draw_star(ci: CanvasItem, c: Vector2, r: float) -> void:
+	if draw_art(ci, "ui_star", c, r * 2.3):
+		return
 	var p := PackedVector2Array()
 	for i in 10:
 		var a := TAU * i / 10.0 - PI / 2.0

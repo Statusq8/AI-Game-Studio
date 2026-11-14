@@ -256,6 +256,10 @@ func _draw_propeller(r: float) -> void:
 
 ## Предмет, который нужно спустить на нижний ряд (заглушка: золотое яйцо).
 func _draw_item(r: float) -> void:
+	var t := tex("item_egg")
+	if t:
+		_draw_tex(t, r * 2.15)
+		return
 	var egg := PackedVector2Array()
 	for i in 32:
 		var a := TAU * i / 32.0

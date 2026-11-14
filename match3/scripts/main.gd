@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "1.4.2"
+const VERSION := "1.5.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -148,6 +148,8 @@ func _coin_pill() -> Control:
 	icon.custom_minimum_size = Vector2(40, 40)
 	icon.draw.connect(func() -> void:
 		var c := icon.size / 2
+		if Zoo.draw_art(icon, "ui_coin", c, 44.0):
+			return
 		icon.draw_circle(c, 19, Color("#c98a12"))
 		icon.draw_circle(c, 15, Color("#ffd23f"))
 		icon.draw_circle(c + Vector2(-5, -5), 4, Color(1, 1, 1, 0.8)))
@@ -181,6 +183,8 @@ func _hearts_pill() -> Control:
 
 
 static func draw_heart(ci: CanvasItem, c: Vector2, r: float) -> void:
+	if Zoo.draw_art(ci, "ui_heart", c, r * 2.4):
+		return
 	var pts := PackedVector2Array()
 	for i in 40:
 		var t := TAU * i / 40.0
@@ -357,13 +361,15 @@ func _avatar() -> Control:
 	c.custom_minimum_size = Vector2(64, 64)
 	c.draw.connect(func() -> void:
 		var m := c.size / 2
-		c.draw_circle(m, 31, Color("#f0b34a"))
-		c.draw_circle(m, 27, Color.WHITE)
-		for dx in [-14, 14]:
+		if not Zoo.draw_art(c, "ui_avatar", m, 68.0):
+			c.draw_circle(m, 31, Color("#f0b34a"))
+			c.draw_circle(m, 27, Color.WHITE)
+		for dx in ([] if Zoo.art("ui_avatar") else [-14, 14]):
 			c.draw_circle(m + Vector2(dx, -16), 8, Color("#2b2b33"))
 			c.draw_circle(m + Vector2(dx * 0.6, -2), 7, Color("#2b2b33"))
 			c.draw_circle(m + Vector2(dx * 0.6, -3), 2.5, Color.WHITE)
-		c.draw_circle(m + Vector2(0, 8), 4, Color("#2b2b33"))
+		if not Zoo.art("ui_avatar"):
+			c.draw_circle(m + Vector2(0, 8), 4, Color("#2b2b33"))
 		var f: Font = ThemeDB.fallback_font
 		c.draw_circle(m + Vector2(22, 22), 13, Color("#3fb85a"))
 		var lvl := str(Save.level)
@@ -929,6 +935,16 @@ func _round_button(kind: String, base: Color) -> Button:
 		var active: bool = btn.get_meta("active")
 		var col := Color("#ffb020") if active else base
 		btn.draw_circle(c + Vector2(0, 7), 54, Color(0, 0, 0, 0.3))
+		if kind == "pause" and Zoo.art("ui_pause"):
+			Zoo.draw_art(btn, "ui_pause", c + off, 112.0)
+			return
+		if Zoo.art("ui_round_btn"):
+			if active:
+				btn.draw_circle(c + off, 58, Color("#ffe14d"))
+			Zoo.draw_art(btn, "ui_round_btn", c + off, 112.0)
+			_draw_tool_icon(btn, kind, c + off)
+			_draw_count(btn, c)
+			return
 		btn.draw_circle(c + off, 54, Color("#ffcf5a"))
 		btn.draw_circle(c + off, 49, col.darkened(0.45))
 		btn.draw_circle(c + off + Vector2(0, -3), 45, col)
@@ -937,6 +953,14 @@ func _round_button(kind: String, base: Color) -> Button:
 		btn.draw_circle(Vector2.ZERO, 16, Color(1, 1, 1, 0.45))
 		btn.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		_draw_tool_icon(btn, kind, c + off)
+		_draw_count(btn, c))
+	btn.button_down.connect(btn.queue_redraw)
+	btn.button_up.connect(btn.queue_redraw)
+	return btn
+
+
+## Красный кружок с количеством бустера (или «+», если их нет).
+func _draw_count(btn: Button, c: Vector2) -> void:
 		var n: int = btn.get_meta("count")
 		if n >= 0:
 			var bc := c + Vector2(36, 38)
@@ -945,14 +969,20 @@ func _round_button(kind: String, base: Color) -> Button:
 			var f: Font = load("res://assets/fonts/RussoOne-Regular.ttf")
 			var t := str(n) if n > 0 else "+"
 			var ts := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 22)
-			btn.draw_string(f, bc + Vector2(-ts.x / 2, 7), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE))
-	btn.button_down.connect(btn.queue_redraw)
-	btn.button_up.connect(btn.queue_redraw)
-	return btn
+			btn.draw_string(f, bc + Vector2(-ts.x / 2, 7), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE)
 
 
 func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 	var ink := Color("#3a2a1a")
+	var art := {"hammer": "ui_hammer", "arrow": "ui_arrow", "cannon": "ui_arrow", "shuffle": "ui_shuffle"}
+	if art.has(kind) and Zoo.art(art[kind]):
+		if kind == "cannon":
+			ci.draw_set_transform(c, PI / 2.0, Vector2.ONE)
+			Zoo.draw_art(ci, art[kind], Vector2.ZERO, 70.0)
+			ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		else:
+			Zoo.draw_art(ci, art[kind], c, 70.0)
+		return
 	match kind:
 		"hammer":
 			ci.draw_set_transform(c, -0.6, Vector2.ONE)
@@ -1293,10 +1323,11 @@ func _x2_badge() -> Button:
 	b.draw.connect(func() -> void:
 		var c := Vector2(31, 31)
 		b.draw_circle(c + Vector2(0, 4), 29, Color(0, 0, 0, 0.3))
-		b.draw_circle(c, 29, Color("#8a2a9a"))
-		b.draw_circle(c, 25, Color("#c04ad8"))
-		b.draw_circle(c + Vector2(0, -5), 18, Color("#d97cec"))
-		b.draw_arc(c, 28, 0, TAU, 32, Color("#ffcf3a"), 4.0, true)
+		if not Zoo.draw_art(b, "ui_x2", c, 66.0):
+			b.draw_circle(c, 29, Color("#8a2a9a"))
+			b.draw_circle(c, 25, Color("#c04ad8"))
+			b.draw_circle(c + Vector2(0, -5), 18, Color("#d97cec"))
+			b.draw_arc(c, 28, 0, TAU, 32, Color("#ffcf3a"), 4.0, true)
 		var t := "x2"
 		var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 26)
 		var p := c + Vector2(-ts.x / 2, 9)
@@ -1642,7 +1673,7 @@ func _on_gem_cleared(color: int, at: Vector2) -> void:
 const GOAL_NAMES := {"stone": "камни", "colorbox": "цветные ящики", "birdhouse": "скворечник", "color": "фишки", "crate": "ящики", "vase": "горшки", "chain": "лианы", "grass": "газон", "item": "яйца",
 	"ice": "лёд", "honey": "мёд", "safe": "сейфы", "jar": "банки", "cage": "клетки", "balloon": "шарики", "flower": "цветы", "bush": "кусты", "shell": "ракушки"}
 const GOAL_TEX := {"crate": "ob_crate_0", "vase": "ob_pot_0", "chain": "ob_vines", "grass": "ob_tile_grass", "ice": "ob_tile_ice",
-	"honey": "ob_honey", "safe": "ob_safe", "jar": "ob_jar", "cage": "ob_cage", "balloon": "ob_balloon", "flower": "ob_flower_0", "bush": "ob_bush", "shell": "ob_shell_0"}
+	"honey": "ob_honey", "safe": "ob_safe", "jar": "ob_jar", "cage": "ob_cage", "balloon": "ob_balloon", "flower": "ob_flower_0", "bush": "ob_bush", "shell": "ob_shell_0", "item": "item_egg"}
 
 
 func _on_goal_hit(kind: String, at: Vector2) -> void:
@@ -1723,6 +1754,8 @@ func _check_badge(icon: Control) -> void:
 	b.draw.connect(func() -> void:
 		var c := Vector2(22, 22)
 		b.draw_circle(c + Vector2(0, 3), 21, Color(0, 0, 0, 0.3))
+		if Zoo.draw_art(b, "ui_check", c, 46.0):
+			return
 		b.draw_circle(c, 21, Color("#1e6b2a"))
 		b.draw_circle(c, 18, Color("#3fc25a"))
 		b.draw_circle(c + Vector2(0, -4), 13, Color("#6fe07f"))
@@ -1870,7 +1903,22 @@ func _leaf_curtain(side: int) -> Control:
 			leaves.append([Vector2(col * 64.0 + rng.randf_range(-14, 14) + (32.0 if row % 2 else 0.0), row * 64.0 + rng.randf_range(-10, 10)),
 				rng.randf_range(-0.6, 0.6) + (PI if rng.randf() < 0.5 else 0.0), rng.randf_range(0.85, 1.25), rng.randi_range(0, 2)])
 	var greens := [Color("#2f9e3a"), Color("#3fb84a"), Color("#56c95a")]
+	var art := Zoo.art("ui_curtain")
 	c.draw.connect(func() -> void:
+		if art:
+			# картинка: листья, золотой кант справа; для правой половины — зеркально
+			var asz := art.get_size()
+			var k := maxf(c.size.y / asz.y, c.size.x / asz.x)
+			var w := asz.x * k
+			# кант волнистый, за ним прозрачная полоска — сдвигаем к центру, чтобы половины сомкнулись
+			var lap := w * 0.07
+			if side < 0:
+				c.draw_texture_rect(art, Rect2(Vector2(c.size.x - w + lap, 0), Vector2(w, asz.y * k)), false)
+			else:
+				c.draw_set_transform(Vector2(w - lap, 0), 0.0, Vector2(-1, 1))
+				c.draw_texture_rect(art, Rect2(Vector2.ZERO, Vector2(w, asz.y * k)), false)
+				c.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			return
 		c.draw_rect(Rect2(Vector2.ZERO, c.size), Color("#1d6b2a"))
 		for L in leaves:
 			var p: Vector2 = L[0]
@@ -1907,6 +1955,8 @@ func _paw_medal() -> Control:
 	m.draw.connect(func() -> void:
 		var c := m.size / 2
 		m.draw_circle(c + Vector2(0, 8), 96, Color(0, 0, 0, 0.3))
+		if Zoo.draw_art(m, "ui_medallion", c, 200.0):
+			return
 		if slot:
 			m.draw_texture_rect(slot, Rect2(Vector2.ZERO, m.size), false)
 		var paw := Color("#ffd23f")
@@ -2031,8 +2081,14 @@ func _show_win() -> void:
 	pile.set_meta("val", 0)
 	pile.draw.connect(func() -> void:
 		var cx := pile.size.x / 2
+		var pile_art := Zoo.art("ui_coin_pile")
+		if pile_art:
+			var ps := pile_art.get_size() * (200.0 / pile_art.get_size().y)
+			pile.draw_texture_rect(pile_art, Rect2(Vector2(cx - 20, 0), ps), false)
 		# пенёк-подставка
 		var base := Vector2(cx + 10, 168)
+		if pile_art:
+			base = Vector2(-9999, -9999)
 		pile.draw_set_transform(base, 0.0, Vector2(1.0, 0.32))
 		pile.draw_circle(Vector2(0, 30), 128, Color(0, 0, 0, 0.18))
 		pile.draw_circle(Vector2.ZERO, 120, Color("#8a5326"))
@@ -2102,13 +2158,15 @@ func _show_win() -> void:
 	ad.disabled = not Ads.is_ready()
 	ad.draw.connect(func() -> void:
 		# значок видео слева и «x2» справа
-		var c := Vector2(42, ad.size.y / 2 - 4)
-		ad.draw_rect(Rect2(c - Vector2(20, 14), Vector2(40, 28)), Color("#2b2350"))
-		ad.draw_rect(Rect2(c - Vector2(17, 11), Vector2(34, 22)), Color("#5fa8ff"))
-		ad.draw_colored_polygon(PackedVector2Array([c + Vector2(-6, -8), c + Vector2(9, 0), c + Vector2(-6, 8)]), Color.WHITE)
+		var c := Vector2(44, ad.size.y / 2 - 4)
+		if not Zoo.draw_art(ad, "ui_video", c, 50.0):
+			ad.draw_rect(Rect2(c - Vector2(20, 14), Vector2(40, 28)), Color("#2b2350"))
+			ad.draw_rect(Rect2(c - Vector2(17, 11), Vector2(34, 22)), Color("#5fa8ff"))
+			ad.draw_colored_polygon(PackedVector2Array([c + Vector2(-6, -8), c + Vector2(9, 0), c + Vector2(-6, 8)]), Color.WHITE)
 		var bc := Vector2(ad.size.x - 26, 18)
-		ad.draw_circle(bc, 20, Color("#8a2a9a"))
-		ad.draw_circle(bc, 16, Color("#c04ad8"))
+		if not Zoo.draw_art(ad, "ui_x2", bc, 46.0):
+			ad.draw_circle(bc, 20, Color("#8a2a9a"))
+			ad.draw_circle(bc, 16, Color("#c04ad8"))
 		var ts := font.get_string_size("x2", HORIZONTAL_ALIGNMENT_LEFT, -1, 22)
 		ad.draw_string_outline(font, bc + Vector2(-ts.x / 2, 8), "x2", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, 6, Color("#3a0a48"))
 		ad.draw_string(font, bc + Vector2(-ts.x / 2, 8), "x2", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE))
@@ -2133,6 +2191,8 @@ func _show_win() -> void:
 	close.draw.connect(func() -> void:
 		var c := Vector2(38, 38)
 		close.draw_circle(c + Vector2(0, 4), 34, Color(0, 0, 0, 0.3))
+		if Zoo.draw_art(close, "ui_close", c, 76.0):
+			return
 		close.draw_circle(c, 34, Color("#ffcf3a"))
 		close.draw_circle(c, 29, Color("#a0101c"))
 		close.draw_circle(c + Vector2(0, -3), 25, Color("#e8283c"))
