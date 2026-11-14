@@ -953,7 +953,7 @@ func _cascade(prefer: Array) -> void:
 			var kind := _special_for(g)
 			if kind != Gem.NONE:
 				var at := _creation_cell(g, prefer, kind)
-				creations.append({"cell": at, "kind": kind, "color": color_at(at)})
+				creations.append({"cell": at, "kind": kind, "color": color_at(at), "cells": g.cells})
 		# ящики рядом с совпадениями получают удар (цветной ящик — только от своего цвета)
 		for c: Vector2i in to_clear:
 			var mc := color_at(c)
@@ -969,20 +969,34 @@ func _cascade(prefer: Array) -> void:
 		Sfx.play("match_%d" % mini(wave - 1, 7))
 		if not creations.is_empty():
 			Sfx.play("special", 1.0, -2.0)
+			await _merge_into(creations)
 		await _clear(to_clear, grassify)
 		for cr in creations:
 			var cell: Vector2i = cr.cell
 			if gem_at(cell) == null and _fillable(cell):
 				var ng := _new_gem(cr.color, cr.kind)
 				_place(ng, cell)
-				ng.scale = Vector2(0.2, 0.2)
-				var ct := create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-				ct.tween_property(ng, "scale", Vector2(1.35, 1.35), 0.2)
-				ct.tween_property(ng, "scale", Vector2.ONE, 0.15)
+				# бонус «выпрыгивает» из слившихся фишек: вспышка, кольцо, искры, крутанулся и подпрыгнул
+				ng.z_index = 4
+				ng.scale = Vector2.ZERO
+				ng.rotation = -0.6
+				ng.modulate = Color(2.2, 2.2, 2.2)
+				var ct := create_tween().set_parallel(true)
+				ct.tween_property(ng, "scale", Vector2(1.55, 1.55), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+				ct.tween_property(ng, "rotation", 0.0, 0.3).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+				ct.tween_property(ng, "modulate", Color.WHITE, 0.3)
+				ct.chain().tween_property(ng, "scale", Vector2(0.9, 1.1), 0.08)
+				ct.chain().tween_property(ng, "scale", Vector2.ONE, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+				ct.chain().tween_callback(func() -> void: ng.z_index = 0)
 				if fx:
 					var at := fx.to_local(to_global(cell_pos(cell)))
+					var tint: Color = Gem.COLORS[cr.color] if cr.color >= 0 and cr.color < Gem.COLORS.size() else Color("#fff6b0")
+					_glow_flash(at, tint.lerp(Color.WHITE, 0.4), CELL * 2.2, 0.35)
 					_pop_ring(at, Color("#fff6b0"))
-					_sparkles(at, Color("#fff6b0"), 8)
+					_sparkles(at, Color("#fff6b0"), 12)
+					for i in 6:
+						var ang := TAU * i / 6.0
+						_droplet(at, tint.lerp(Color.WHITE, 0.3), 12.0, Vector2(cos(ang), sin(ang) - 0.6) * 260.0, 0.5)
 		await _gravity()
 		prefer = []
 	if _player_move:
@@ -1268,6 +1282,10 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 		var col: int = g.color
 		if col >= 0:
 			gem_cleared.emit(col, to_global(cell_pos(c)))
+		if g.has_meta("merged"):
+			# фишка уже слилась в бонус — без хлопка
+			g.queue_free()
+			continue
 		var dl: float = delay_of.get(c, 0.0)
 		var sk: int = g.special
 		if sk != Gem.NONE or col < 0:
@@ -1816,6 +1834,33 @@ func _fly_special_in(g: Node2D, k: int) -> void:
 		_pop_ring(p2, Color("#fff6b0"))
 		_sparkles(p2, Color("#fff6b0"), 8)
 		Sfx.play("special"))
+
+
+## Фишки группы слетаются к клетке будущего бонуса: сжимаются, светлеют, с «втягиванием».
+func _merge_into(creations: Array) -> void:
+	var any := false
+	for cr in creations:
+		var target := cell_pos(cr.cell)
+		for c: Vector2i in cr.cells:
+			var g := gem_at(c)
+			if g == null or g.special != Gem.NONE or g.color < 0 or g.has_meta("merged"):
+				continue
+			g.set_meta("merged", true)
+			g.z_index = 3
+			any = true
+			var tw := create_tween().set_parallel(true)
+			if c == cr.cell:
+				tw.tween_property(g, "scale", Vector2(1.3, 1.3), 0.2).set_trans(Tween.TRANS_SINE)
+				tw.tween_property(g, "modulate", Color(1.8, 1.8, 1.8), 0.2)
+			else:
+				# чуть отпрянуть назад и рвануть к центру
+				var back := g.position + (g.position - target).normalized() * 6.0
+				tw.tween_property(g, "position", back, 0.06)
+				tw.chain().tween_property(g, "position", target, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+				tw.tween_property(g, "scale", Vector2(0.55, 0.55), 0.16).set_ease(Tween.EASE_IN)
+				tw.tween_property(g, "modulate", Color(1.6, 1.6, 1.6, 0.85), 0.16)
+	if any:
+		await get_tree().create_timer(0.23).timeout
 
 
 func spawn_bonus_rockets(n: int) -> Array:

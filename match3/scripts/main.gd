@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "2.4.0"
+const VERSION := "2.5.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -2435,21 +2435,21 @@ func _show_win() -> void:
 	var font: Font = UiTheme.title_font()
 	# крупная объёмная похвала
 	var praise := _big_text(["Отлично!", "Здорово!", "Супер!", "Молодец!"][_level.n % 4], 88, Color("#ffe14d"), Color("#ff9a1a"))
-	praise.custom_minimum_size = Vector2(0, 140)
+	praise.custom_minimum_size = Vector2(0, 130)
 	praise.set_meta("no_banner", true)
 	v.add_child(praise)
 	# большое число монет рядом с горкой монет на пеньке, число «набегает»
 	var pile := Control.new()
-	pile.custom_minimum_size = Vector2(0, 200)
+	pile.custom_minimum_size = Vector2(0, 236)
 	pile.set_meta("val", 0)
 	pile.draw.connect(func() -> void:
 		var cx := pile.size.x / 2
 		var pile_art := Zoo.art("ui_coin_pile")
 		# число + горка — одной группой строго по центру окна
 		var txt0 := str(int(pile.get_meta("val")))
-		var tw0 := font.get_string_size(str(coins), HORIZONTAL_ALIGNMENT_LEFT, -1, 92).x
+		var tw0 := font.get_string_size(str(coins), HORIZONTAL_ALIGNMENT_LEFT, -1, 112).x
 		if pile_art:
-			var ps := pile_art.get_size() * (190.0 / pile_art.get_size().y)
+			var ps := pile_art.get_size() * (232.0 / pile_art.get_size().y)
 			var group := tw0 + 16.0 + ps.x
 			cx = pile.size.x / 2 - group / 2 + tw0 + 30.0
 			# тёплое свечение и искры за монетами
@@ -2491,9 +2491,9 @@ func _show_win() -> void:
 			pile.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		# число
 		var txt := txt0
-		var fs := 92
+		var fs := 112
 		var ts := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-		var p := Vector2(cx - 30 - tw0 + (tw0 - ts.x) / 2.0, 130)
+		var p := Vector2(cx - 30 - tw0 + (tw0 - ts.x) / 2.0, 160)
 		for d in range(12, 0, -1):
 			pile.draw_string_outline(font, p + Vector2(0, d), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 16, Color("#2a1440"))
 			pile.draw_string(font, p + Vector2(0, d), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#c98a12"))
@@ -2581,7 +2581,7 @@ func _show_win() -> void:
 	var box: Control = v.get_parent().get_parent()
 	box.add_child(close)
 	close.top_level = false
-	var place := func() -> void: close.position = Vector2(box.size.x - 60, 120)
+	var place := func() -> void: close.position = Vector2(box.size.x - 104, 150)
 	box.resized.connect(place)
 	place.call_deferred()
 	get_tree().process_frame.connect(place, CONNECT_ONE_SHOT)
