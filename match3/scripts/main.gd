@@ -7,8 +7,9 @@ const Board := preload("res://scripts/board.gd")
 const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
+const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.14.0"
+const VERSION := "2.15.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -848,10 +849,28 @@ func _make_panda(height: float) -> Control:
 	img.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	img.name = "Img"
 	holder.add_child(img)
+	if _attach_panda_anim(img):
+		return holder
 	var tw := img.create_tween().set_loops()
 	tw.tween_property(img, "scale", Vector2(1.02, 0.975), 0.9).set_trans(Tween.TRANS_SINE)
 	tw.tween_property(img, "scale", Vector2(0.99, 1.02), 0.9).set_trans(Tween.TRANS_SINE)
 	return holder
+
+
+## Живая панда из кадров видео вместо картинки (если кадры есть). Холст кадра выше картинки
+## в 1.5 раза — запас сверху под прыжки; низ (ноги) совпадает с низом картинки.
+func _attach_panda_anim(img: TextureRect) -> bool:
+	if not PandaAnim.available():
+		return false
+	img.texture = null
+	var a := PandaAnim.new()
+	a.name = "Anim"
+	var h := img.size.y * 1.5
+	var w := h * 320.0 / 384.0
+	a.size = Vector2(w, h)
+	a.position = Vector2(img.size.x / 2.0 - w / 2.0, img.size.y - h)
+	img.add_child(a)
+	return true
 
 
 ## Реакция панды: "combo" — подпрыгнуть, "win" — прыгать от радости, "sad" — поникнуть.
@@ -870,9 +889,29 @@ func _panda_react(kind: String) -> void:
 	body.scale = Vector2.ONE
 	if kind == "reset":
 		img.modulate = Color.WHITE
+		if img.has_node("Anim"):
+			img.get_node("Anim").play("idle")
 		return
 	if kind != "sad":
 		img.modulate = Color.WHITE
+	if img.has_node("Anim"):
+		# живая панда: реакцию играет само видео, код добавляет только облачко эмоции
+		var anim: Control = img.get_node("Anim")
+		var vid := {"combo": "happy", "bigcombo": "happy", "goal": "happy", "win": "win", "sad": "sad", "nervous": "nervous"}
+		if vid.has(kind):
+			anim.play(vid[kind])
+		elif kind == "bad":
+			var bt := body.create_tween()
+			body.set_meta("react", bt)
+			for i in 2:
+				bt.tween_property(img, "rotation", -0.08, 0.08)
+				bt.tween_property(img, "rotation", 0.08, 0.1)
+			bt.tween_property(img, "rotation", 0.0, 0.08)
+		var emo := {"combo": "hearts", "bigcombo": "stars", "goal": "check", "win": "stars", "sad": "rain",
+			"nervous": "sweat", "special": "wow", "yawn": "zzz"}
+		if emo.has(kind):
+			_panda_emote(emo[kind])
+		return
 	var t := body.create_tween()
 	body.set_meta("react", t)
 	var squash := func(tw: Tween, sx: float, sy: float, d: float) -> void:
@@ -1074,6 +1113,8 @@ func _hud_panda() -> Control:
 	img.pivot_offset = Vector2(105, 240)
 	img.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	c.add_child(img)
+	if _attach_panda_anim(img):
+		return c
 	var idle := img.create_tween().set_loops()
 	idle.tween_property(img, "scale", Vector2(1.03, 0.97), 0.8).set_trans(Tween.TRANS_SINE)
 	idle.tween_property(img, "scale", Vector2(0.98, 1.03), 0.8).set_trans(Tween.TRANS_SINE)
