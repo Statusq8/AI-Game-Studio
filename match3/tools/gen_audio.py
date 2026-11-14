@@ -216,3 +216,45 @@ lvl_mel = [(74, 1), (79, 1), (78, 1), (76, 1), (74, 1), (71, 1), (72, 1), (76, 1
            (72, 1), (76, 1), (74, 1), (72, 1), (69, 1), (66, 1), (67, 3), (0, 3)]
 waltz("music_level", 112, lvl_bars, lvl_mel)
 print("waltz ok")
+
+
+# ---------- «волшебные» звуки (2026-11-14): челеста, искры, глиссандо арфы ----------
+def sparkle(d=0.5, n=10, lo=84, hi=100):
+    out = np.zeros(int(SR * d))
+    for i in range(n):
+        m = rng.integers(lo, hi)
+        s_ = celesta(note(int(m)), 0.25) * rng.uniform(0.15, 0.4)
+        st = int(rng.uniform(0, d * 0.7) * SR)
+        out[st:st + len(s_)] += s_[:len(out) - st]
+    return out
+
+
+def gliss(ms, step, d_each=0.5, g=1.0, inst=None):
+    inst = inst or (lambda f, d: pluck(f, d, 0.994))
+    out = np.zeros(int(SR * (step * len(ms) + d_each)))
+    for i, m in enumerate(ms):
+        s_ = inst(note(m), d_each) * g
+        st = int(i * step * SR)
+        out[st:st + len(s_)] += s_
+    return out
+
+
+penta_m = [74, 77, 79, 81, 84, 86, 89, 91]
+for i, m in enumerate(penta_m):
+    save(f"match_{i}", mix(celesta(note(m), 0.5), 0.35 * celesta(note(m + 12), 0.3), sparkle(0.4, 3, m + 10, m + 20) * 0.6), 0.6)
+x = t(0.18); save("swap", mix(lowpass(noise(0.18), 0.1) * env(len(x), 0.03, 0.15, 4) * 0.6, celesta(note(88), 0.18) * 0.25), 0.35)
+save("bad", mix(celesta(note(62), 0.25), celesta(note(61), 0.25) * 0.8), 0.4)
+x = t(0.7)
+save("rocket", mix(lowpass(noise(0.7), 0.25) * env(len(x), 0.03, 0.6, 3) * 0.7, gliss([72, 76, 79, 84, 88, 91, 96], 0.05, 0.3, 0.7, celesta), sparkle(0.7, 8)), 0.65)
+x = t(1.2)
+save("bomb", mix((np.sin(2 * np.pi * (80 - 40 * x) * x) * 1.3 + lowpass(noise(1.2), 0.06)) * env(len(x), 0.003, 0.8, 4), sparkle(1.2, 18, 80, 100) * 1.2), 0.95)
+save("orb", mix(gliss([62, 65, 69, 72, 74, 77, 81, 84, 86, 89, 93], 0.045, 0.6, 0.8), gliss([86, 89, 93, 98], 0.12, 0.5, 0.6, celesta), sparkle(1.0, 14)), 0.7)
+x = t(0.7); save("butterfly", mix(noise(0.7) * (0.5 + 0.5 * np.sin(2 * np.pi * 18 * x)) * env(len(x), 0.08, 0.6, 4) * 0.25, gliss([84, 88, 91], 0.12, 0.4, 0.6, celesta)), 0.45)
+x = t(0.3); save("wood", mix((lowpass(noise(0.3), 0.3) + 0.6 * np.sin(2 * np.pi * 170 * x)) * env(len(x), 0.001, 0.12, 8), sparkle(0.3, 3) * 0.6), 0.7)
+save("glass", mix(celesta(1760, 0.4), noise(0.3) * env(int(0.3 * SR), 0.001, 0.05, 10) * 0.5, sparkle(0.4, 4)), 0.55)
+save("special", mix(gliss([72, 76, 79, 84, 88], 0.06, 0.5, 1.0, celesta), sparkle(0.7, 8)), 0.6)
+save("coin", mix(celesta(note(91), 0.4), celesta(note(96), 0.35)), 0.5)
+save("click", celesta(note(84), 0.12), 0.3)
+save("win", mix(gliss([62, 66, 69, 74, 78, 81, 86], 0.09, 1.2, 0.9, celesta), gliss([50, 57, 62], 0.0, 1.8, 0.6), sparkle(2.0, 20)), 0.8)
+save("lose", gliss([74, 70, 67, 62], 0.24, 0.9, 1.0, celesta), 0.6)
+print("magic sfx ok")
