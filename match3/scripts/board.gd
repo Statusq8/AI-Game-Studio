@@ -424,14 +424,15 @@ func _draw() -> void:
 				continue
 			var rect := Rect2(Vector2(x, y) * CELL, Vector2(CELL, CELL))
 			var even := (x + y) % 2 == 0
-			var col := Color("#2f6596", 0.86) if even else Color("#285883", 0.86)
+			# светлая доска (как в топовых три-в-ряд): на тёмном фоне фишки «горят»
+			var col := Color("#dcecf8", 0.97) if even else Color("#c6dcef", 0.97)
 			if grass[x][y]:
 				col = Color("#5cc24a") if even else Color("#4fb33f")
 			elif grass_target[x][y]:
 				col = Color("#8a6440") if even else Color("#7d5a39")
 			draw_rect(rect, col)
 			# мягкая тень сверху клетки — объём
-			draw_rect(Rect2(rect.position, Vector2(CELL, 6)), Color(0, 0, 0, 0.12))
+			draw_rect(Rect2(rect.position, Vector2(CELL, 4)), Color(0.2, 0.35, 0.55, 0.10))
 	# контур доски по форме поля: тёмная кайма снаружи + светлая линия
 	var edges: Array = []
 	for x in W:
@@ -450,10 +451,10 @@ func _draw() -> void:
 					Vector2i.DOWN: edges.append([p0 + Vector2(0, CELL), p0 + Vector2(CELL, CELL), Vector2(0, 1)])
 	for e in edges:
 		var o: Vector2 = e[2]
-		draw_line(e[0] + o * 5 - o.orthogonal().abs() * 5, e[1] + o * 5 + o.orthogonal().abs() * 5, Color("#0b1e33", 0.9), 10.0)
+		draw_line(e[0] + o * 5 - o.orthogonal().abs() * 5, e[1] + o * 5 + o.orthogonal().abs() * 5, Color("#5a3a08"), 10.0)
 	for e in edges:
 		var o: Vector2 = e[2]
-		draw_line(e[0] + o * 1.5 - o.orthogonal().abs() * 1.5, e[1] + o * 1.5 + o.orthogonal().abs() * 1.5, Color("#bfe3ff"), 3.0)
+		draw_line(e[0] + o * 3 - o.orthogonal().abs() * 3, e[1] + o * 3 + o.orthogonal().abs() * 3, Color("#ffcf3a"), 5.0)
 	for x in W:
 		for y in H:
 			if hole[x][y]:

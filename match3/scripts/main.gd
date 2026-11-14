@@ -8,7 +8,7 @@ const Gem := preload("res://scripts/gem.gd")
 const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 
-const VERSION := "2.2.0"
+const VERSION := "2.3.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -49,6 +49,7 @@ var _pre_selected := {}
 var _board_frame: Control
 var _board_clip: Control
 var _pause_btn: Control
+var _bands: Control
 var _moves_label: Label
 var _level_label: Label
 var _goals_box: HBoxContainer
@@ -661,7 +662,7 @@ func _build_level_screen() -> void:
 	add_child(_level_screen)
 	# фон уровня приглушён — внимание на поле
 	var dim := ColorRect.new()
-	dim.color = Color(0.02, 0.06, 0.12, 0.28)
+	dim.color = Color(0.02, 0.06, 0.12, 0.45)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_level_screen.add_child(dim)
@@ -750,6 +751,7 @@ func _build_level_screen() -> void:
 	frame.patch_margin_bottom = 72
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	frame.z_index = 2
+	frame.visible = false  # деревянную рамку убрали: доску обводит тонкая золотая линия по форме
 	var fk := 0.28
 	frame.scale = Vector2(fk, fk)
 	frame.top_level = false
@@ -778,20 +780,30 @@ func _build_level_screen() -> void:
 			_slowmo())
 	_booster_bar = HBoxContainer.new()
 	_booster_bar.alignment = BoxContainer.ALIGNMENT_CENTER
-	_booster_bar.add_theme_constant_override("separation", 14)
+	_booster_bar.add_theme_constant_override("separation", 6)
 	_level_screen.add_child(_booster_bar)
 	for b in IN_BOOSTERS:
 		var btn := _round_button(b[0], Color("#3fb85a"))
 		btn.pressed.connect(_on_booster.bind(b[0]))
 		_booster_bar.add_child(btn)
 		_booster_btns[b[0]] = btn
-	# пауза — маленькая, в левом верхнем углу
+	# пауза — последней кнопкой в ряду бустеров
 	var pause := _round_button("pause", Color("#3f8cff"))
 	pause.pressed.connect(_show_pause)
-	pause.scale = Vector2(0.5, 0.5)
-	pause.z_index = 4
-	_level_screen.add_child(pause)
-	_pause_btn = pause
+	_booster_bar.add_child(pause)
+	# сплошные полосы: шапка сверху и подставка бустеров снизу, с золотой каймой
+	var bands := Control.new()
+	bands.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bands.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bands.draw.connect(func() -> void:
+		var w := bands.size.x
+		var top_h := 238.0
+		_draw_band(bands, Rect2(0, 0, w, top_h), false)
+		var by := _booster_bar.position.y - 14.0
+		_draw_band(bands, Rect2(0, by, w, bands.size.y - by), true))
+	_level_screen.add_child(bands)
+	_level_screen.move_child(bands, 1)
+	_bands = bands
 	_panda = _make_panda(200.0)
 	_panda.visible = false  # на уровне панда — портрет в шапке
 	_level_screen.add_child(_panda)
@@ -1056,7 +1068,7 @@ func _draw_icon_button(btn: Button, kind: String, d: float, base: Color) -> void
 ## Круглая объёмная кнопка бустера: обод, глянец, иконка, красный кружок с количеством.
 func _round_button(kind: String, base: Color) -> Button:
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(132, 132)
+	btn.custom_minimum_size = Vector2(124, 132)
 	btn.flat = true
 	for st in ["normal", "hover", "pressed", "focus", "disabled"]:
 		btn.add_theme_stylebox_override(st, StyleBoxEmpty.new())
@@ -1151,10 +1163,27 @@ func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 
 
 func _layout_bar() -> void:
-	var r := _board_rest()
-	var bottom := r.y + _board_frame.get_combined_minimum_size().y * _board_frame.scale.y
 	_booster_bar.size = Vector2(_level_screen.size.x, 136)
-	_booster_bar.position = Vector2(0, bottom + maxf(8.0, (_level_screen.size.y - bottom - 136.0) * 0.4))
+	_booster_bar.position = Vector2(0, _level_screen.size.y - 136.0 - 14.0)
+	if _bands:
+		_bands.queue_redraw()
+
+
+## Полоса интерфейса: тёмно-зелёный градиент, золотая кайма со стороны поля.
+func _draw_band(ci: CanvasItem, r: Rect2, bottom: bool) -> void:
+	var top_c := Color("#1d6a35")
+	var bot_c := Color("#0f4322")
+	var steps := 12
+	for i in steps:
+		var y0 := r.position.y + r.size.y * i / steps
+		ci.draw_rect(Rect2(r.position.x, y0, r.size.x, r.size.y / steps + 1), top_c.lerp(bot_c, float(i) / steps))
+	# золотая кайма со стороны поля: тёмная линия, золото, тень на поле
+	var gold_y := r.position.y if bottom else r.end.y - 6.0
+	ci.draw_rect(Rect2(r.position.x, gold_y - 2.0, r.size.x, 10.0), Color("#5a3a08"))
+	ci.draw_rect(Rect2(r.position.x, gold_y, r.size.x, 6.0), Color("#ffcf3a"))
+	ci.draw_rect(Rect2(r.position.x, gold_y + 1.0, r.size.x, 2.0), Color("#fff1a8"))
+	var sh_y := gold_y - 8.0 if bottom else gold_y + 8.0
+	ci.draw_rect(Rect2(r.position.x, sh_y, r.size.x, 6.0), Color(0, 0, 0, 0.22))
 
 
 func _refresh_boosters() -> void:
@@ -1219,8 +1248,9 @@ func _fit_board_to_shape() -> void:
 				hi = Vector2i(maxi(hi.x, x), maxi(hi.y, y))
 	if hi.x < 0:
 		return
-	_board_clip.custom_minimum_size = Vector2(hi - lo + Vector2i.ONE) * Board.CELL
-	_board.position = -Vector2(lo) * Board.CELL
+	# +10 px по краям — чтобы золотая обводка доски не обрезалась
+	_board_clip.custom_minimum_size = Vector2(hi - lo + Vector2i.ONE) * Board.CELL + Vector2(20, 20)
+	_board.position = -Vector2(lo) * Board.CELL + Vector2(10, 10)
 	_board_clip.size = _board_clip.custom_minimum_size
 	_board_frame.reset_size()
 	_place_pause()
@@ -1239,7 +1269,7 @@ func _place_pause() -> void:
 func _board_scale() -> float:
 	var s := _board_frame.get_combined_minimum_size()
 	var free_top := 264.0
-	var free_bottom := 140.0
+	var free_bottom := 176.0
 	var k := minf((_level_screen.size.x - 8.0) / s.x, (_level_screen.size.y - free_top - free_bottom) / s.y)
 	var pad := s.x - _board_clip.custom_minimum_size.x
 	var k8 := (_level_screen.size.x - 8.0) / (8.0 * Board.CELL + pad)
@@ -1251,7 +1281,7 @@ func _board_rest() -> Vector2:
 	_board_frame.scale = Vector2(k, k)
 	var s := _board_frame.get_combined_minimum_size() * k
 	var free_top := 264.0
-	var y := free_top + maxf(0.0, (_level_screen.size.y - free_top - 140.0 - s.y) * 0.3)
+	var y := free_top + maxf(0.0, (_level_screen.size.y - free_top - 176.0 - s.y) * 0.5)
 	return Vector2((_level_screen.size.x - s.x) / 2.0, y)
 
 
@@ -2401,6 +2431,17 @@ func _show_win() -> void:
 			var ps := pile_art.get_size() * (190.0 / pile_art.get_size().y)
 			var group := tw0 + 16.0 + ps.x
 			cx = pile.size.x / 2 - group / 2 + tw0 + 30.0
+			# тёплое свечение и искры за монетами
+			var glow := Board.fx_tex("glow")
+			var gc := Vector2(cx - 14, 6) + ps / 2.0
+			var pulse := 0.85 + 0.15 * sin(Time.get_ticks_msec() / 260.0)
+			pile.draw_texture_rect(glow, Rect2(gc - Vector2(230, 170) * pulse, Vector2(460, 340) * pulse), false, Color(1.0, 0.92, 0.55, 0.85))
+			var spk := Board.fx_tex("spark")
+			for k in 7:
+				var a := TAU * k / 7.0 + Time.get_ticks_msec() / 2400.0
+				var sp := gc + Vector2(cos(a) * 170, sin(a) * 95)
+				var sz := 18.0 + 10.0 * sin(Time.get_ticks_msec() / 300.0 + k)
+				pile.draw_texture_rect(spk, Rect2(sp - Vector2(sz, sz) / 2, Vector2(sz, sz)), false, Color(1, 1, 0.85, 0.9))
 			pile.draw_texture_rect(pile_art, Rect2(Vector2(cx - 14, 6), ps), false)
 		# пенёк-подставка
 		var base := Vector2(cx + 10, 168)
@@ -2442,6 +2483,9 @@ func _show_win() -> void:
 			var sp := Vector2(cx - 120 + k * 60, 20 + (k % 2) * 30)
 			pile.draw_circle(sp, 3.0, Color(1, 1, 0.8, 0.9)))
 	v.add_child(pile)
+	var pr := pile.create_tween().set_loops()
+	pr.tween_callback(pile.queue_redraw)
+	pr.tween_interval(0.04)
 	var pt := pile.create_tween()
 	pt.tween_interval(0.3)
 	pt.tween_callback(Sfx.play.bind("coin"))
