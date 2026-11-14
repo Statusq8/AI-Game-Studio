@@ -85,7 +85,8 @@ func _draw() -> void:
 		ROCKET_H, ROCKET_V:
 			t = tex("rocket")
 			if t:
-				_draw_tex(t, box * 1.5, PI / 2.0 if special == ROCKET_V else 0.0, pulse)
+				# вертикальная ракета — носом вверх (раньше носом вниз и казалась перевёрнутой)
+				_draw_tex(t, box * 1.5, -PI / 2.0 if special == ROCKET_V else 0.0, pulse)
 				return
 		BOMB, ORB, PROPELLER:
 			t = tex({BOMB: "bomb", ORB: "orb", PROPELLER: "propeller"}[special])
@@ -187,7 +188,7 @@ func _draw_gem(c: int, r: float) -> void:
 
 
 func _draw_rocket(r: float, vertical: bool) -> void:
-	draw_set_transform(Vector2.ZERO, PI / 2.0 if vertical else 0.0)
+	draw_set_transform(Vector2.ZERO, -PI / 2.0 if vertical else 0.0)
 	var base: Color = COLORS[clampi(color, 0, COLORS.size() - 1)]
 	var pulse := 1.0 + sin(_t * 6.0) * 0.04
 	var w := r * 1.0 * pulse
