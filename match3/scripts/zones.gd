@@ -1,16 +1,18 @@
 extends RefCounted
 ## Зоны зоопарка и задания ремонта (GDD «Зоопарк мечты», раздел 8).
 ## pos — место предмета в долях экрана зоны (x 0..1, y 0..1). kind — как рисовать предмет (заглушка до ИИ-графики).
+## Решение №29: Вход + 7 вольеров карты по порядку — Вход → Панды → Слоны → Обезьяны → Фламинго → Пингвины → Жирафы → Львы.
+## Животное зоны поселяется в её вольере после ремонта (у Входа животного нет). Порядок первых 5 зон не менялся — сохранения совместимы.
 
 const ZONES := [
-	{"name": "Вход и касса", "helper": "Енот Тоша", "animal": "Павлин", "tasks": [
+	{"name": "Вход и касса", "helper": "Енот Тоша", "animal": "", "tasks": [
 		{"name": "Ворота", "kind": "gate", "cost": 2, "pos": Vector2(0.50, 0.33)},
 		{"name": "Касса", "kind": "booth", "cost": 2, "pos": Vector2(0.20, 0.47)},
 		{"name": "Забор", "kind": "fence", "cost": 1, "pos": Vector2(0.80, 0.50)},
 		{"name": "Фонари", "kind": "lamp", "cost": 1, "pos": Vector2(0.33, 0.62)},
 		{"name": "Клумба", "kind": "flowers", "cost": 1, "pos": Vector2(0.68, 0.66)},
 	]},
-	{"name": "Бамбуковая роща", "helper": "Обезьянка Чика", "animal": "Красная панда", "tasks": [
+	{"name": "Бамбуковая роща", "helper": "Обезьянка Чика", "animal": "Большие панды", "tasks": [
 		{"name": "Бамбук", "kind": "tree", "cost": 1, "pos": Vector2(0.18, 0.36)},
 		{"name": "Домик панды", "kind": "house", "cost": 3, "pos": Vector2(0.55, 0.34)},
 		{"name": "Мостик", "kind": "bridge", "cost": 2, "pos": Vector2(0.30, 0.55)},
@@ -47,6 +49,43 @@ const ZONES := [
 		{"name": "Скамейки", "kind": "bench", "cost": 1, "pos": Vector2(0.62, 0.64)},
 		{"name": "Фонтан", "kind": "fountain", "cost": 3, "pos": Vector2(0.18, 0.74)},
 		{"name": "Цветы", "kind": "flowers", "cost": 1, "pos": Vector2(0.82, 0.74)},
+	]},
+	{"name": "Ледяная бухта", "helper": "Пингвин Пип", "animal": "Пингвины", "tasks": [
+		{"name": "Бассейн", "kind": "pond", "cost": 3, "pos": Vector2(0.50, 0.38)},
+		{"name": "Ледяная горка", "kind": "gate", "cost": 2, "pos": Vector2(0.20, 0.32)},
+		{"name": "Снежный домик", "kind": "house", "cost": 2, "pos": Vector2(0.80, 0.32)},
+		{"name": "Ограда", "kind": "fence", "cost": 1, "pos": Vector2(0.50, 0.24)},
+		{"name": "Ёлочки", "kind": "tree", "cost": 1, "pos": Vector2(0.14, 0.52)},
+		{"name": "Мостик", "kind": "bridge", "cost": 2, "pos": Vector2(0.84, 0.52)},
+		{"name": "Кормушка с рыбой", "kind": "booth", "cost": 2, "pos": Vector2(0.32, 0.62)},
+		{"name": "Табличка", "kind": "sign", "cost": 1, "pos": Vector2(0.66, 0.64)},
+		{"name": "Фонари", "kind": "lamp", "cost": 1, "pos": Vector2(0.18, 0.75)},
+		{"name": "Фонтан", "kind": "fountain", "cost": 3, "pos": Vector2(0.80, 0.75)},
+	]},
+	{"name": "Саванна жирафов", "helper": "Жирафик Тим", "animal": "Жирафы", "tasks": [
+		{"name": "Акации", "kind": "tree", "cost": 1, "pos": Vector2(0.16, 0.30)},
+		{"name": "Высокая кормушка", "kind": "booth", "cost": 2, "pos": Vector2(0.50, 0.30)},
+		{"name": "Навес", "kind": "house", "cost": 2, "pos": Vector2(0.82, 0.32)},
+		{"name": "Ограда", "kind": "fence", "cost": 1, "pos": Vector2(0.30, 0.46)},
+		{"name": "Водопой", "kind": "pond", "cost": 3, "pos": Vector2(0.68, 0.47)},
+		{"name": "Смотровая вышка", "kind": "gate", "cost": 2, "pos": Vector2(0.14, 0.62)},
+		{"name": "Мостик", "kind": "bridge", "cost": 2, "pos": Vector2(0.50, 0.62)},
+		{"name": "Скамейки", "kind": "bench", "cost": 1, "pos": Vector2(0.84, 0.64)},
+		{"name": "Цветы", "kind": "flowers", "cost": 1, "pos": Vector2(0.32, 0.76)},
+		{"name": "Табличка", "kind": "sign", "cost": 1, "pos": Vector2(0.66, 0.77)},
+	]},
+	{"name": "Львиная скала", "helper": "Львёнок Лёва", "animal": "Львы", "tasks": [
+		{"name": "Скала", "kind": "house", "cost": 3, "pos": Vector2(0.50, 0.30)},
+		{"name": "Ворота", "kind": "gate", "cost": 2, "pos": Vector2(0.16, 0.32)},
+		{"name": "Ограда", "kind": "fence", "cost": 1, "pos": Vector2(0.84, 0.30)},
+		{"name": "Деревья", "kind": "tree", "cost": 1, "pos": Vector2(0.20, 0.48)},
+		{"name": "Ручей", "kind": "pond", "cost": 2, "pos": Vector2(0.62, 0.47)},
+		{"name": "Мостик", "kind": "bridge", "cost": 2, "pos": Vector2(0.86, 0.50)},
+		{"name": "Табличка", "kind": "sign", "cost": 1, "pos": Vector2(0.36, 0.62)},
+		{"name": "Фонари", "kind": "lamp", "cost": 1, "pos": Vector2(0.70, 0.64)},
+		{"name": "Скамейки", "kind": "bench", "cost": 1, "pos": Vector2(0.16, 0.76)},
+		{"name": "Фонтан", "kind": "fountain", "cost": 3, "pos": Vector2(0.52, 0.77)},
+		{"name": "Цветы", "kind": "flowers", "cost": 1, "pos": Vector2(0.84, 0.76)},
 	]},
 ]
 

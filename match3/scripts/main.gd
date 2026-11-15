@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.16.1"
+const VERSION := "2.17.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -66,6 +66,11 @@ var _bot := false
 
 
 func _ready() -> void:
+	# прежний игрок, уже отремонтировавший последнюю из старых 5 зон, переходит в новую зону
+	if Save.zone + 1 < Zones.ZONES.size() and Save.built.size() >= Zones.ZONES[Save.zone].tasks.size():
+		Save.zone += 1
+		Save.built = {}
+		Save.store()
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	theme = UiTheme.build()
@@ -534,7 +539,8 @@ func _zone_complete() -> void:
 	for k in ["pre_rocket", "pre_bomb", "pre_orb"]:
 		Save.add_booster(k)
 	var next := Save.zone + 1
-	var lines := ["Сундук: +300 монет и бустеры!", "В зоопарке поселился: %s" % zone.animal]
+	var lines := ["Сундук: +300 монет и бустеры!",
+		("В зоопарке поселились: %s" % zone.animal) if zone.animal != "" else "Зоопарк открыт для гостей!"]
 	if next < Zones.ZONES.size():
 		lines.append("Дальше: «%s»" % Zones.ZONES[next].name)
 	else:
@@ -634,7 +640,7 @@ func _show_collection() -> void:
 	var lines: Array = []
 	for i in Zones.ZONES.size():
 		var z: Dictionary = Zones.ZONES[i]
-		var status: String = "✓ " + z.animal if i < Save.zone else ("ремонт: %d/%d" % [Save.built.size(), z.tasks.size()] if i == Save.zone else "закрыта")
+		var status: String = ("✓ " + (z.animal if z.animal != "" else "готово")) if i < Save.zone else ("ремонт: %d/%d" % [Save.built.size(), z.tasks.size()] if i == Save.zone else "закрыта")
 		lines.append("%d. %s — %s" % [i + 1, z.name, status])
 	_dialog("Коллекция", lines, [["Закрыть", "Button", _clear_overlay]])
 
@@ -3326,6 +3332,20 @@ func _run_shots(dir: String) -> void:
 	_build_task(0, 2)
 	await get_tree().create_timer(2.6).timeout
 	await _snap(dir, "1c_built")
+	# новые зоны (решение №29): все предметы построены — проверяем раскладку
+	var keep_zone := Save.zone
+	var keep_built: Dictionary = Save.built
+	for zi in [5, 6, 7]:
+		Save.zone = zi
+		Save.built = {}
+		for ti in Zones.ZONES[zi].tasks.size():
+			Save.built[ti] = ti % 3
+		_refresh_home()
+		await get_tree().create_timer(0.4).timeout
+		await _snap(dir, "1z_zone%d" % zi)
+	Save.zone = keep_zone
+	Save.built = keep_built
+	_refresh_home()
 	_show_settings()
 	await get_tree().create_timer(0.5).timeout
 	await _snap(dir, "1d_settings")
