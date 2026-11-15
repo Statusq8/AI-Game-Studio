@@ -19,6 +19,11 @@ var zone := 0
 var built := {}  # индекс задания текущей зоны -> вариант дизайна
 var streak := 0
 var seen_tips: Array = []
+## Ежедневный подарок: какой день недели-награды следующий (0..6) и номер дня последнего получения.
+var daily_day := 0
+var daily_last := -1
+## Сундук за победы: сколько побед накоплено к следующему сундуку.
+var chest_wins := 0
 var hearts := MAX_HEARTS
 var heart_at := 0.0
 ## Бустеры: на уровне (молот, ряд, столбец, перемешать) и до уровня (ракета, бомба, шар).
@@ -49,6 +54,9 @@ func _ready() -> void:
 		stars = maxi(0, int(data.get("stars", 0)))
 		zone = maxi(0, int(data.get("zone", 0)))
 		streak = maxi(0, int(data.get("streak", 0)))
+		daily_day = clampi(int(data.get("daily_day", 0)), 0, 6)
+		daily_last = int(data.get("daily_last", -1))
+		chest_wins = maxi(0, int(data.get("chest_wins", 0)))
 		var st: Variant = data.get("seen_tips", [])
 		if st is Array:
 			seen_tips = st
@@ -68,7 +76,7 @@ func _ready() -> void:
 func store() -> void:
 	var f := FileAccess.open(PATH, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"level": level, "coins": coins, "sound": sound, "hearts": hearts, "heart_at": heart_at, "boosters": boosters, "music": music, "vibration": vibration, "shake": shake, "particles": particles, "stars": stars, "zone": zone, "built": built, "streak": streak, "seen_tips": seen_tips}))
+		f.store_string(JSON.stringify({"level": level, "coins": coins, "sound": sound, "hearts": hearts, "heart_at": heart_at, "boosters": boosters, "music": music, "vibration": vibration, "shake": shake, "particles": particles, "stars": stars, "zone": zone, "built": built, "streak": streak, "seen_tips": seen_tips, "daily_day": daily_day, "daily_last": daily_last, "chest_wins": chest_wins}))
 	changed.emit()
 
 
@@ -128,6 +136,20 @@ func use_booster(kind: String) -> bool:
 	boosters[kind] -= 1
 	store()
 	return true
+
+
+## Номер текущего дня по местному времени игрока.
+func today() -> int:
+	var bias: int = int(Time.get_time_zone_from_system().get("bias", 0))
+	return int(floor((Time.get_unix_time_from_system() + bias * 60.0) / 86400.0))
+
+
+## Можно ли сегодня забрать ежедневный подарок. Пропустил день — неделя начинается заново.
+func daily_ready() -> bool:
+	var t := today()
+	if daily_last != t and daily_last != t - 1:
+		daily_day = 0
+	return daily_last != t
 
 
 func add_booster(kind: String, n: int = 1) -> void:

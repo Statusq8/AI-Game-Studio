@@ -9,8 +9,14 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.17.0"
+const VERSION := "2.18.0"
 const WIN_COINS := 50
+## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
+const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
+	{"coins": 300}, {"arrow": 2, "shuffle": 1}, {"coins": 500, "pre_orb": 1, "pre_bomb": 1, "hammer": 1}]
+## Сундук за победы: сколько побед нужно и что в нём.
+const CHEST_WINS := 8
+const CHEST_COINS := 150
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
 const EXTRA_MOVES_PRICE := 300
@@ -323,6 +329,24 @@ func _build_home() -> void:
 		side.add_child(btn)
 	_home.resized.connect(func() -> void: side.position = Vector2(_home.size.x - 100, _home.size.y * 0.30))
 
+	# слева: ежедневный подарок и сундук за победы
+	var lside := VBoxContainer.new()
+	lside.add_theme_constant_override("separation", 12)
+	lside.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_home.add_child(lside)
+	_gift_btn = _icon_button("gift", 96.0, Color("#ff5a8a"))
+	_gift_btn.pressed.connect(_show_daily)
+	lside.add_child(_gift_btn)
+	_chest_btn = _icon_button("chest", 96.0, Color("#2f9be0"))
+	_chest_btn.pressed.connect(_show_chest)
+	lside.add_child(_chest_btn)
+	_lside = lside
+	var gl := _gift_btn.create_tween().set_loops()
+	gl.tween_callback(func() -> void:
+		_gift_btn.queue_redraw()
+		_chest_btn.queue_redraw())
+	gl.tween_interval(0.05)
+
 	# панда в левом нижнем углу
 	_home_panda = _make_panda(250.0)
 	_home.add_child(_home_panda)
@@ -385,6 +409,8 @@ func _layout_home() -> void:
 	_tabbar.size = Vector2(w, 100)
 	_tabbar.position = Vector2(0, h - 120)
 	_home_level_btn.position = Vector2(w - 330 - 24, h - 250)
+	if _lside:
+		_lside.position = Vector2(14, h * 0.30)
 	_repair_btn.position = Vector2(24, h - 250)
 	_home_panda.position = Vector2(4, h - 250 - _home_panda.custom_minimum_size.y + 10)
 
@@ -634,6 +660,235 @@ func _show_shop() -> void:
 		if c is Button:
 			c.custom_minimum_size.y = 64
 			c.add_theme_font_size_override("font_size", 22)
+
+
+## Подарочная коробка с бантом (для кнопки и окна подарков).
+func _draw_gift(ci: CanvasItem, c: Vector2, k: float, col := Color("#ff4a7a")) -> void:
+	var ink := Color("#2b1a4a")
+	var body := Rect2(c + Vector2(-20, -6) * k, Vector2(40, 28) * k)
+	var lid := Rect2(c + Vector2(-24, -16) * k, Vector2(48, 12) * k)
+	ci.draw_rect(body.grow(2.5 * k), ink)
+	ci.draw_rect(body, col)
+	ci.draw_rect(lid.grow(2.5 * k), ink)
+	ci.draw_rect(lid, col.lightened(0.2))
+	var rib := Color("#ffd84a")
+	ci.draw_rect(Rect2(c + Vector2(-4, -16) * k, Vector2(8, 38) * k), rib)
+	for sx in [-1.0, 1.0]:
+		var p := c + Vector2(9 * sx, -22) * k
+		ci.draw_circle(p, 8.5 * k, ink)
+		ci.draw_circle(p, 6 * k, rib)
+	ci.draw_circle(c + Vector2(0, -19) * k, 5 * k, ink)
+	ci.draw_circle(c + Vector2(0, -19) * k, 3.5 * k, rib)
+
+
+## Сундук: деревянный, с золотыми уголками; открытый (full) — светится.
+func _draw_chest(ci: CanvasItem, c: Vector2, k: float, full := false) -> void:
+	var ink := Color("#3a1e08")
+	var gold := Color("#ffcf3a")
+	var gold_d := Color("#c98a12")
+	if full:
+		var p := 0.6 + 0.4 * sin(Time.get_ticks_msec() / 180.0)
+		for i in 4:
+			ci.draw_circle(c, (40 - i * 6) * k, Color(1, 0.9, 0.4, (0.12 + i * 0.06) * p))
+	# тень
+	ci.draw_set_transform(c + Vector2(0, 24) * k, 0.0, Vector2(1.0, 0.25))
+	ci.draw_circle(Vector2.ZERO, 30 * k, Color(0, 0, 0, 0.25))
+	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# корпус
+	var body := Rect2(c + Vector2(-26, -4) * k, Vector2(52, 28) * k)
+	_tile(ci, body.grow(3 * k), ink, 5 * k)
+	_tile(ci, body, Color("#9a5222"), 4 * k)
+	_tile(ci, Rect2(body.position, Vector2(body.size.x, 8 * k)), Color("#b8692e"), 3 * k)
+	# крышка-арка
+	var lc := c + Vector2(0, -4) * k
+	var pts := PackedVector2Array()
+	for i in 17:
+		var a := PI + PI * i / 16.0
+		pts.append(lc + Vector2(cos(a) * 26, sin(a) * 18) * k)
+	var out := PackedVector2Array()
+	for i in 17:
+		var a := PI + PI * i / 16.0
+		out.append(lc + Vector2(cos(a) * 29, sin(a) * 21) * k)
+	out.append(lc + Vector2(29, 1) * k)
+	out.append(lc + Vector2(-29, 1) * k)
+	ci.draw_colored_polygon(out, ink)
+	pts.append(lc + Vector2(26, 0))
+	pts.append(lc + Vector2(-26, 0))
+	ci.draw_colored_polygon(pts, Color("#c97a36"))
+	ci.draw_polyline(PackedVector2Array([lc + Vector2(-18, -10) * k, lc + Vector2(-6, -15) * k, lc + Vector2(6, -15) * k]), Color(1, 1, 1, 0.3), 3 * k, true)
+	# золотые полосы и замок
+	for x in [-20.0, 14.0]:
+		ci.draw_rect(Rect2(c + Vector2(x, -20) * k, Vector2(6, 44) * k), gold_d)
+		ci.draw_rect(Rect2(c + Vector2(x + 1, -20) * k, Vector2(3, 44) * k), gold)
+	ci.draw_rect(Rect2(c + Vector2(-27, -5) * k, Vector2(54, 5) * k), gold_d)
+	ci.draw_circle(c + Vector2(0, 4) * k, 8 * k, ink)
+	ci.draw_circle(c + Vector2(0, 4) * k, 6.5 * k, gold)
+	ci.draw_rect(Rect2(c + Vector2(-1.5, 3) * k, Vector2(3, 5) * k), ink)
+
+
+## Красный кружок «!» на кнопке — есть что забрать.
+func _dot_badge(ci: CanvasItem, c: Vector2, t: String) -> void:
+	var font: Font = UiTheme.title_font()
+	ci.draw_circle(c, 15, Color.WHITE)
+	ci.draw_circle(c, 12.5, Color("#e8261c"))
+	var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 20)
+	ci.draw_string(font, c + Vector2(-ts.x / 2, 7), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color.WHITE)
+
+
+## Значок награды: монета или бустер, с количеством.
+func _draw_reward(ci: CanvasItem, kind: String, n: int, c: Vector2, px: float) -> void:
+	var font: Font = UiTheme.title_font()
+	var art := {"coins": "ui_coin", "hammer": "ui_hammer", "arrow": "ui_arrow", "shuffle": "ui_shuffle",
+		"pre_rocket": "rocket", "pre_bomb": "bomb", "pre_orb": "orb"}
+	var nm: String = art.get(kind, "ui_coin")
+	if nm.begins_with("ui_"):
+		if not Zoo.draw_art(ci, nm, c, px):
+			ci.draw_circle(c, px * 0.35, Color("#ffd23f"))
+	else:
+		var t: Texture2D = Gem.tex(nm)
+		if t:
+			var sz := t.get_size()
+			var kk := px * 0.85 / maxf(sz.x, sz.y)
+			ci.draw_set_transform(c, 0.0, Vector2(kk, kk))
+			ci.draw_texture(t, -sz / 2)
+			ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	var txt := str(n) if kind == "coins" else "x%d" % n
+	var fs := int(px * 0.34)
+	var ts := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+	var p := c + Vector2(-ts.x / 2, px * 0.5 + fs * 0.6)
+	ci.draw_string_outline(font, p, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 7, Color("#2b1a4a"))
+	ci.draw_string(font, p, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
+
+
+func _give(reward: Dictionary) -> void:
+	for kind in reward:
+		if kind == "coins":
+			Save.add_coins(int(reward[kind]))
+		else:
+			Save.add_booster(kind, int(reward[kind]))
+
+
+## Окно ежедневного подарка: 7 дней, сегодняшний подсвечен, полученные — с галочкой.
+## Пропустил день — неделя начинается заново.
+func _show_daily() -> void:
+	var ready := Save.daily_ready()
+	var cur := Save.daily_day
+	var font: Font = UiTheme.title_font()
+	var v := _dialog("Подарок дня", [], [])
+	(v.get_parent() as Control).custom_minimum_size.x = 660
+	var grid := Control.new()
+	grid.custom_minimum_size = Vector2(0, 420)
+	grid.draw.connect(func() -> void:
+		var cw := 140.0
+		var chh := 196.0
+		var gap := 10.0
+		var x0 := (grid.size.x - (4 * cw + 3 * gap)) / 2.0
+		for d in 7:
+			var r: Rect2
+			if d < 4:
+				r = Rect2(Vector2(x0 + d * (cw + gap), 0), Vector2(cw, chh))
+			elif d < 6:
+				r = Rect2(Vector2(x0 + (d - 4) * (cw + gap), chh + 16), Vector2(cw, chh))
+			else:
+				r = Rect2(Vector2(x0 + 2 * (cw + gap), chh + 16), Vector2(cw * 2 + gap, chh))
+			var got := d < cur
+			var today := d == cur and ready
+			var base := Color("#ffe9b8") if not got else Color("#cfe9c0")
+			if today:
+				var p := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 200.0)
+				_tile(grid, r.grow(6 + 2 * p), Color(1.0, 0.85, 0.2, 0.55), 26)
+			_tile(grid, Rect2(r.position + Vector2(0, 5), r.size), Color(0, 0, 0, 0.2), 20)
+			_tile(grid, r, Color("#b9824a") if not today else Color("#ff8a00"), 20)
+			_tile(grid, r.grow(-4 if not today else -7), base if not today else Color("#fff6c8"), 17)
+			var dt := "День %d" % (d + 1)
+			var dts := font.get_string_size(dt, HORIZONTAL_ALIGNMENT_LEFT, -1, 24)
+			var dp := Vector2(r.get_center().x - dts.x / 2, r.position.y + 34)
+			grid.draw_string_outline(font, dp, dt, HORIZONTAL_ALIGNMENT_LEFT, -1, 24, 6, Color("#6a3a10"))
+			grid.draw_string(font, dp, dt, HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color.WHITE)
+			var rw: Dictionary = DAILY[d]
+			var keys := rw.keys()
+			var n := keys.size()
+			var px := 70.0 if n == 1 else (58.0 if n == 2 else 52.0)
+			var span := r.size.x - 20
+			for i in n:
+				var cx := r.position.x + 10 + span * (i + 0.5) / n
+				_draw_reward(grid, keys[i], int(rw[keys[i]]), Vector2(cx, r.position.y + 96), px)
+			if got:
+				var cc := r.position + Vector2(r.size.x - 26, 26)
+				grid.draw_circle(cc, 20, Color.WHITE)
+				grid.draw_circle(cc, 17, Color("#2fae3a"))
+				grid.draw_polyline(PackedVector2Array([cc + Vector2(-9, 0), cc + Vector2(-2, 7), cc + Vector2(10, -7)]), Color.WHITE, 5.0, true))
+	v.add_child(grid)
+	var rt := grid.create_tween().set_loops()
+	rt.tween_callback(grid.queue_redraw)
+	rt.tween_interval(0.05)
+	var btn := Button.new()
+	btn.theme_type_variation = "GreenButton" if ready else "Button"
+	btn.custom_minimum_size = Vector2(360, 96)
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	btn.add_theme_font_size_override("font_size", 34)
+	btn.text = "Забрать" if ready else "Приходи завтра!"
+	btn.pressed.connect(func() -> void:
+		if not Save.daily_ready():
+			_clear_overlay()
+			return
+		_give(DAILY[Save.daily_day])
+		Save.daily_last = Save.today()
+		Save.daily_day = (Save.daily_day + 1) % 7
+		Save.store()
+		Sfx.play("coin")
+		_dust(btn.get_global_rect().get_center())
+		_clear_overlay()
+		_refresh_home())
+	v.add_child(btn)
+
+
+## Сундук за победы: копится по победам; полный — открыть и забрать.
+func _show_chest() -> void:
+	var full := Save.chest_wins >= CHEST_WINS
+	var v := _dialog("Сундук побед", [("Внутри: %d монет и 2 бустера!" % CHEST_COINS) if full else
+		"Побед: %d из %d. Выигрывай уровни — сундук наполнится!" % [Save.chest_wins, CHEST_WINS]], [])
+	var pic := Control.new()
+	pic.custom_minimum_size = Vector2(0, 200)
+	pic.draw.connect(func() -> void:
+		_draw_chest(pic, pic.size / 2 + Vector2(0, 10), 3.4, full))
+	v.add_child(pic)
+	v.move_child(pic, 0)
+	var pt := pic.create_tween().set_loops()
+	pt.tween_callback(pic.queue_redraw)
+	pt.tween_interval(0.05)
+	var btn := Button.new()
+	btn.theme_type_variation = "GreenButton" if full else "Button"
+	btn.custom_minimum_size = Vector2(360, 96)
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	btn.add_theme_font_size_override("font_size", 34)
+	btn.text = "Открыть" if full else "Закрыть"
+	btn.pressed.connect(func() -> void:
+		if Save.chest_wins >= CHEST_WINS:
+			var pool := ["hammer", "arrow", "shuffle", "pre_rocket", "pre_bomb", "pre_orb"]
+			pool.shuffle()
+			var rw := {"coins": CHEST_COINS, pool[0]: 1, pool[1]: 1}
+			_give(rw)
+			Save.chest_wins = 0
+			Save.store()
+			Sfx.play("coin")
+			_dust(btn.get_global_rect().get_center())
+			_clear_overlay()
+			var lines: Array = []
+			var dv := _dialog("Сундук открыт!", lines, [["Ура!", "GreenButton", func() -> void:
+				_clear_overlay()
+				_refresh_home()]])
+			var row := Control.new()
+			row.custom_minimum_size = Vector2(0, 130)
+			row.draw.connect(func() -> void:
+				var ks := rw.keys()
+				for i in ks.size():
+					_draw_reward(row, ks[i], int(rw[ks[i]]), Vector2(row.size.x * (i + 0.5) / ks.size(), 50), 80.0))
+			dv.add_child(row)
+			dv.move_child(row, 1)
+		else:
+			_clear_overlay())
+	v.add_child(btn)
 
 
 func _show_collection() -> void:
@@ -1194,6 +1449,12 @@ func _icon_button(kind: String, d: float, base: Color) -> Button:
 	return btn
 
 
+var _gift_btn: Button
+var _daily_auto := false
+var _lside: VBoxContainer
+var _chest_btn: Button
+
+
 ## Рисует круглую кнопку-иконку (см. _icon_button).
 func _draw_icon_button(btn: Button, kind: String, d: float, base: Color) -> void:
 	var font: Font = UiTheme.title_font()
@@ -1235,6 +1496,26 @@ func _draw_icon_button(btn: Button, kind: String, d: float, base: Color) -> void
 			btn.draw_rect(Rect2(c + Vector2(-12, 13) * k, Vector2(24, 7) * k), Color("#ffd23f"))
 			btn.draw_arc(c + Vector2(-17, -10) * k, 7 * k, PI / 2, PI * 1.5, 12, Color("#ffd23f"), 3.5 * k, true)
 			btn.draw_arc(c + Vector2(17, -10) * k, 7 * k, -PI / 2, PI / 2, 12, Color("#ffd23f"), 3.5 * k, true)
+		"gift":
+			_draw_gift(btn, c + Vector2(0, 2) * k, 1.0 * k)
+			if Save.daily_ready():
+				_dot_badge(btn, c + Vector2(r * 0.72, -r * 0.72), "!")
+		"chest":
+			_draw_chest(btn, c + Vector2(0, 0) * k, 0.9 * k, Save.chest_wins >= CHEST_WINS)
+			# полоска прогресса под кнопкой
+			var bw := r * 1.7
+			var br := Rect2(c + Vector2(-bw / 2, r * 0.78), Vector2(bw, 16 * k))
+			_tile(btn, br.grow(2), Color("#2b1a4a"), 9 * k)
+			var f := float(Save.chest_wins) / CHEST_WINS
+			if f > 0:
+				_tile(btn, Rect2(br.position, Vector2(br.size.x * f, br.size.y)), Color("#ffcf3a") if f >= 1.0 else Color("#5fd34a"), 8 * k)
+			var bt := "%d/%d" % [Save.chest_wins, CHEST_WINS]
+			var bts := font.get_string_size(bt, HORIZONTAL_ALIGNMENT_LEFT, -1, int(15 * k))
+			var bp := br.position + Vector2((br.size.x - bts.x) / 2, br.size.y - 2 * k)
+			btn.draw_string_outline(font, bp, bt, HORIZONTAL_ALIGNMENT_LEFT, -1, int(15 * k), int(4 * k), ink)
+			btn.draw_string(font, bp, bt, HORIZONTAL_ALIGNMENT_LEFT, -1, int(15 * k), wh)
+			if Save.chest_wins >= CHEST_WINS:
+				_dot_badge(btn, c + Vector2(r * 0.72, -r * 0.72), "!")
 		"settings":
 			for i in 8:
 				var a := TAU * i / 8.0
@@ -1669,6 +1950,12 @@ func _show_home() -> void:
 		var rw := _fly_reward
 		_fly_reward = {}
 		get_tree().create_timer(0.5).timeout.connect(_play_reward_fly.bind(rw))
+	elif not _bot and Save.level >= 3 and Save.daily_ready() and not _daily_auto:
+		# подарок дня сам открывается один раз за запуск (после обучающих уровней)
+		_daily_auto = true
+		get_tree().create_timer(0.6).timeout.connect(func() -> void:
+			if _state == "idle" and _overlay.get_child_count() == 0:
+				_show_daily())
 
 
 func _try_play() -> void:
@@ -2143,7 +2430,7 @@ func _build_goals() -> void:
 		_goal_views.append({"goal": goal, "label": l, "icon": icon, "shown": int(goal.left)})
 
 
-func _draw_goal_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
+func _draw_goal_icon(ci: CanvasItem, kind: String, c: Vector2, px := 54.0) -> void:
 	match kind:
 		"stone":
 			if Gem.tex("ob_stone") == null:
@@ -2171,7 +2458,7 @@ func _draw_goal_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 		var t: Texture2D = Gem.tex(GOAL_TEX[kind])
 		if t:
 			var sz := t.get_size()
-			var k := 54.0 / maxf(sz.x, sz.y)
+			var k := px / maxf(sz.x, sz.y)
 			ci.draw_set_transform(c, 0.0, Vector2(k, k))
 			ci.draw_texture(t, -sz / 2)
 			ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -2927,6 +3214,7 @@ func _show_win() -> void:
 	Save.stars += 1
 	_fly_reward = {"coins": coins, "stars": 1}
 	Save.streak += 1
+	Save.chest_wins = mini(Save.chest_wins + 1, CHEST_WINS)
 	Save.add_coins(coins)
 	Save.vibrate(60)
 	var v := _dialog("Уровень %d" % _level.n, [], [])
@@ -3151,19 +3439,148 @@ func _show_lose() -> void:
 	if _state != "done":
 		return
 	Sfx.play("lose")
+	var font: Font = UiTheme.title_font()
+	var v := _dialog("Уровень %d" % _level.n, [], [])
+	var lpanel := v.get_parent() as Control
+	lpanel.custom_minimum_size.x = 650
+	var top_gap := Control.new()
+	top_gap.custom_minimum_size = Vector2(0, 6)
+	v.add_child(top_gap)
+	var head := _big_text("Ходы кончились!", 58, Color("#ffd0b0"), Color("#ff5a3a"))
+	head.custom_minimum_size = Vector2(0, 96)
+	head.set_meta("no_banner", true)
+	v.add_child(head)
+	# что осталось собрать: иконки целей в круглых слотах с красным счётчиком
 	var left: Array = []
 	for g in _level.goals:
 		if g.left > 0:
-			left.append(GOAL_NAMES.get(g.kind, g.kind) + " " + str(g.left))
-	var warn := "Сдашься — потеряешь серию побед (%d)!" % Save.streak if Save.streak > 0 else "Ещё чуть-чуть!"
-	_dialog("Ходы кончились", ["Осталось: " + ", ".join(left), warn, "+%d ходов, чтобы доиграть?" % EXTRA_MOVES], [
-		["Реклама: +%d ходов" % EXTRA_MOVES, "PurpleButton", func() -> void:
-			Ads.show_rewarded(_add_moves), not Ads.is_ready()],
-		["%d монет: +%d ходов" % [EXTRA_MOVES_PRICE, EXTRA_MOVES], "OrangeButton", func() -> void:
-			if Save.spend(EXTRA_MOVES_PRICE):
-				_add_moves(), Save.coins < EXTRA_MOVES_PRICE],
-		["Сдаться (−1 жизнь)", "RedButton", func() -> void: _quit_level(_show_home)],
-	])
+			left.append(g)
+	var goals := Control.new()
+	goals.custom_minimum_size = Vector2(0, 150 if not left.is_empty() else 0)
+	goals.draw.connect(func() -> void:
+		var n := left.size()
+		var stepx := 150.0
+		var x0 := goals.size.x / 2.0 - (n - 1) * stepx / 2.0
+		for i in n:
+			var g: Dictionary = left[i]
+			var c := Vector2(x0 + i * stepx, 66)
+			goals.draw_circle(c + Vector2(0, 6), 58, Color(0, 0, 0, 0.18))
+			goals.draw_circle(c, 58, Color("#b9824a"))
+			goals.draw_circle(c, 52, Color("#fff4dc"))
+			if g.kind != "color" and g.kind != "item":
+				_draw_goal_icon(goals, g.kind, c, 84.0)
+			var bc := c + Vector2(40, 40)
+			goals.draw_circle(bc + Vector2(0, 3), 27, Color(0, 0, 0, 0.3))
+			goals.draw_circle(bc, 27, Color.WHITE)
+			goals.draw_circle(bc, 23, Color("#d8261c"))
+			goals.draw_circle(bc + Vector2(0, -3), 19, Color("#ff4a3a"))
+			var t := str(int(g.left))
+			var fs := 28 if t.length() < 3 else 21
+			var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			var tp := bc + Vector2(-ts.x / 2, fs * 0.36)
+			goals.draw_string_outline(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 6, Color("#6a0a04"))
+			goals.draw_string(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	v.add_child(goals)
+	# фишки-цели (цвет, яйцо) — настоящие фишки поверх слотов
+	goals.resized.connect(func() -> void:
+		for ch in goals.get_children():
+			ch.queue_free()
+		var stepx := 150.0
+		var x0 := goals.size.x / 2.0 - (left.size() - 1) * stepx / 2.0
+		for i in left.size():
+			var gd: Dictionary = left[i]
+			if gd.kind == "color" or gd.kind == "item":
+				var gm: Node2D = Gem.new()
+				gm.color = gd.get("color", -1)
+				gm.size = 86.0
+				gm.position = Vector2(x0 + i * stepx, 66)
+				if gd.kind == "item":
+					gm.set_special(Gem.ITEM)
+				goals.add_child(gm)
+				goals.move_child(gm, 0)
+		goals.queue_redraw())
+	# предупреждение о серии побед — красная плашка с огоньком
+	if Save.streak > 0:
+		var warn := Control.new()
+		warn.custom_minimum_size = Vector2(0, 62)
+		var wt := "Серия побед (%d) сгорит!" % Save.streak
+		warn.draw.connect(func() -> void:
+			var ts := font.get_string_size(wt, HORIZONTAL_ALIGNMENT_LEFT, -1, 28)
+			var w := ts.x + 100.0
+			var r := Rect2(Vector2((warn.size.x - w) / 2.0, 4), Vector2(w, 52))
+			_tile(warn, r, Color("#7a1a10"), 26.0)
+			_tile(warn, r.grow(-3), Color("#e0452e"), 23.0)
+			_tile(warn, Rect2(r.position + Vector2(8, 6), Vector2(r.size.x - 16, 16)), Color(1, 1, 1, 0.22), 8.0)
+			var fc := r.position + Vector2(34, 27)
+			var fl := 1.0 + 0.08 * sin(Time.get_ticks_msec() / 120.0)
+			warn.draw_colored_polygon(PackedVector2Array([fc + Vector2(-12, 8), fc + Vector2(0, -20 * fl), fc + Vector2(12, 8)]), Color("#ffb21e"))
+			warn.draw_circle(fc + Vector2(0, 6), 12, Color("#ffb21e"))
+			warn.draw_circle(fc + Vector2(0, 8), 7, Color("#fff1a8"))
+			var tp := r.position + Vector2(62, 37)
+			warn.draw_string_outline(font, tp, wt, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, 7, Color("#5a0e06"))
+			warn.draw_string(font, tp, wt, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, Color.WHITE))
+		v.add_child(warn)
+		var wtw := warn.create_tween().set_loops()
+		wtw.tween_callback(warn.queue_redraw)
+		wtw.tween_interval(0.05)
+	var gap := Control.new()
+	gap.custom_minimum_size = Vector2(0, 6)
+	v.add_child(gap)
+	# главная кнопка: «+5 ходов» за монеты; цена с монеткой справа
+	var buy := Button.new()
+	buy.theme_type_variation = "GreenButton"
+	buy.custom_minimum_size = Vector2(500, 104)
+	buy.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	buy.text = ""
+	buy.disabled = Save.coins < EXTRA_MOVES_PRICE
+	buy.draw.connect(func() -> void:
+		var t := "+%d ходов" % EXTRA_MOVES
+		var fs := 40
+		var tp := Vector2(34, buy.size.y / 2 + fs * 0.34 - 4)
+		buy.draw_string_outline(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color("#1b5a12"))
+		buy.draw_string(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
+		var pr := Rect2(Vector2(buy.size.x - 196, 18), Vector2(170, buy.size.y - 44))
+		_tile(buy, pr, Color(0, 0, 0, 0.22), pr.size.y / 2)
+		var cc := pr.position + Vector2(30, pr.size.y / 2)
+		if not Zoo.draw_art(buy, "ui_coin", cc, 50.0):
+			buy.draw_circle(cc, 20, Color("#ffd23f"))
+		var pt := str(EXTRA_MOVES_PRICE)
+		var pp := pr.position + Vector2(62, pr.size.y / 2 + 11)
+		buy.draw_string_outline(font, pp, pt, HORIZONTAL_ALIGNMENT_LEFT, -1, 32, 8, Color("#1b5a12"))
+		buy.draw_string(font, pp, pt, HORIZONTAL_ALIGNMENT_LEFT, -1, 32, Color("#fff6b0")))
+	buy.pressed.connect(func() -> void:
+		if Save.spend(EXTRA_MOVES_PRICE):
+			_add_moves())
+	v.add_child(buy)
+	# «+5 ходов» за рекламу
+	var ad := Button.new()
+	ad.theme_type_variation = "PurpleButton"
+	ad.custom_minimum_size = Vector2(500, 84)
+	ad.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	ad.text = "       +%d ходов" % EXTRA_MOVES
+	ad.add_theme_font_size_override("font_size", 30)
+	ad.disabled = not Ads.is_ready()
+	ad.draw.connect(func() -> void:
+		var c := Vector2(150, ad.size.y / 2 - 3)
+		if not Zoo.draw_art(ad, "ui_video", c, 50.0):
+			ad.draw_rect(Rect2(c - Vector2(20, 14), Vector2(40, 28)), Color("#5fa8ff")))
+	ad.pressed.connect(func() -> void: Ads.show_rewarded(_add_moves))
+	v.add_child(ad)
+	# «Сдаться» — маленькая, чтобы не нажать случайно
+	var quit := Button.new()
+	quit.theme_type_variation = "RedButton"
+	quit.custom_minimum_size = Vector2(300, 66)
+	quit.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	quit.text = "Сдаться (−1 жизнь)"
+	quit.add_theme_font_size_override("font_size", 24)
+	quit.pressed.connect(func() -> void: _quit_level(_show_home))
+	v.add_child(quit)
+	# главная кнопка мягко «дышит», привлекая внимание (только она)
+	buy.pivot_offset = buy.custom_minimum_size / 2
+	if not buy.disabled:
+		var bt := buy.create_tween().set_loops()
+		bt.tween_property(buy, "scale", Vector2(1.04, 1.04), 0.6).set_trans(Tween.TRANS_SINE)
+		bt.tween_property(buy, "scale", Vector2.ONE, 0.6).set_trans(Tween.TRANS_SINE)
 
 
 func _add_moves() -> void:
@@ -3332,6 +3749,14 @@ func _run_shots(dir: String) -> void:
 	_build_task(0, 2)
 	await get_tree().create_timer(2.6).timeout
 	await _snap(dir, "1c_built")
+	_show_daily()
+	await get_tree().create_timer(0.5).timeout
+	await _snap(dir, "1e_daily")
+	Save.chest_wins = CHEST_WINS
+	_show_chest()
+	await get_tree().create_timer(0.5).timeout
+	await _snap(dir, "1f_chest")
+	_clear_overlay()
 	# новые зоны (решение №29): все предметы построены — проверяем раскладку
 	var keep_zone := Save.zone
 	var keep_built: Dictionary = Save.built
@@ -3429,9 +3854,16 @@ func _run_shots(dir: String) -> void:
 	while _board.busy:
 		await get_tree().process_frame
 	_state = "done"
+	# для снимка: цели ещё не собраны, есть монеты и серия побед
+	for gi in _level.goals.size():
+		_level.goals[gi].left = [7, 12, 3][gi % 3]
+	var keep_coins := Save.coins
+	Save.coins = 500
+	Save.streak = maxi(Save.streak, 4)
 	_show_lose()
 	await get_tree().create_timer(0.5).timeout
 	await _snap(dir, "5_lose")
+	Save.coins = keep_coins
 	_level["bonus_coins"] = 40
 	_show_win()
 	await get_tree().create_timer(1.4).timeout
