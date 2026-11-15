@@ -1983,7 +1983,10 @@ func spawn_specials_animated(n: int, kind: int, delay: float) -> void:
 		if k == Gem.ROCKET_H:
 			k = Gem.ROCKET_H if rng.randf() < 0.5 else Gem.ROCKET_V
 		g.set_meta("incoming", true)
-		get_tree().create_timer(delay + i * 0.15).timeout.connect(_fly_special_in.bind(g, k))
+		# фишку могут успеть убрать до срабатывания таймера — проверяем
+		get_tree().create_timer(delay + i * 0.15).timeout.connect(func() -> void:
+			if is_instance_valid(g):
+				_fly_special_in(g, k))
 
 
 func _fly_special_in(g: Node2D, k: int) -> void:

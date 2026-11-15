@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.21.0"
+const VERSION := "2.21.1"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -291,10 +291,15 @@ func _build_home() -> void:
 	row.add_theme_constant_override("separation", 10)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(row)
-	row.add_child(_avatar())
-	row.add_child(_hearts_pill())
-	row.add_child(_coin_pill())
-	row.add_child(_stars_pill())
+	if Zoo.art("ui2_plate"):
+		# верхняя панель 1:1 по референсу (screen_01_home): точные места и размеры
+		_build_topbar_ref()
+		top.add_theme_constant_override("margin_top", 128)
+	else:
+		row.add_child(_avatar())
+		row.add_child(_hearts_pill())
+		row.add_child(_coin_pill())
+		row.add_child(_stars_pill())
 	_zone_title = Label.new()
 	_zone_title.theme_type_variation = "TitleLabel"
 	_zone_title.add_theme_font_size_override("font_size", 30)
@@ -320,26 +325,26 @@ func _build_home() -> void:
 
 	# кнопки сбоку: почта, друзья, рейтинг, настройки
 	var side := VBoxContainer.new()
-	side.add_theme_constant_override("separation", 12)
+	side.add_theme_constant_override("separation", int(3.0 * REF_K))
 	side.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
 	side.position = Vector2(-110, -40)
 	side.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_home.add_child(side)
 	for b in [["mail", _show_soon.bind("Почта")], ["friends", _show_soon.bind("Друзья")], ["rating", _show_soon.bind("Рейтинг")], ["settings", _show_settings]]:
-		var btn := _icon_button(b[0], 118.0, Color("#9b5cff"))
+		var btn := _icon_button(b[0], 124.0 * REF_K, Color("#9b5cff"))
 		btn.pressed.connect(b[1])
 		side.add_child(btn)
 	_rside = side
 
 	# слева: ежедневный подарок и сундук за победы
 	var lside := VBoxContainer.new()
-	lside.add_theme_constant_override("separation", 12)
+	lside.add_theme_constant_override("separation", int(6.0 * REF_K))
 	lside.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_home.add_child(lside)
-	_gift_btn = _icon_button("gift", 124.0, Color("#ff5a8a"))
+	_gift_btn = _icon_button("gift", 154.0 * REF_K, Color("#ff5a8a"))
 	_gift_btn.pressed.connect(_show_daily)
 	lside.add_child(_gift_btn)
-	_chest_btn = _icon_button("chest", 124.0, Color("#2f9be0"))
+	_chest_btn = _icon_button("chest", 158.0 * REF_K, Color("#2f9be0"))
 	_chest_btn.pressed.connect(_show_chest)
 	lside.add_child(_chest_btn)
 	_lside = lside
@@ -363,7 +368,7 @@ func _build_home() -> void:
 		_home_level_btn.flat = true
 		for st in ["normal", "hover", "pressed", "focus"]:
 			_home_level_btn.add_theme_stylebox_override(st, StyleBoxEmpty.new())
-		_home_level_btn.custom_minimum_size = Vector2(360, 188)
+		_home_level_btn.custom_minimum_size = Vector2(445.0 * REF_K, 445.0 * REF_K * 322.0 / 617.0)
 		_home_level_btn.draw.connect(func() -> void:
 			var b := _home_level_btn
 			var hard: bool = b.get_meta("hard", false)
@@ -395,17 +400,17 @@ func _build_home() -> void:
 	pulse.parallel().tween_property(_home_level_btn, "modulate", Color.WHITE, 0.45)
 	pulse.tween_interval(0.4)
 
-	_repair_btn = _icon_button("repair", 150.0, Color("#ff9a2a"))
+	_repair_btn = _icon_button("repair", 180.0 * REF_K, Color("#ff9a2a"))
 	_repair_btn.pressed.connect(func() -> void: _transition(_set_repair_mode.bind(not _repair_mode)))
 	_home.add_child(_repair_btn)
 
 	# нижняя панель: 5 вкладок
 	_tabbar = HBoxContainer.new()
 	_tabbar.alignment = BoxContainer.ALIGNMENT_CENTER
-	_tabbar.add_theme_constant_override("separation", 6)
+	_tabbar.add_theme_constant_override("separation", 0)
 	# деревянная полоса под вкладками
 	_tabbar.draw.connect(func() -> void:
-		var r := Rect2(Vector2(-8, 18), Vector2(_tabbar.size.x + 16, _tabbar.size.y - 4))
+		var r := Rect2(Vector2(-6, 0), Vector2(_tabbar.size.x + 12, _tabbar.size.y + 30))
 		var bt := Zoo.art("ui2_bar")
 		if bt:
 			_tabbar.draw_texture_rect(bt, r, false)
@@ -422,19 +427,26 @@ func _build_home() -> void:
 		btn.flat = true
 		for st in ["normal", "hover", "pressed", "focus"]:
 			btn.add_theme_stylebox_override(st, StyleBoxEmpty.new())
-		btn.custom_minimum_size = Vector2(150 if on else 128, 128)
+		btn.custom_minimum_size = Vector2(148 if on else 136, 166)
 		btn.tooltip_text = name
 		btn.draw.connect(func() -> void:
-			var c := btn.size / 2 + Vector2(0, 6 if not on else -2)
+			# плитки по референсу: обычная 155×125 (центр на 93 px ниже верха дерева), выбранная 185×190 (центр на 101)
 			var pr := btn.is_pressed()
-			var sz := (124.0 if on else 112.0) * (0.93 if pr else 1.0)
+			var ks := 0.93 if pr else 1.0
+			var c := Vector2(btn.size.x / 2, (101.0 if on else 93.0) * REF_K)
 			if on:
+				var tsz := Vector2(185, 190) * REF_K * ks
 				var p := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 400.0)
-				btn.draw_circle(c, 70 + p * 4, Color(1, 0.9, 0.4, 0.18))
-				Zoo.draw_art(btn, "ui2_tab_on", c, sz * 1.05)
-				Zoo.draw_art(btn, art, c + Vector2(0, -6), sz * 0.72)
+				btn.draw_circle(c, tsz.x * 0.55 + p * 4, Color(1, 0.9, 0.4, 0.16))
+				var to := Zoo.art("ui2_tab_on")
+				if to:
+					btn.draw_texture_rect(to, Rect2(c - tsz / 2, tsz), false)
+				Zoo.draw_art(btn, art, c + Vector2(0, -8) * REF_K, 132.0 * REF_K * ks)
 			else:
-				Zoo.draw_art(btn, art, c, sz)
+				var tsz := Vector2(155, 125) * REF_K * ks
+				var tt := Zoo.art(art)
+				if tt:
+					btn.draw_texture_rect(tt, Rect2(c - tsz / 2, tsz), false)
 			pass)
 		btn.button_down.connect(btn.queue_redraw)
 		btn.button_up.connect(btn.queue_redraw)
@@ -456,15 +468,115 @@ func _build_home() -> void:
 func _layout_home() -> void:
 	var w := _home.size.x if _home.size.x > 0 else size.x
 	var h := _home.size.y if _home.size.y > 0 else size.y
-	_tabbar.size = Vector2(w, 128)
-	_tabbar.position = Vector2(0, h - 150)
-	_home_level_btn.position = Vector2(w - _home_level_btn.custom_minimum_size.x - 10, h - 150 - _home_level_btn.custom_minimum_size.y + 6)
+	# низ по референсу (высота 1752): дерево с y 1545, кнопка уровня 450–895 × 1280–1505, молоток Ø180 в (110, 1405)
+	var ref_b := func(y: float) -> float: return h - (1752.0 - y) * REF_K
+	_tabbar.size = Vector2(w, 207.0 * REF_K)
+	_tabbar.position = Vector2(0, ref_b.call(1545.0))
+	_home_level_btn.position = Vector2(672.0 * REF_K - _home_level_btn.custom_minimum_size.x / 2, ref_b.call(1392.0) - _home_level_btn.custom_minimum_size.y / 2)
+	# колонки кнопок — по референсу: подарок (88, 283) Ø154, сундук ниже; справа почта (826, 258) Ø124, шаг 127
 	if _lside:
-		_lside.position = Vector2(6, h * 0.135)
+		_lside.position = Vector2(88 - 77, 283 - 77) * REF_K
 	if _rside:
-		_rside.position = Vector2(w - 128, h * 0.155)
-	_repair_btn.position = Vector2(18, h - 150 - _repair_btn.size.y - 26)
+		_rside.position = Vector2(826 - 62, 258 - 62) * REF_K
+	_repair_btn.position = Vector2(110.0 * REF_K - _repair_btn.size.x / 2, ref_b.call(1405.0) - 90.0 * REF_K)
 	_home_panda.position = Vector2(4, h - 250 - _home_panda.custom_minimum_size.y + 10)
+
+
+## Коэффициент референса: референс 898 px в ширину, игра — 720.
+const REF_K := 720.0 / 898.0
+
+
+## Прямоугольник в координатах игры по прямоугольнику на референсе (x0, y0, x1, y1).
+func _ref_rect(x0: float, y0: float, x1: float, y1: float) -> Rect2:
+	return Rect2(Vector2(x0, y0) * REF_K, Vector2(x1 - x0, y1 - y0) * REF_K)
+
+
+## Плашка ресурса с картинкой-иконкой, числом и плюсом; всё по координатам референса.
+func _ref_plate(plate: Rect2, icon: String, icon_c: Vector2, icon_d: float, plus_c: Vector2, with_plus: bool) -> Label:
+	var c := Control.new()
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.position = plate.position
+	c.size = plate.size
+	var ic := icon_c * REF_K - plate.position
+	var idd := icon_d * REF_K
+	c.draw.connect(func() -> void:
+		var t := Zoo.art("ui2_plate_s")
+		if t:
+			c.draw_texture_rect(t, Rect2(Vector2.ZERO, c.size), false)
+		Zoo.draw_art(c, icon, ic, idd))
+	_topbar.add_child(c)
+	var l := Label.new()
+	l.theme_type_variation = "TitleLabel"
+	l.add_theme_font_size_override("font_size", 34)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var lx := ic.x + idd * 0.42
+	l.position = Vector2(lx, 0)
+	l.size = Vector2(plate.size.x - lx - (22.0 if with_plus else 8.0), plate.size.y)
+	c.add_child(l)
+	if with_plus:
+		var b := _plus_button()
+		var pd := 46.0 * REF_K
+		b.custom_minimum_size = Vector2(pd, pd)
+		b.size = Vector2(pd, pd)
+		b.position = plus_c * REF_K - Vector2(pd, pd) / 2
+		_topbar.add_child(b)
+	return l
+
+
+var _topbar: Control
+
+
+func _build_topbar_ref() -> void:
+	_topbar = Control.new()
+	_topbar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_topbar.position = Vector2.ZERO
+	_topbar.size = Vector2(720, 160)
+	_home.add_child(_topbar)
+	# аватар: кольцо с листьями по центру (95, 100), ширина с листьями ~190
+	var av := Control.new()
+	av.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	av.position = Vector2.ZERO
+	av.size = Vector2(200, 200) * REF_K
+	var avc := Vector2(95, 100) * REF_K
+	av.draw.connect(func() -> void:
+		Zoo.draw_art(av, "ui2_avatar", avc + Vector2(0, 10) * REF_K, 226.0 * REF_K)
+		Zoo.draw_art(av, "ui_avatar", avc, 150.0 * REF_K)
+		var font: Font = UiTheme.title_font()
+		var bo := avc + Vector2(58, 60) * REF_K
+		av.draw_circle(bo, 18, Color.WHITE)
+		av.draw_circle(bo, 15, Color("#3fb85a"))
+		var lvl := str(Save.level)
+		var lfs := 20 if lvl.length() < 3 else 15
+		var lts := font.get_string_size(lvl, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs)
+		av.draw_string(font, bo + Vector2(-lts.x / 2, lfs * 0.36), lvl, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs, Color.WHITE))
+	_topbar.add_child(av)
+	_avatar_node = av
+	# жизни: плашка, сердце, под ней плашка таймера с будильником
+	var hp := _ref_rect(192, 55, 405, 128)
+	_hearts_label = _ref_plate(hp, "ui_heart", Vector2(232, 84), 92.0, Vector2(385, 112), true)
+	var tm := Control.new()
+	tm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tr := _ref_rect(222, 112, 362, 150)
+	tm.position = tr.position
+	tm.size = tr.size
+	tm.draw.connect(func() -> void:
+		var t := Zoo.art("ui2_plate_s")
+		if t:
+			tm.draw_texture_rect(t, Rect2(Vector2.ZERO, tm.size), false)
+		Zoo.draw_art(tm, "ui2_clock", Vector2(246, 128) * REF_K - tm.position, 46.0 * REF_K))
+	_topbar.add_child(tm)
+	_hearts_timer = Label.new()
+	_hearts_timer.theme_type_variation = "TitleLabel"
+	_hearts_timer.add_theme_font_size_override("font_size", 20)
+	_hearts_timer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hearts_timer.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_hearts_timer.position = Vector2(30, 0) * REF_K
+	_hearts_timer.size = tr.size - Vector2(30, 0) * REF_K
+	tm.add_child(_hearts_timer)
+	# монеты и звёзды
+	_coin_labels.append(_ref_plate(_ref_rect(430, 55, 655, 128), "ui_coin", Vector2(472, 90), 96.0, Vector2(632, 113), true))
+	_stars_label = _ref_plate(_ref_rect(675, 55, 888, 128), "ui_star", Vector2(716, 86), 94.0, Vector2(865, 113), false)
 
 
 func _avatar() -> Control:
@@ -1729,16 +1841,19 @@ func _draw_icon_button(btn: Button, kind: String, d: float, base: Color) -> void
 				if Save.chest_wins >= CHEST_WINS:
 					_dot_badge(btn, c + Vector2(r * 0.72, -r * 0.72), "!")
 			"repair":
-				# плашка со звёздами под молотком, как в референсе
-				var pr := Rect2(c + Vector2(-r * 0.75, r * 0.5), Vector2(r * 1.6, 26 * k2))
-				_tile(btn, pr.grow(3), Color("#8a4a12"), 14 * k2)
-				_tile(btn, pr, Color("#fff1d0"), 12 * k2)
-				Zoo.draw_star(btn, pr.position + Vector2(4 * k2, pr.size.y / 2), 15 * k2)
+				# плашка со звёздами под молотком — по референсу (x −100…+80, y +50…+95 от центра круга)
+				var pr := Rect2(c + Vector2(-100, 52) * REF_K, Vector2(180, 44) * REF_K)
+				var pt := Zoo.art("ui2_plate_s")
+				if pt:
+					btn.draw_texture_rect(pt, pr, false)
+				else:
+					_tile(btn, pr, Color("#fff1d0"), 14)
+				Zoo.draw_star(btn, c + Vector2(-66, 74) * REF_K, 27.0 * REF_K)
 				var t := str(Save.stars)
-				var fs := int(24 * k2)
+				var fs := 26
 				var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-				var tp := pr.position + Vector2(pr.size.x / 2 + 8 * k2 - ts.x / 2, pr.size.y / 2 + fs * 0.36)
-				btn.draw_string_outline(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, int(6 * k2), Color("#5a2a00"))
+				var tp := Vector2(pr.position.x + pr.size.x * 0.62 - ts.x / 2, pr.get_center().y + fs * 0.36)
+				btn.draw_string_outline(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 7, Color("#5a2a00"))
 				btn.draw_string(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
 		return
 	btn.draw_circle(c + Vector2(0, 5), r, Color(0, 0, 0, 0.3))
