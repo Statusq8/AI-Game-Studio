@@ -25,6 +25,7 @@ signal shake(amount: float)
 signal idle_hint
 signal special_fired
 signal bad_move
+signal shuffled
 
 const Gem := preload("res://scripts/gem.gd")
 const CELL := 84.0
@@ -1889,6 +1890,7 @@ func _move_gem(from: Vector2i, to: Vector2i) -> void:
 
 
 func _shuffle() -> void:
+	shuffled.emit()
 	var gems: Array = []
 	for x in W:
 		for y in H:

@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.15.2"
+const VERSION := "2.15.3"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -433,6 +433,8 @@ func _refresh_home() -> void:
 	_map.visible = not _repair_mode and _map.texture != null
 	_zoo.visible = _repair_mode or _map.texture == null
 	_zoo.mouse_filter = Control.MOUSE_FILTER_PASS if _zoo.visible else Control.MOUSE_FILTER_IGNORE
+	if _repair_mode and not _home_panda.visible and _home_panda.get_node("Img").has_node("Anim"):
+		_home_panda.get_node("Img/Anim").play("wave")
 	_home_panda.visible = _repair_mode
 	_zone_title.visible = _repair_mode
 	_zone_box.visible = _repair_mode
@@ -499,12 +501,17 @@ func _build_task(i: int, design: int) -> void:
 	tw.tween_property(_zoo, "scale", Vector2(1.25, 1.25), 0.35).set_trans(Tween.TRANS_SINE)
 	await tw.finished
 	var img: Control = _home_panda.get_node("Img")
-	var hop := img.create_tween()
-	for k in 3:
-		hop.tween_property(img, "rotation", -0.18, 0.09)
-		hop.tween_property(img, "rotation", 0.05, 0.09)
-	hop.tween_property(img, "rotation", 0.0, 0.08)
-	await get_tree().create_timer(0.3).timeout
+	if img.has_node("Anim"):
+		# живая панда достаёт молоток и стучит; предмет появляется на втором ударе
+		img.get_node("Anim").play("build")
+		await get_tree().create_timer(2.2).timeout
+	else:
+		var hop := img.create_tween()
+		for k in 3:
+			hop.tween_property(img, "rotation", -0.18, 0.09)
+			hop.tween_property(img, "rotation", 0.05, 0.09)
+		hop.tween_property(img, "rotation", 0.0, 0.08)
+		await get_tree().create_timer(0.3).timeout
 	_zoo.build(i, design)
 	_dust(_zoo.get_global_transform_with_canvas() * c)
 	Save.vibrate(40)
@@ -816,6 +823,9 @@ func _build_level_screen() -> void:
 	_level_screen.move_child(_panda, _board_frame.get_index())
 	_board.combo_made.connect(_on_combo)
 	_board.idle_hint.connect(func() -> void: _panda_react("yawn"))
+	_board.shuffled.connect(func() -> void:
+		if _state == "play":
+			_panda_react("think"))
 	_board.bad_move.connect(func() -> void:
 		if _state == "play":
 			_panda_react("bad"))
@@ -898,7 +908,7 @@ func _panda_react(kind: String) -> void:
 		# живая панда: реакцию играет само видео, код добавляет только облачко эмоции
 		var anim: Control = img.get_node("Anim")
 		var vid := {"combo": "happy", "bigcombo": "happy", "goal": "happy", "win": "win", "sad": "sad", "nervous": "nervous",
-			"special": "wow", "hello": "wave", "yawn": "yawn"}
+			"special": "wow", "hello": "wave", "yawn": "yawn", "think": "think"}
 		if vid.has(kind):
 			anim.play(vid[kind])
 		elif kind == "bad":
