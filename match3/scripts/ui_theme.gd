@@ -80,6 +80,19 @@ static func build() -> Theme:
 	pill.content_margin_left = 14
 	pill.content_margin_right = 18
 	t.set_stylebox("panel", "PillPanel", pill)
+	# плашка ресурса из арта владельца (деревянная рамка, кремовое поле)
+	if ResourceLoader.exists("res://assets/art/ui2_plate_s.png"):
+		var tb := StyleBoxTexture.new()
+		tb.texture = load("res://assets/art/ui2_plate_s.png")
+		tb.texture_margin_left = 26
+		tb.texture_margin_right = 26
+		tb.texture_margin_top = 22
+		tb.texture_margin_bottom = 22
+		tb.content_margin_left = 6
+		tb.content_margin_right = 8
+		tb.content_margin_top = 8
+		tb.content_margin_bottom = 8
+		t.set_stylebox("panel", "PillPanel", tb)
 	t.set_type_variation("GoalSlot", "PanelContainer")
 	t.set_stylebox("panel", "GoalSlot", StyleBoxEmpty.new())
 	t.set_type_variation("BoardPanel", "PanelContainer")
