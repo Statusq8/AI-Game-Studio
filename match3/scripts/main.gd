@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.18.0"
+const VERSION := "2.19.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -645,21 +645,106 @@ func _show_soon(what: String) -> void:
 
 
 func _show_shop() -> void:
-	var buttons: Array = []
-	for b in IN_BOOSTERS + PRE_BOOSTERS:
+	var font: Font = UiTheme.title_font()
+	var v := _dialog("Магазин", [], [])
+	(v.get_parent() as Control).custom_minimum_size.x = 660
+	# сколько монет — плашка сверху
+	var bal := Control.new()
+	bal.custom_minimum_size = Vector2(0, 64)
+	bal.draw.connect(func() -> void:
+		var t := str(Save.coins)
+		var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 36)
+		var w := ts.x + 110.0
+		var r := Rect2(Vector2((bal.size.x - w) / 2, 6), Vector2(w, 52))
+		_tile(bal, r, Color("#5a3a08"), 26)
+		_tile(bal, r.grow(-3), Color("#2b1a4a"), 23)
+		Zoo.draw_art(bal, "ui_coin", r.position + Vector2(32, 26), 50.0)
+		var tp := r.position + Vector2(66, 39)
+		bal.draw_string_outline(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, 36, 7, Color("#1a0e2a"))
+		bal.draw_string(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, 36, Color("#ffe14d")))
+	v.add_child(bal)
+	# карточки бустеров: 4 на уровне + 3 до уровня, сетка по 4
+	var all: Array = []
+	for b in IN_BOOSTERS:
+		all.append([b[0], b[1]])
+	for b in PRE_BOOSTERS:
+		all.append([b[0], b[1]])
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 12)
+	grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	v.add_child(grid)
+	for b in all:
 		var kind: String = b[0]
-		buttons.append(["%s (×%d) — %d монет" % [b[1], int(Save.boosters.get(kind, 0)), BOOSTER_PRICE], "OrangeButton", func() -> void:
+		var title: String = b[1]
+		var card := Control.new()
+		card.custom_minimum_size = Vector2(140, 236)
+		card.draw.connect(func() -> void:
+			var r := Rect2(Vector2.ZERO, Vector2(card.size.x, 172))
+			_tile(card, Rect2(r.position + Vector2(0, 5), r.size), Color(0, 0, 0, 0.18), 20)
+			_tile(card, r, Color("#b9824a"), 20)
+			_tile(card, r.grow(-4), Color("#fff1d0"), 17)
+			var tfs := 24 if title.length() < 7 else 20
+			var ts := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, tfs)
+			var tp := Vector2((r.size.x - ts.x) / 2, 32)
+			card.draw_string_outline(font, tp, title, HORIZONTAL_ALIGNMENT_LEFT, -1, tfs, 6, Color("#6a3a10"))
+			card.draw_string(font, tp, title, HORIZONTAL_ALIGNMENT_LEFT, -1, tfs, Color.WHITE)
+			var ic := Vector2(r.size.x / 2, 98)
+			if kind.begins_with("pre_"):
+				var t: Texture2D = Gem.tex({"pre_rocket": "rocket", "pre_bomb": "bomb", "pre_orb": "orb"}[kind])
+				if t:
+					var sz := t.get_size()
+					var kk := 74.0 / maxf(sz.x, sz.y)
+					card.draw_set_transform(ic, 0.0, Vector2(kk, kk))
+					card.draw_texture(t, -sz / 2)
+					card.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			else:
+				_draw_tool_icon(card, kind, ic)
+			# сколько уже есть
+			var n := int(Save.boosters.get(kind, 0))
+			var bc := Vector2(r.size.x - 28, 148)
+			card.draw_circle(bc, 20, Color.WHITE)
+			card.draw_circle(bc, 17, Color("#2f9e3a"))
+			var nt := str(n)
+			var nts := font.get_string_size(nt, HORIZONTAL_ALIGNMENT_LEFT, -1, 22)
+			card.draw_string(font, bc + Vector2(-nts.x / 2, 8), nt, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color.WHITE))
+		var buy := Button.new()
+		buy.theme_type_variation = "GreenButton"
+		buy.custom_minimum_size = Vector2(140, 60)
+		buy.position = Vector2(0, 176)
+		buy.size = Vector2(140, 60)
+		buy.text = "     %d" % BOOSTER_PRICE
+		buy.add_theme_font_size_override("font_size", 24)
+		buy.disabled = Save.coins < BOOSTER_PRICE
+		buy.draw.connect(func() -> void:
+			Zoo.draw_art(buy, "ui_coin", Vector2(30, buy.size.y / 2 - 3), 36.0))
+		buy.pressed.connect(func() -> void:
 			if Save.spend(BOOSTER_PRICE):
 				Save.add_booster(kind)
-			_show_shop(), Save.coins < BOOSTER_PRICE])
-	buttons.append(["Закрыть", "Button", func() -> void:
+				Sfx.play("coin")
+				card.pivot_offset = card.size / 2
+				var t := card.create_tween()
+				t.tween_property(card, "scale", Vector2(1.08, 1.08), 0.08)
+				t.tween_property(card, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+				for c in grid.get_children():
+					c.queue_redraw()
+					for bb in c.get_children():
+						if bb is Button:
+							bb.disabled = Save.coins < BOOSTER_PRICE
+				bal.queue_redraw()
+				_refresh_coins())
+		card.add_child(buy)
+		grid.add_child(card)
+	var close := Button.new()
+	close.text = "Закрыть"
+	close.custom_minimum_size = Vector2(300, 80)
+	close.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	close.add_theme_font_size_override("font_size", 28)
+	close.pressed.connect(func() -> void:
 		_clear_overlay()
-		_refresh_home()])
-	var v := _dialog("Магазин", ["Монеты: %d" % Save.coins], buttons)
-	for c in v.get_children():
-		if c is Button:
-			c.custom_minimum_size.y = 64
-			c.add_theme_font_size_override("font_size", 22)
+		_refresh_home())
+	v.add_child(close)
 
 
 ## Подарочная коробка с бантом (для кнопки и окна подарков).
@@ -892,12 +977,66 @@ func _show_chest() -> void:
 
 
 func _show_collection() -> void:
-	var lines: Array = []
-	for i in Zones.ZONES.size():
-		var z: Dictionary = Zones.ZONES[i]
-		var status: String = ("✓ " + (z.animal if z.animal != "" else "готово")) if i < Save.zone else ("ремонт: %d/%d" % [Save.built.size(), z.tasks.size()] if i == Save.zone else "закрыта")
-		lines.append("%d. %s — %s" % [i + 1, z.name, status])
-	_dialog("Коллекция", lines, [["Закрыть", "Button", _clear_overlay]])
+	var font: Font = UiTheme.title_font()
+	var v := _dialog("Коллекция", [], [])
+	(v.get_parent() as Control).custom_minimum_size.x = 640
+	var list := Control.new()
+	var n := Zones.ZONES.size()
+	var rh := 84.0
+	list.custom_minimum_size = Vector2(0, n * (rh + 8))
+	list.draw.connect(func() -> void:
+		for i in n:
+			var z: Dictionary = Zones.ZONES[i]
+			var done := i < Save.zone
+			var cur := i == Save.zone
+			var r := Rect2(Vector2(0, i * (rh + 8)), Vector2(list.size.x, rh))
+			_tile(list, Rect2(r.position + Vector2(0, 4), r.size), Color(0, 0, 0, 0.15), 18)
+			_tile(list, r, Color("#b9824a") if not cur else Color("#ff8a00"), 18)
+			_tile(list, r.grow(-3), Color("#cfeec0") if done else (Color("#fff6c8") if cur else Color("#e6dccb")), 15)
+			# номер зоны в кружке
+			var nc := r.position + Vector2(44, rh / 2)
+			list.draw_circle(nc, 28, Color("#5a3a08"))
+			list.draw_circle(nc, 25, Color("#2fae3a") if done else (Color("#ff9a1a") if cur else Color("#9a8f80")))
+			var nt := str(i + 1)
+			var nts := font.get_string_size(nt, HORIZONTAL_ALIGNMENT_LEFT, -1, 30)
+			list.draw_string(font, nc + Vector2(-nts.x / 2, 11), nt, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color.WHITE)
+			var tp := r.position + Vector2(86, 36)
+			var col := Color("#6a3a10") if (done or cur) else Color("#8a8070")
+			list.draw_string(font, tp, z.name, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, col)
+			var sub: String
+			if done:
+				sub = ("Живут: %s" % z.animal) if z.animal != "" else "Открыт для гостей"
+			elif cur:
+				sub = "Ремонт: %d из %d" % [Save.built.size(), z.tasks.size()]
+			else:
+				sub = ("Скоро: %s" % z.animal) if z.animal != "" else "Закрыта"
+			list.draw_string(font, r.position + Vector2(86, 68), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, col.lightened(0.15))
+			if cur:
+				var br := Rect2(r.position + Vector2(r.size.x - 170, rh / 2 - 10), Vector2(150, 20))
+				_tile(list, br.grow(2), Color("#5a3a08"), 11)
+				_tile(list, br, Color("#e6dccb"), 10)
+				var f: float = float(Save.built.size()) / float(z.tasks.size())
+				if f > 0:
+					_tile(list, Rect2(br.position, Vector2(br.size.x * f, br.size.y)), Color("#5fd34a"), 10)
+			elif done:
+				var cc := r.position + Vector2(r.size.x - 40, rh / 2)
+				list.draw_circle(cc, 20, Color.WHITE)
+				list.draw_circle(cc, 17, Color("#2fae3a"))
+				list.draw_polyline(PackedVector2Array([cc + Vector2(-9, 0), cc + Vector2(-2, 7), cc + Vector2(10, -7)]), Color.WHITE, 5.0, true)
+			else:
+				# замочек
+				var lc := r.position + Vector2(r.size.x - 40, rh / 2 + 4)
+				list.draw_arc(lc + Vector2(0, -12), 10, PI, TAU, 12, Color("#7a6e60"), 5.0)
+				_tile(list, Rect2(lc + Vector2(-15, -12), Vector2(30, 24)), Color("#7a6e60"), 5)
+				list.draw_circle(lc, 4, Color("#e6dccb")))
+	v.add_child(list)
+	var close := Button.new()
+	close.text = "Закрыть"
+	close.custom_minimum_size = Vector2(300, 80)
+	close.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	close.add_theme_font_size_override("font_size", 28)
+	close.pressed.connect(_clear_overlay)
+	v.add_child(close)
 
 
 func _show_settings() -> void:
@@ -3749,6 +3888,16 @@ func _run_shots(dir: String) -> void:
 	_build_task(0, 2)
 	await get_tree().create_timer(2.6).timeout
 	await _snap(dir, "1c_built")
+	Save.coins = 600
+	_show_shop()
+	await get_tree().create_timer(0.5).timeout
+	await _snap(dir, "1g_shop")
+	Save.zone = 2
+	_show_collection()
+	await get_tree().create_timer(0.5).timeout
+	await _snap(dir, "1h_collection")
+	Save.zone = 0
+	Save.coins = 0
 	_show_daily()
 	await get_tree().create_timer(0.5).timeout
 	await _snap(dir, "1e_daily")
