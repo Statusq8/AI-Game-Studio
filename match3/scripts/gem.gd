@@ -46,6 +46,32 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
+## Мягкое пульсирующее свечение под особой фишкой — чтобы её было видно на поле.
+func _halo(col: Color, k: float) -> void:
+	var p := 0.5 + 0.5 * sin(_t * 4.0 + _shine)
+	for i in 5:
+		var rr := size * (0.3 + i * 0.065) * k * (1.0 + p * 0.1)
+		draw_circle(Vector2.ZERO, rr, Color(col, (0.3 - i * 0.05) * (0.65 + 0.35 * p)))
+	# мягкие лучи, медленно вращаются
+	for i in 6:
+		var a := _t * 0.6 + i * TAU / 6.0
+		var d := Vector2(cos(a), sin(a))
+		var tip := d * size * 0.62 * k
+		var w := d.orthogonal() * size * 0.07
+		draw_colored_polygon(PackedVector2Array([w, tip, -w]), Color(col, 0.18 * (0.6 + 0.4 * p)))
+
+
+## Искорки-блёстки, мигающие вокруг фишки.
+func _glints(col: Color, n: int) -> void:
+	for i in n:
+		var ph := fmod(_t * 0.9 + i * 0.37 + _shine, 1.0)
+		var a := i * 2.1 + floorf(_t * 0.9 + i * 0.37 + _shine) * 1.7
+		var p := Vector2(cos(a), sin(a)) * size * (0.38 + 0.12 * ph)
+		var r := size * 0.07 * sin(ph * PI)
+		draw_line(p - Vector2(r, 0), p + Vector2(r, 0), Color(col, 0.9), 2.0, true)
+		draw_line(p - Vector2(0, r), p + Vector2(0, r), Color(col, 0.9), 2.0, true)
+
+
 static func tex(name: String) -> Texture2D:
 	if not _tex.has(name):
 		var path := "res://assets/art/%s.png" % name
@@ -85,20 +111,42 @@ func _draw() -> void:
 		ROCKET_H, ROCKET_V:
 			t = tex("rocket")
 			if t:
-				# вертикальная ракета — носом вверх (раньше носом вниз и казалась перевёрнутой)
-				_draw_tex(t, box * 1.5, -PI / 2.0 if special == ROCKET_V else 0.0, pulse)
+				# ракета «на взводе»: подрагивает, из сопла бьёт мерцающее пламя, вокруг тёплое свечение
+				var vert := special == ROCKET_V
+				var ang := -PI / 2.0 if vert else 0.0
+				var fwd := Vector2(0, -1) if vert else Vector2(1, 0)
+				var jit := Vector2(sin(_t * 47.0), cos(_t * 39.0)) * size * 0.012
+				var noz := -fwd * size * 0.52 + jit
+				var fl := 0.75 + 0.25 * sin(_t * 31.0) + 0.1 * sin(_t * 53.0)
+				var side := fwd.orthogonal()
+				for L in [[1.0, Color(1.0, 0.45, 0.1, 0.55)], [0.62, Color(1.0, 0.8, 0.25, 0.85)], [0.32, Color(1, 1, 0.85, 0.95)]]:
+					var ln: float = size * 0.34 * fl * L[0]
+					var wd: float = size * 0.13 * L[0]
+					draw_colored_polygon(PackedVector2Array([noz + side * wd, noz - fwd * ln, noz - side * wd]), L[1])
+					draw_circle(noz, wd, L[1])
+				draw_set_transform(jit, 0.0, Vector2.ONE)
+				var sz := t.get_size()
+				var k := box * 1.5 * pulse / maxf(sz.x, sz.y)
+				draw_set_transform(jit, ang, Vector2(k, k))
+				draw_texture(t, -sz / 2)
+				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 				return
 		BOMB, ORB, PROPELLER:
 			t = tex({BOMB: "bomb", ORB: "orb", PROPELLER: "propeller"}[special])
 			if t:
 				if special == PROPELLER:
-					# бабочка машет крыльями
+					# бабочка порхает: серия взмахов, пауза, снова взмахи; покачивается вверх-вниз и чуть наклоняется
 					var sz := t.get_size()
-					var k := box / maxf(sz.x, sz.y)
-					draw_set_transform(Vector2(0, sin(_t * 4.0) * 3.0), 0.0, Vector2(k * (0.55 + 0.45 * absf(sin(_t * 12.0))), k))
+					var k := box * 1.12 / maxf(sz.x, sz.y)
+					var ph := fmod(_t + _shine, 2.2)
+					var flap := 0.5 + 0.5 * cos(_t * 16.0) if ph < 1.1 else 0.92
+					var bob := sin(_t * 3.0 + _shine) * size * 0.06
+					draw_set_transform(Vector2(0, bob), sin(_t * 2.3) * 0.12, Vector2(k * (0.35 + 0.65 * flap), k))
 					draw_texture(t, -sz / 2)
 					draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+					_glints(Color(1.0, 0.9, 0.5), 3)
 				elif special == BOMB:
+					pulse = 1.0 + maxf(0.0, sin(_t * 7.0)) * 0.09
 					# у бомбы фитиль справа сверху — сдвигаем картинку, чтобы шар стоял по центру клетки, и делаем крупнее
 					draw_set_transform(Vector2(-size * 0.05, size * 0.06), 0.0, Vector2.ONE)
 					_draw_tex(t, box * 1.25, 0.0, pulse)
@@ -112,7 +160,15 @@ func _draw() -> void:
 						var a := _t * 9.0 + k * TAU / 4.0
 						draw_line(fz, fz + Vector2(cos(a), sin(a)) * size * 0.16 * fl, Color(1, 1, 0.7, 0.9), 2.0, true)
 				else:
-					_draw_tex(t, box * 1.08, 0.0, pulse)
+					# шар: медленно вращается, переливается радужным ореолом, вокруг кружат искры
+					var hue := fmod(_t * 0.25, 1.0)
+					_draw_tex(t, box * 1.08, _t * 0.9, pulse)
+					for i in 3:
+						var a := _t * 2.4 + i * TAU / 3.0
+						var p := Vector2(cos(a), sin(a) * 0.55) * size * 0.5
+						var c := Color.from_hsv(fmod(hue + i / 3.0, 1.0), 0.5, 1.0)
+						draw_circle(p, size * 0.07, Color(c, 0.35))
+						draw_circle(p, size * 0.035, Color(1, 1, 1, 0.95))
 				return
 	match special:
 		NONE:

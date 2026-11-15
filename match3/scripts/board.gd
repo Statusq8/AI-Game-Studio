@@ -31,7 +31,7 @@ const Gem := preload("res://scripts/gem.gd")
 const CELL := 84.0
 const PROPELLER_TIME := 1.5  # полёт бабочки к цели: 0.3 взлёт + 1.0 полёт + 0.2 нырок
 const PROPELLER_DELAY := 0.25  # сначала взрываются соседи, потом бабочка взлетает
-const ROCKET_CELL_TIME := 0.045  # ракета пролетает клетку за столько секунд
+const ROCKET_CELL_TIME := 0.07  # ракета пролетает клетку за столько секунд
 enum { B_NONE, B_CRATE, B_VASE, B_SAFE, B_JAR, B_CAGE, B_BALLOON, B_FLOWER, B_BUSH, B_SHELL, B_STONE, B_COLORBOX, B_BIRDHOUSE }
 ## Препятствия-блоки: цель уровня, бьёт ли совпадение рядом, картинки по стадиям поломки.
 const BLOCKS := {
@@ -139,6 +139,10 @@ func setup(level: Dictionary) -> void:
 			chain[x].append(int(level.chains.get(c, 0)))
 			grass[x].append(c in level.grass_start)
 			grass_target[x].append(c in level.grass_target)
+	# слой сияния под особыми фишками: рисуется до фишек, поэтому соседние фишки его не закрывают
+	_halos = preload("res://scripts/redraw_layer.gd").new()
+	_halos.draw.connect(_draw_halos)
+	add_child(_halos)
 	for c: Vector2i in level.blocks:
 		if level.blocks[c].get("anchor", c) == c:
 			_make_block_node(c)
@@ -506,6 +510,32 @@ func _draw() -> void:
 
 func inside(c: Vector2i) -> bool:
 	return c.x >= 0 and c.y >= 0 and c.x < W and c.y < H
+
+
+var _halos: Node2D
+
+
+## Сияние особых фишек: мягкий пульсирующий ореол и медленно вращающиеся лучи под фишкой.
+func _draw_halos() -> void:
+	var t := Time.get_ticks_msec() / 1000.0
+	var cols := {Gem.ROCKET_H: Color(1.0, 0.55, 0.2), Gem.ROCKET_V: Color(1.0, 0.55, 0.2), Gem.BOMB: Color(1.0, 0.35, 0.25),
+		Gem.PROPELLER: Color(1.0, 0.8, 0.3)}
+	for x in W:
+		for y in H:
+			var g: Node2D = tiles[x][y]
+			if g == null or not g.is_power() or g.modulate.a < 0.5:
+				continue
+			var col: Color = cols.get(g.special, Color.from_hsv(fmod(t * 0.25, 1.0), 0.55, 1.0))
+			var c: Vector2 = g.position
+			var ph := 0.5 + 0.5 * sin(t * 4.0 + x * 1.3 + y * 0.7)
+			for i in 5:
+				var rr := CELL * (0.78 - i * 0.07) * (0.92 + ph * 0.12)
+				_halos.draw_circle(c, rr, Color(col, (0.12 + i * 0.07) * (0.6 + 0.4 * ph)))
+			for i in 6:
+				var a := t * 0.6 + i * TAU / 6.0
+				var d := Vector2(cos(a), sin(a))
+				var w := d.orthogonal() * CELL * 0.11
+				_halos.draw_colored_polygon(PackedVector2Array([c + w, c + d * CELL * 0.95, c - w]), Color(col.lightened(0.3), 0.4 * (0.6 + 0.4 * ph)))
 
 
 func gem_at(c: Vector2i) -> Node2D:
@@ -2397,7 +2427,7 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 		var end := fx.to_local(to_global(c + dir * (H if vertical else W) * CELL))
 		var r := Sprite2D.new()
 		r.texture = tex
-		var k := CELL * 1.2 / maxf(tex.get_width(), tex.get_height()) if tex else 1.0
+		var k := CELL * 1.75 / maxf(tex.get_width(), tex.get_height()) if tex else 1.0
 		# картинка смотрит вправо: влево — зеркалим, вверх/вниз — поворачиваем
 		if vertical:
 			r.rotation = PI / 2.0 * sgn
@@ -2415,7 +2445,7 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 		beam.z_index = 4
 		core.z_index = 4
 		var gw := float(beam.texture.get_width())
-		var thick := CELL * 0.9 * get_global_transform().get_scale().x
+		var thick := CELL * 0.55 * get_global_transform().get_scale().x
 		for bs in [beam, core]:
 			bs.rotation = PI / 2.0 if vertical else 0.0
 		var tw := r.create_tween()
@@ -2429,12 +2459,12 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 			core.scale = Vector2(len / gw, thick * 0.35 / gw)
 			# огненный след сразу за соплом + дымок дальше
 			if r.position.distance_to(prev) > 0.0:
-				_flame(r.position - dir * 44.0)
+				_flame(r.position - dir * 62.0)
 			if r.position.distance_to(last[0]) > 26.0:
 				last[0] = r.position
 				trail_i[0] += 1
-				if trail_i[0] % 2 == 0:
-					_flipbook("fireball", r.position - dir * 50.0, CELL * 1.25 * rgs, 0.42, Color.WHITE, false, 5)
+				if trail_i[0] % 3 == 0:
+					_flipbook("fireball", r.position - dir * 64.0, CELL * 1.1 * rgs, 0.42, Color.WHITE, false, 5)
 				else:
 					_puff(r.position - dir * 60.0)
 				_sparkles(r.position - dir * 30.0, Color("#ffd27a"), 1), 0.0, 1.0, ROCKET_CELL_TIME * cells)
@@ -2533,7 +2563,7 @@ func _bomb_fx(cell: Vector2i, power: float) -> void:
 	var at := fx.to_local(to_global(cell_pos(cell)))
 	var gsc := get_global_transform().get_scale().x
 	# объёмный мультяшный взрыв (покадровый) + свечение
-	_flipbook("explosion", at, CELL * 3.6 * power * gsc, 0.75)
+	_flipbook("explosion", at, CELL * 4.2 * power * gsc, 0.9)
 	_glow_flash(at, Color(1.0, 0.75, 0.35), CELL * 3.0 * power * gsc, 0.3)
 	var flash := Node2D.new()
 	flash.position = at
@@ -2594,7 +2624,7 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int, delay: float = 0.0) -
 	var gs := get_global_transform().get_scale().x
 	var p: Node2D = Gem.new()
 	p.color = col
-	p.size = CELL * 0.9
+	p.size = CELL * 1.1
 	p.z_index = 9
 	fx.add_child(p)
 	p.set_special(Gem.PROPELLER)

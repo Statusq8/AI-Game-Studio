@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.15.3"
+const VERSION := "2.16.0"
 const WIN_COINS := 50
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -85,6 +85,8 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--shots="):
 			_run_shots.call_deferred(arg.trim_prefix("--shots="))
+		elif arg == "--fxdemo":
+			_run_fxdemo.call_deferred()
 		elif arg == "--inputtest":
 			_run_input_test.call_deferred()
 		elif arg.begins_with("--bot"):
@@ -3433,7 +3435,53 @@ func _run_shots(dir: String) -> void:
 	get_tree().quit()
 
 
+## Показ особых фишек по очереди на чистом поле (для записи видео и проверки эффектов).
+func _run_fxdemo() -> void:
+	_bot = true
+	_start_level(3)
+	await get_tree().create_timer(1.8).timeout
+	_clear_overlay()
+	_moves = 99
+	_state = "fxdemo"
+	var shots := [[Vector2i(1, 4), Gem.ROCKET_H], [Vector2i(4, 2), Gem.ROCKET_V], [Vector2i(3, 4), Gem.BOMB],
+		[Vector2i(5, 6), Gem.PROPELLER]]
+	for sh in shots:
+		var g: Node2D = _board.gem_at(sh[0])
+		if g:
+			g.set_special(sh[1])
+			await get_tree().create_timer(0.5).timeout
+			print("FX ", sh[1], " frame ", Engine.get_frames_drawn())
+			_board.activate_single(sh[0])
+		while _board.busy:
+			await get_tree().process_frame
+		await get_tree().create_timer(0.4).timeout
+	var og: Node2D = _board.gem_at(Vector2i(3, 5))
+	if og and _board.gem_at(Vector2i(4, 5)):
+		og.set_special(Gem.ORB)
+		await get_tree().create_timer(0.5).timeout
+		print("FX orb frame ", Engine.get_frames_drawn())
+		_board.try_swap(Vector2i(3, 5), Vector2i(4, 5))
+	while _board.busy:
+		await get_tree().process_frame
+	await get_tree().create_timer(0.4).timeout
+	# комбо: ракета + бомба
+	var a: Node2D = _board.gem_at(Vector2i(3, 3))
+	var b: Node2D = _board.gem_at(Vector2i(4, 3))
+	if a and b:
+		a.set_special(Gem.ROCKET_H)
+		b.set_special(Gem.BOMB)
+		await get_tree().create_timer(0.5).timeout
+		print("FX combo frame ", Engine.get_frames_drawn())
+		_board.try_swap(Vector2i(3, 3), Vector2i(4, 3))
+	while _board.busy:
+		await get_tree().process_frame
+	await get_tree().create_timer(0.8).timeout
+	print("FX end frame ", Engine.get_frames_drawn())
+	get_tree().quit()
+
+
 func _snap(dir: String, name: String) -> void:
+	print("SNAP ", name, " frame ", Engine.get_frames_drawn())
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	img.save_png(dir.path_join(name + ".png"))
