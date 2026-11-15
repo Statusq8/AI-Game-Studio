@@ -1732,7 +1732,9 @@ func _chain_lightning(start: Vector2i, targets: Array, col: int) -> void:
 	var cur := start
 	if fx:
 		var gk := get_global_transform().get_scale().x
-		_flipbook("zap", fx.to_local(to_global(cell_pos(start))), CELL * 3.2 * gk, 0.5, Color.WHITE, true, 9)
+		# радужная вспышка шара (ИИ-видео владельца); если листа нет — прежняя молния
+		if _flipbook("orbburst", fx.to_local(to_global(cell_pos(start))), CELL * 5.0 * gk, 1.1, Color.WHITE, false, 9) == null:
+			_flipbook("zap", fx.to_local(to_global(cell_pos(start))), CELL * 3.2 * gk, 0.5, Color.WHITE, true, 9)
 		_glow_flash(fx.to_local(to_global(cell_pos(start))), color, CELL * 2.5 * gk, 0.35)
 	var step := clampf(0.75 / maxf(1.0, left.size()), 0.04, 0.09)
 	while not left.is_empty():
@@ -2157,7 +2159,7 @@ func _fx_sprite(kind: String, at: Vector2, color: Color, px: float, additive := 
 
 
 ## Покадровые эффекты (заранее отрисованы tools/gen_vfx.py): имя → [колонки, ряды, кадров].
-const FLIPBOOKS := {"explosion": [6, 4, 24], "fireball": [4, 4, 16], "zap": [4, 3, 12], "pop": [4, 3, 12], "birth": [6, 3, 18], "smoke": [4, 4, 16]}
+const FLIPBOOKS := {"boom": [4, 4, 16], "orbburst": [4, 4, 16], "explosion": [6, 4, 24], "fireball": [4, 4, 16], "zap": [4, 3, 12], "pop": [4, 3, 12], "birth": [6, 3, 18], "smoke": [4, 4, 16]}
 static var _fb_tex := {}
 
 
@@ -2563,7 +2565,9 @@ func _bomb_fx(cell: Vector2i, power: float) -> void:
 	var at := fx.to_local(to_global(cell_pos(cell)))
 	var gsc := get_global_transform().get_scale().x
 	# объёмный мультяшный взрыв (покадровый) + свечение
-	_flipbook("explosion", at, CELL * 4.2 * power * gsc, 0.9)
+	# взрыв из ИИ-видео владельца (если листа нет — прежний)
+	if _flipbook("boom", at, CELL * 3.8 * power * gsc, 0.9) == null:
+		_flipbook("explosion", at, CELL * 4.2 * power * gsc, 0.9)
 	_glow_flash(at, Color(1.0, 0.75, 0.35), CELL * 3.0 * power * gsc, 0.3)
 	var flash := Node2D.new()
 	flash.position = at
