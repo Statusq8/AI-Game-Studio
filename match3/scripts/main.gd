@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.21.1"
+const VERSION := "2.21.2"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -381,12 +381,12 @@ func _build_home() -> void:
 			# номер уровня — в левой кремовой плашке (≈ 20–42% ширины, 47–68% высоты картинки)
 			var font: Font = UiTheme.title_font()
 			var t := str(Save.level)
-			var fs := 62 if t.length() <= 3 else 50
+			var fs := 70 if t.length() <= 2 else (60 if t.length() == 3 else 48)
 			var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 			var pc := r.position + Vector2(r.size.x * 0.33, r.size.y * 0.58)
 			var tp := pc + Vector2(-ts.x / 2, fs * 0.36)
-			b.draw_string_outline(font, tp + Vector2(0, 3), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color(0, 0, 0, 0.25))
-			b.draw_string_outline(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 9, Color("#1e5a14") if not hard else Color("#6a1208"))
+			b.draw_string_outline(font, tp + Vector2(0, 4), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color(0, 0, 0, 0.35))
+			b.draw_string_outline(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#2a2a2a") if not hard else Color("#5a0a04"))
 			b.draw_string(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
 		_home_level_btn.button_down.connect(_home_level_btn.queue_redraw)
 		_home_level_btn.button_up.connect(_home_level_btn.queue_redraw)
@@ -427,23 +427,23 @@ func _build_home() -> void:
 		btn.flat = true
 		for st in ["normal", "hover", "pressed", "focus"]:
 			btn.add_theme_stylebox_override(st, StyleBoxEmpty.new())
-		btn.custom_minimum_size = Vector2(148 if on else 136, 166)
+		btn.custom_minimum_size = Vector2(156 if on else 138, 166)
 		btn.tooltip_text = name
 		btn.draw.connect(func() -> void:
 			# плитки по референсу: обычная 155×125 (центр на 93 px ниже верха дерева), выбранная 185×190 (центр на 101)
 			var pr := btn.is_pressed()
 			var ks := 0.93 if pr else 1.0
-			var c := Vector2(btn.size.x / 2, (101.0 if on else 93.0) * REF_K)
+			var c := Vector2(btn.size.x / 2, (88.0 if on else 100.0) * REF_K)
 			if on:
-				var tsz := Vector2(185, 190) * REF_K * ks
+				var tsz := Vector2(192, 200) * REF_K * ks
 				var p := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 400.0)
 				btn.draw_circle(c, tsz.x * 0.55 + p * 4, Color(1, 0.9, 0.4, 0.16))
 				var to := Zoo.art("ui2_tab_on")
 				if to:
 					btn.draw_texture_rect(to, Rect2(c - tsz / 2, tsz), false)
-				Zoo.draw_art(btn, art, c + Vector2(0, -8) * REF_K, 132.0 * REF_K * ks)
+				Zoo.draw_art(btn, art, c + Vector2(0, -10) * REF_K, 150.0 * REF_K * ks)
 			else:
-				var tsz := Vector2(155, 125) * REF_K * ks
+				var tsz := Vector2(165, 150) * REF_K * ks
 				var tt := Zoo.art(art)
 				if tt:
 					btn.draw_texture_rect(tt, Rect2(c - tsz / 2, tsz), false)
@@ -456,13 +456,14 @@ func _build_home() -> void:
 
 	var ver := Label.new()
 	ver.text = "Зоопарк мечты · %s" % VERSION
-	ver.add_theme_font_size_override("font_size", 16)
+	ver.add_theme_font_size_override("font_size", 13)
 	ver.modulate = Color(1, 1, 1, 0.7)
 	ver.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	ver.position = Vector2(10, -24)
+	ver.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	ver.position = Vector2(530, 2)
 	ver.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_home.add_child(ver)
-	_home.resized.connect(func() -> void: ver.position = Vector2(10, _home.size.y - 22))
+	_home.resized.connect(func() -> void: ver.position = Vector2(_home.size.x - 190, 2))
 
 
 func _layout_home() -> void:
@@ -553,11 +554,11 @@ func _build_topbar_ref() -> void:
 	_topbar.add_child(av)
 	_avatar_node = av
 	# жизни: плашка, сердце, под ней плашка таймера с будильником
-	var hp := _ref_rect(192, 55, 405, 128)
-	_hearts_label = _ref_plate(hp, "ui_heart", Vector2(232, 84), 92.0, Vector2(385, 112), true)
+	var hp := _ref_rect(191, 46, 408, 125)
+	_hearts_label = _ref_plate(hp, "ui_heart", Vector2(232, 82), 80.0, Vector2(385, 112), true)
 	var tm := Control.new()
 	tm.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var tr := _ref_rect(222, 112, 362, 150)
+	var tr := _ref_rect(220, 106, 362, 149)
 	tm.position = tr.position
 	tm.size = tr.size
 	tm.draw.connect(func() -> void:
@@ -575,8 +576,8 @@ func _build_topbar_ref() -> void:
 	_hearts_timer.size = tr.size - Vector2(30, 0) * REF_K
 	tm.add_child(_hearts_timer)
 	# монеты и звёзды
-	_coin_labels.append(_ref_plate(_ref_rect(430, 55, 655, 128), "ui_coin", Vector2(472, 90), 96.0, Vector2(632, 113), true))
-	_stars_label = _ref_plate(_ref_rect(675, 55, 888, 128), "ui_star", Vector2(716, 86), 94.0, Vector2(865, 113), false)
+	_coin_labels.append(_ref_plate(_ref_rect(428, 46, 653, 125), "ui_coin", Vector2(472, 86), 86.0, Vector2(632, 113), true))
+	_stars_label = _ref_plate(_ref_rect(674, 46, 886, 125), "ui_star", Vector2(716, 82), 86.0, Vector2(865, 113), false)
 
 
 func _avatar() -> Control:
