@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.22.0"
+const VERSION := "2.22.1"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -1498,10 +1498,14 @@ func _attach_panda_anim(img: TextureRect) -> bool:
 	img.texture = null
 	var a := PandaAnim.new()
 	a.name = "Anim"
-	var h := img.size.y * 1.5
-	var w := h * 320.0 / 384.0
-	a.size = Vector2(w, h)
-	a.position = Vector2(img.size.x / 2.0 - w / 2.0, img.size.y - h)
+	# размер — от картинки-места панды; пересчитывается, если место меняется (раньше панда «подстраивалась»)
+	var fit := func() -> void:
+		var h := img.size.y * 1.5
+		var w := h * 280.0 / 336.0
+		a.size = Vector2(w, h)
+		a.position = Vector2(img.size.x / 2.0 - w / 2.0, img.size.y - h)
+	fit.call()
+	img.resized.connect(fit)
 	img.add_child(a)
 	return true
 
