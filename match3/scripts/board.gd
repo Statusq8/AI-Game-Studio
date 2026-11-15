@@ -2731,13 +2731,8 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int, delay: float = 0.0) -
 	tw.parallel().tween_property(p, "scale", Vector2(1.35, 1.35) * gs, 0.06)
 	tw.tween_property(p, "position", b, 0.14).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.parallel().tween_property(p, "scale", Vector2(0.7, 0.7) * gs, 0.14)
-	tw.tween_callback(func() -> void:
-		shadow.queue_free()
-		_flipbook("fireball", b, CELL * 2.0 * gs, 0.45, Color.WHITE, false, 8)
-		_flipbook("pop", b, CELL * 2.2 * gs, 0.36, Color(1.0, 0.85, 0.4), true, 8)
-		shake.emit(5.0)
-		_burst(cell_pos(to), Color("#ffb020"), 10)
-		_pop_ring(b, Color("#ffd23f")))
+	# по просьбе владельца без взрыва: бабочка просто ныряет в цель, фишка лопается обычным образом
+	tw.tween_callback(shadow.queue_free)
 	tw.tween_property(p, "modulate:a", 0.0, 0.08)
 	tw.tween_callback(p.queue_free)
 
