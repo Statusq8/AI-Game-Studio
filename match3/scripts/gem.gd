@@ -16,17 +16,37 @@ const COLORS := [
 ## ИИ-графика (решение №26). Нет файла — рисуем заглушку кодом.
 static var _tex := {}
 
-var color := 0
+var color := 0:
+	set(v):
+		color = v
+		_wake()
 var special := NONE
 var cell := Vector2i.ZERO
-var size := 80.0
+var size := 80.0:
+	set(v):
+		size = v
+		queue_redraw()
 var _t := 0.0
 var _shine := randf() * 6.0
-var bird := false  # предмет-птица из скворечника (рисуется птичкой, а не яйцом)
+var bird := false:  # предмет-птица из скворечника (рисуется птичкой, а не яйцом)
+	set(v):
+		bird = v
+		_wake()
 
 
 func _ready() -> void:
-	set_process(true)
+	_wake()
+
+
+## Анимированные фишки (особые, шар, предмет) перерисовываются каждый кадр; обычные — только при изменении.
+## Раньше все 70+ фишек рисовались заново каждый кадр — это и давало рывки.
+func _wake() -> void:
+	set_process(_animated())
+	queue_redraw()
+
+
+func _animated() -> bool:
+	return special != NONE or color < 0 or bird
 
 
 ## Особая фишка, которая взрывается (предмет «спустить вниз» — не взрывается).
@@ -38,7 +58,7 @@ func set_special(kind: int) -> void:
 	special = kind
 	if kind == ORB or kind == ITEM:
 		color = -1
-	queue_redraw()
+	_wake()
 
 
 func _process(delta: float) -> void:

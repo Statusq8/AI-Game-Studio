@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.21.2"
+const VERSION := "2.22.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -348,11 +348,8 @@ func _build_home() -> void:
 	_chest_btn.pressed.connect(_show_chest)
 	lside.add_child(_chest_btn)
 	_lside = lside
-	var gl := _gift_btn.create_tween().set_loops()
-	gl.tween_callback(func() -> void:
-		_gift_btn.queue_redraw()
-		_chest_btn.queue_redraw())
-	gl.tween_interval(0.05)
+	_every_frame(_gift_btn)
+	_every_frame(_chest_btn)
 
 	# панда в левом нижнем углу
 	_home_panda = _make_panda(250.0)
@@ -481,6 +478,18 @@ func _layout_home() -> void:
 		_rside.position = Vector2(826 - 62, 258 - 62) * REF_K
 	_repair_btn.position = Vector2(110.0 * REF_K - _repair_btn.size.x / 2, ref_b.call(1405.0) - 90.0 * REF_K)
 	_home_panda.position = Vector2(4, h - 250 - _home_panda.custom_minimum_size.y + 10)
+
+
+## Плавная анимация рисованного элемента: перерисовка каждый кадр, пока он виден
+## (раньше — 20 раз в секунду, это выглядело рывками).
+func _every_frame(ci: CanvasItem) -> void:
+	var cb := func() -> void:
+		if is_instance_valid(ci) and ci.is_visible_in_tree():
+			ci.queue_redraw()
+	get_tree().process_frame.connect(cb)
+	ci.tree_exiting.connect(func() -> void:
+		if get_tree().process_frame.is_connected(cb):
+			get_tree().process_frame.disconnect(cb))
 
 
 ## Коэффициент референса: референс 898 px в ширину, игра — 720.
@@ -1082,9 +1091,7 @@ func _show_daily() -> void:
 				grid.draw_circle(cc, 17, Color("#2fae3a"))
 				grid.draw_polyline(PackedVector2Array([cc + Vector2(-9, 0), cc + Vector2(-2, 7), cc + Vector2(10, -7)]), Color.WHITE, 5.0, true))
 	v.add_child(grid)
-	var rt := grid.create_tween().set_loops()
-	rt.tween_callback(grid.queue_redraw)
-	rt.tween_interval(0.05)
+	_every_frame(grid)
 	var btn := Button.new()
 	btn.theme_type_variation = "GreenButton" if ready else "Button"
 	btn.custom_minimum_size = Vector2(360, 96)
@@ -1117,9 +1124,7 @@ func _show_chest() -> void:
 		_draw_chest(pic, pic.size / 2 + Vector2(0, 10), 3.4, full))
 	v.add_child(pic)
 	v.move_child(pic, 0)
-	var pt := pic.create_tween().set_loops()
-	pt.tween_callback(pic.queue_redraw)
-	pt.tween_interval(0.05)
+	_every_frame(pic)
 	var btn := Button.new()
 	btn.theme_type_variation = "GreenButton" if full else "Button"
 	btn.custom_minimum_size = Vector2(360, 96)
@@ -2418,9 +2423,7 @@ func _show_prelevel(n: int) -> void:
 					hb.draw_circle(sc + Vector2(ex, -1), 4, Color("#3a0a0a"))
 				for tx in [-4.0, 0.0, 4.0]:
 					hb.draw_line(sc + Vector2(tx, 9), sc + Vector2(tx, 15), Color("#3a0a0a"), 1.5))
-		var ft := hb.create_tween().set_loops()
-		ft.tween_callback(hb.queue_redraw)
-		ft.tween_interval(0.05)
+		_every_frame(hb)
 		v.add_child(hb)
 		v.move_child(hb, at)
 		at += 1
@@ -2489,9 +2492,7 @@ func _show_prelevel(n: int) -> void:
 			var bonus := "бонус на старте!" if Save.streak >= 3 else "бонус с 3 побед"
 			var bs := font.get_string_size(bonus, HORIZONTAL_ALIGNMENT_LEFT, -1, 20)
 			sb.draw_string(font, Vector2(sb.size.x - bs.x - 20, 22), bonus, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#c25a00")))
-		var stw := sb.create_tween().set_loops()
-		stw.tween_callback(sb.queue_redraw)
-		stw.tween_interval(0.05)
+		_every_frame(sb)
 		v.add_child(sb)
 		v.move_child(sb, at)
 		at += 1
@@ -3728,9 +3729,7 @@ func _show_win() -> void:
 			var sp := Vector2(cx - 120 + k * 60, 20 + (k % 2) * 30)
 			pile.draw_circle(sp, 3.0, Color(1, 1, 0.8, 0.9)))
 	v.add_child(pile)
-	var pr := pile.create_tween().set_loops()
-	pr.tween_callback(pile.queue_redraw)
-	pr.tween_interval(0.04)
+	_every_frame(pile)
 	var pt := pile.create_tween()
 	pt.tween_interval(0.3)
 	pt.tween_callback(Sfx.play.bind("coin"))
@@ -3950,9 +3949,7 @@ func _show_lose() -> void:
 			warn.draw_string_outline(font, tp, wt, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, 7, Color("#5a0e06"))
 			warn.draw_string(font, tp, wt, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, Color.WHITE))
 		v.add_child(warn)
-		var wtw := warn.create_tween().set_loops()
-		wtw.tween_callback(warn.queue_redraw)
-		wtw.tween_interval(0.05)
+		_every_frame(warn)
 	var gap := Control.new()
 	gap.custom_minimum_size = Vector2(0, 6)
 	v.add_child(gap)

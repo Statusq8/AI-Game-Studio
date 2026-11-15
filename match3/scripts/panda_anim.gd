@@ -12,6 +12,7 @@ static var _cache := {}
 
 var _cur: TextureRect
 var _prev: TextureRect
+var _next: TextureRect  # следующий кадр, проявляется поверх текущего — 10 кадров/с выглядят плавно
 var _anim := "idle"
 var _frame := 0
 var _t := 0.0
@@ -40,6 +41,8 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_prev = _rect()
 	_cur = _rect()
+	_next = _rect()
+	_next.modulate.a = 0.0
 	_prev.modulate.a = 0.0
 	_show()
 	# реакции подгружаем заранее, чтобы при первом показе не было рывка
@@ -86,6 +89,11 @@ func _show() -> void:
 	if f.is_empty():
 		return
 	_cur.texture = f[mini(_frame, f.size() - 1)]
+	var nf := _frame + 1
+	if nf >= f.size():
+		nf = 0 if _anim == "idle" else f.size() - 1
+	_next.texture = f[nf]
+	_next.modulate.a = 0.0
 
 
 func _process(delta: float) -> void:
@@ -94,6 +102,8 @@ func _process(delta: float) -> void:
 		_prev.modulate.a = _fade / 0.15
 	_t += delta
 	if _t < 1.0 / FPS:
+		# между кадрами — плавное перетекание в следующий
+		_next.modulate.a = clampf(_t * FPS, 0.0, 1.0)
 		return
 	_t -= 1.0 / FPS
 	var f := frames(_anim)

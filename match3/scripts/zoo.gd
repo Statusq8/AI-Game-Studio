@@ -30,7 +30,8 @@ func spot_center(i: int) -> Vector2:
 
 func _process(delta: float) -> void:
 	_t += delta
-	queue_redraw()
+	if is_visible_in_tree():
+		queue_redraw()
 
 
 func _gui_input(event: InputEvent) -> void:
