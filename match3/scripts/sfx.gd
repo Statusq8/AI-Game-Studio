@@ -9,6 +9,7 @@ var _music_name := ""
 
 
 func _ready() -> void:
+	preload_all.call_deferred()
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	for i in 14:
 		var p := AudioStreamPlayer.new()
@@ -17,6 +18,18 @@ func _ready() -> void:
 	_music = AudioStreamPlayer.new()
 	_music.volume_db = -9.0
 	add_child(_music)
+
+
+## Подгрузить все звуки заранее (понемногу при старте), чтобы первый взрыв не ждал загрузки звука.
+func preload_all() -> void:
+	var d := DirAccess.open("res://assets/audio")
+	if d == null:
+		return
+	for f in d.get_files():
+		var n := f.trim_suffix(".import")
+		if n.ends_with(".ogg"):
+			_stream(n.trim_suffix(".ogg"))
+			await get_tree().process_frame
 
 
 func _stream(n: String) -> AudioStream:

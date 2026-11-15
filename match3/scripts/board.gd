@@ -2148,6 +2148,48 @@ static func fx_tex(kind: String) -> Texture2D:
 	return t
 
 
+## Бюджет эффектов: сколько спрайтов уже летает. Когда взрывов много сразу (финал уровня, комбо),
+## мелкие украшения (осколки, капли, искры, огонь следа) пропускаются — главное (вспышки, взрывы)
+## остаётся. Раньше в финале одновременно жило 1000+ спрайтов, и игра зависала.
+const FX_SOFT := 70    # выше — без осколков и капель
+const FX_HARD := 160   # выше — только крупные взрывы
+
+
+## Заранее загрузить и «показать» видеокарте все текстуры эффектов (почти невидимо, один кадр) —
+## иначе первая же ракета/взрыв грузит картинку в момент взрыва, и игра на миг замирает.
+static var _warmed := false
+
+
+func warm_fx() -> void:
+	if _warmed or fx == null:
+		return
+	_warmed = true
+	var texs: Array = []
+	for n in FLIPBOOKS:
+		var path := "res://assets/vfx/%s.png" % n
+		if not _fb_tex.has(n):
+			_fb_tex[n] = load(path) if ResourceLoader.exists(path) else null
+		if _fb_tex[n]:
+			texs.append(_fb_tex[n])
+	for k in ["sphere", "spark", "glow", "ring"]:
+		texs.append(fx_tex(k))
+	for n in ["rocket", "bomb", "orb", "propeller"]:
+		var t: Texture2D = Gem.tex(n)
+		if t:
+			texs.append(t)
+	for t: Texture2D in texs:
+		var sp := Sprite2D.new()
+		sp.texture = t
+		sp.scale = Vector2(2.0, 2.0) / maxf(t.get_width(), t.get_height())
+		sp.modulate = Color(1, 1, 1, 0.01)
+		fx.add_child(sp)
+		get_tree().create_timer(0.2).timeout.connect(sp.queue_free)
+
+
+func _fx_load() -> int:
+	return fx.get_child_count() if fx else 0
+
+
 func _fx_sprite(kind: String, at: Vector2, color: Color, px: float, additive := false) -> Sprite2D:
 	var sp := Sprite2D.new()
 	sp.texture = fx_tex(kind)
@@ -2169,6 +2211,8 @@ static var _fb_tex := {}
 ## Проигрывает покадровый эффект в точке at (координаты слоя fx), размером px, за time секунд.
 func _flipbook(name: String, at: Vector2, px: float, time: float, tint := Color.WHITE, additive := false, z := 7) -> Sprite2D:
 	if fx == null or not FLIPBOOKS.has(name):
+		return null
+	if _fx_load() > FX_HARD * 2 and name in ["pop", "smoke", "fireball", "zap"]:
 		return null
 	if not _fb_tex.has(name):
 		var path := "res://assets/vfx/%s.png" % name
@@ -2200,6 +2244,10 @@ func _flipbook(name: String, at: Vector2, px: float, time: float, tint := Color.
 ## Осколки из самой картинки препятствия: кусочки текстуры разлетаются вверх-в стороны,
 ## падают под гравитацией, крутятся (с «3D»-сплющиванием) и отбрасывают тень.
 func _shatter(tex: Texture2D, at: Vector2, px: float, n: int, power := 1.0) -> void:
+	if _fx_load() > FX_HARD:
+		return
+	if _fx_load() > FX_SOFT:
+		n = mini(n, 2)
 	var gs := get_global_transform().get_scale().x
 	var tw0 := tex.get_size()
 	var k := px * gs / maxf(tw0.x, tw0.y)
@@ -2253,7 +2301,7 @@ func _shatter(tex: Texture2D, at: Vector2, px: float, n: int, power := 1.0) -> v
 
 ## Вспышка-свечение (аддитивная): светлое пятно, расширяется и гаснет.
 func _glow_flash(at: Vector2, color: Color, size: float, time := 0.25) -> void:
-	if fx == null:
+	if fx == null or _fx_load() > FX_HARD:
 		return
 	var g := _fx_sprite("glow", at, color, size * 0.5, true)
 	g.z_index = 6
@@ -2290,7 +2338,7 @@ func _droplet(at: Vector2, color: Color, size: float, vel: Vector2, life: float)
 
 
 func _burst(pos: Vector2, color: Color, amount: int) -> void:
-	if fx == null:
+	if fx == null or _fx_load() > FX_SOFT:
 		return
 	var at := fx.to_local(to_global(pos))
 	var n := amount if Save.particles else maxi(2, amount / 3)
@@ -2345,6 +2393,12 @@ func _pop_fx(cell: Vector2i, col: int, shards: int) -> void:
 	var at := fx.to_local(to_global(cell_pos(cell)))
 	var color: Color = Gem.COLORS[col] if col >= 0 else Color.WHITE
 	var gk := get_global_transform().get_scale().x
+	var load := _fx_load()
+	if load > FX_HARD:
+		_flipbook("pop", at, CELL * 2.0 * gk, 0.36, color.lerp(Color.WHITE, 0.35), true, 6)
+		return
+	if load > FX_SOFT:
+		shards = 0
 	_flipbook("pop", at, CELL * 2.0 * gk, 0.36, color.lerp(Color.WHITE, 0.35), true, 6)
 	_glow_flash(at, color.lerp(Color.WHITE, 0.35), CELL * 1.1 * gk, 0.2)
 	var ring := _fx_sprite("ring", at, color.lerp(Color.WHITE, 0.3), CELL * 0.6, true)
@@ -2398,8 +2452,10 @@ func _pop_fx(cell: Vector2i, col: int, shards: int) -> void:
 
 
 func _sparkles(at: Vector2, color: Color, n: int) -> void:
-	if fx == null:
+	if fx == null or _fx_load() > FX_HARD:
 		return
+	if _fx_load() > FX_SOFT:
+		n = mini(n, 2)
 	for i in n:
 		var st := _fx_sprite("spark", at, color.lerp(Color.WHITE, 0.5), randf_range(26.0, 42.0), true)
 		st.z_index = 6
@@ -2484,6 +2540,8 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 
 ## Язычок пламени за ракетой: жёлто-оранжевый, быстро гаснет и краснеет.
 func _flame(at: Vector2) -> void:
+	if _fx_load() > FX_SOFT:
+		return
 	var pos := at + Vector2(randf_range(-5, 5), randf_range(-5, 5))
 	var g := _fx_sprite("glow", pos, Color(1.0, 0.5, 0.15), randf_range(40, 56), true)
 	g.z_index = 4
@@ -2498,6 +2556,8 @@ func _flame(at: Vector2) -> void:
 
 
 func _puff(at: Vector2) -> void:
+	if _fx_load() > FX_SOFT:
+		return
 	# клуб мультяшного дыма (покадровый, объёмный)
 	var sp := _flipbook("smoke", at + Vector2(randf_range(-4, 4), randf_range(-4, 4)), randf_range(52, 66), 0.5, Color(1, 1, 1, 0.9), false, 4)
 	if sp:

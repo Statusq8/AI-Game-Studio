@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.22.1"
+const VERSION := "2.22.2"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -96,6 +96,8 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--shots="):
 			_run_shots.call_deferred(arg.trim_prefix("--shots="))
+		elif arg == "--finaletest":
+			_run_finaletest.call_deferred()
 		elif arg == "--fxdemo":
 			_run_fxdemo.call_deferred()
 		elif arg == "--inputtest":
@@ -2766,6 +2768,8 @@ func _refresh_coins() -> void:
 
 
 func _start_level(n: int) -> void:
+	if _board:
+		_board.call_deferred("warm_fx")
 	_clear_overlay()
 	_home.visible = false
 	_level_screen.visible = true
@@ -4325,6 +4329,37 @@ func _run_shots(dir: String) -> void:
 	_try_play()
 	await get_tree().create_timer(0.5).timeout
 	await _snap(dir, "7_no_hearts")
+	get_tree().quit()
+
+
+## Проверка нагрузки финала: много особых фишек взрываются разом; печатает худший кадр и пик узлов.
+func _run_finaletest() -> void:
+	_bot = true
+	_start_level(3)
+	await get_tree().create_timer(1.8).timeout
+	_clear_overlay()
+	_state = "fxdemo"
+	var kinds := [Gem.PROPELLER, Gem.PROPELLER, Gem.PROPELLER, Gem.BOMB, Gem.ROCKET_H, Gem.ROCKET_V]
+	var i := 0
+	for x in _board.W:
+		for y in _board.H:
+			var g: Node2D = _board.gem_at(Vector2i(x, y))
+			if g and (x * 7 + y * 3) % 4 == 0 and i < 20:
+				g.set_special(kinds[i % kinds.size()])
+				i += 1
+	await get_tree().create_timer(0.5).timeout
+	var worst := 0.0
+	var peak := 0
+	var t0 := Time.get_ticks_msec()
+	_board.detonate_all_specials()
+	var last := Time.get_ticks_usec()
+	while Time.get_ticks_msec() - t0 < 6000:
+		await get_tree().process_frame
+		var now := Time.get_ticks_usec()
+		worst = maxf(worst, (now - last) / 1000.0)
+		last = now
+		peak = maxi(peak, int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)))
+	print("FINALE worst_frame_ms=%.0f peak_nodes=%d" % [worst, peak])
 	get_tree().quit()
 
 
