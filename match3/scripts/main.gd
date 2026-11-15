@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.19.0"
+const VERSION := "2.20.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -1040,34 +1040,72 @@ func _show_collection() -> void:
 
 
 func _show_settings() -> void:
-	var v := _dialog("Настройки", ["Язык: русский"], [["Закрыть", "Button", _clear_overlay]])
+	var font: Font = UiTheme.title_font()
+	var v := _dialog("Настройки", [], [])
+	(v.get_parent() as Control).custom_minimum_size.x = 600
+	var icons := {"sound": "♪", "music": "♫", "vibration": "≋", "shake": "↯", "particles": "✦"}
 	for it in [["Звук", "sound"], ["Музыка", "music"], ["Вибрация", "vibration"], ["Тряска экрана", "shake"], ["Много частиц", "particles"]]:
 		var key: String = it[1]
 		var name: String = it[0]
-		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(0, 64)
-		btn.add_theme_font_size_override("font_size", 24)
-		var paint := func() -> void:
-			var on := bool(Save.get(key))
-			btn.text = "%s: %s" % [name, "вкл" if on else "выкл"]
-			btn.theme_type_variation = "GreenButton" if on else "RedButton"
-		paint.call()
-		btn.pressed.connect(func() -> void:
-			Save.set(key, not bool(Save.get(key)))
+		var row := Button.new()
+		row.flat = true
+		for st in ["normal", "hover", "pressed", "focus"]:
+			row.add_theme_stylebox_override(st, StyleBoxEmpty.new())
+		row.custom_minimum_size = Vector2(0, 76)
+		row.set_meta("k", 1.0 if bool(Save.get(key)) else 0.0)
+		row.draw.connect(func() -> void:
+			var r := Rect2(Vector2.ZERO, row.size)
+			_tile(row, Rect2(r.position + Vector2(0, 4), r.size), Color(0, 0, 0, 0.12), 18)
+			_tile(row, r, Color("#d9b47c"), 18)
+			_tile(row, r.grow(-3), Color("#fff6e0"), 15)
+			# значок в кружке
+			var ic := Vector2(42, r.size.y / 2)
+			row.draw_circle(ic, 24, Color("#9b5cff"))
+			row.draw_circle(ic + Vector2(0, -2), 21, Color("#b583ff"))
+			var gl: String = icons[key]
+			var gs := font.get_string_size(gl, HORIZONTAL_ALIGNMENT_LEFT, -1, 28)
+			row.draw_string(font, ic + Vector2(-gs.x / 2, 10), gl, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, Color.WHITE)
+			row.draw_string(font, Vector2(80, r.size.y / 2 + 11), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color("#6a3a10"))
+			# переключатель: ползунок едет, цвет плавно меняется
+			var k: float = row.get_meta("k")
+			var sw := Rect2(Vector2(r.size.x - 118, r.size.y / 2 - 22), Vector2(100, 44))
+			_tile(row, sw.grow(3), Color("#5a3a08"), 25)
+			_tile(row, sw, Color("#c9bba5").lerp(Color("#3fbf3a"), k), 22)
+			_tile(row, Rect2(sw.position + Vector2(8, 4), Vector2(sw.size.x - 16, 10)), Color(1, 1, 1, 0.25), 5)
+			var kc := sw.position + Vector2(22 + k * 56, 22)
+			row.draw_circle(kc + Vector2(0, 3), 19, Color(0, 0, 0, 0.25))
+			row.draw_circle(kc, 19, Color.WHITE)
+			row.draw_circle(kc + Vector2(0, 3), 14, Color("#ececec"))
+			var lt := "ВКЛ" if k > 0.5 else "ВЫКЛ"
+			var lts := font.get_string_size(lt, HORIZONTAL_ALIGNMENT_LEFT, -1, 16)
+			var lx := sw.position.x + (18.0 if k > 0.5 else sw.size.x - lts.x - 14)
+			row.draw_string(font, Vector2(lx, sw.position.y + 29), lt, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color.WHITE if k > 0.5 else Color("#6a5a48")))
+		row.pressed.connect(func() -> void:
+			var on := not bool(Save.get(key))
+			Save.set(key, on)
 			Save.store()
 			if key == "music":
 				Sfx.refresh_music()
-			paint.call())
-		v.add_child(btn)
-		v.move_child(btn, v.get_child_count() - 2)
-	var pol := Label.new()
-	pol.text = "Политика конфиденциальности — в описании игры"
-	pol.theme_type_variation = "InkLabel"
-	pol.add_theme_font_size_override("font_size", 18)
-	pol.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	pol.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(pol)
-	v.move_child(pol, v.get_child_count() - 2)
+			Sfx.play("click")
+			var t := row.create_tween()
+			t.tween_method(func(x: float) -> void:
+				row.set_meta("k", x)
+				row.queue_redraw(), float(row.get_meta("k")), 1.0 if on else 0.0, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+		v.add_child(row)
+	var info := Label.new()
+	info.text = "Язык: русский · Политика конфиденциальности — в описании игры"
+	info.theme_type_variation = "InkLabel"
+	info.add_theme_font_size_override("font_size", 18)
+	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(info)
+	var close := Button.new()
+	close.text = "Закрыть"
+	close.custom_minimum_size = Vector2(300, 80)
+	close.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	close.add_theme_font_size_override("font_size", 28)
+	close.pressed.connect(_clear_overlay)
+	v.add_child(close)
 
 
 func _build_level_screen() -> void:
@@ -2195,14 +2233,47 @@ func _show_prelevel(n: int) -> void:
 			cell.draw_string(font, p, cnt, HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color.WHITE))
 		grow.add_child(cell)
 	if Save.streak > 0:
-		var sl := Label.new()
-		var nxt := 3 if Save.streak < 3 else (5 if Save.streak < 5 else (8 if Save.streak < 8 else 10))
-		sl.text = ("Серия побед: %d — бонус на старте!" % Save.streak) if Save.streak >= 3 else ("Серия побед: %d — бонус с %d побед" % [Save.streak, nxt])
-		sl.theme_type_variation = "InkLabel"
-		sl.add_theme_font_size_override("font_size", 24)
-		sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		v.add_child(sl)
-		v.move_child(sl, at)
+		# серия побед: дорожка с огоньками на 3, 5, 8 и 10 победах (бонус на старте)
+		var sb := Control.new()
+		sb.custom_minimum_size = Vector2(0, 92)
+		var marks := [3, 5, 8, 10]
+		sb.draw.connect(func() -> void:
+			var st := mini(Save.streak, 10)
+			var x0 := 70.0
+			var x1 := sb.size.x - 40.0
+			var y := 54.0
+			var tt := "Серия побед: %d" % Save.streak
+			sb.draw_string_outline(font, Vector2(x0 - 30, 22), tt, HORIZONTAL_ALIGNMENT_LEFT, -1, 24, 6, Color("#6a3a10"))
+			sb.draw_string(font, Vector2(x0 - 30, 22), tt, HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Color.WHITE)
+			var br := Rect2(Vector2(x0, y - 9), Vector2(x1 - x0, 18))
+			_tile(sb, br.grow(3), Color("#5a3a08"), 12)
+			_tile(sb, br, Color("#e6dccb"), 9)
+			var f := float(st) / 10.0
+			_tile(sb, Rect2(br.position, Vector2(br.size.x * f, br.size.y)), Color("#ff8a1a"), 9)
+			# огонёк-иконка слева
+			var fc := Vector2(x0 - 34, y + 6)
+			var fl := 1.0 + 0.1 * sin(Time.get_ticks_msec() / 110.0)
+			sb.draw_colored_polygon(PackedVector2Array([fc + Vector2(-15, 4), fc + Vector2(0, -30 * fl), fc + Vector2(15, 4)]), Color("#ff5a1a"))
+			sb.draw_circle(fc + Vector2(0, 4), 15, Color("#ff5a1a"))
+			sb.draw_colored_polygon(PackedVector2Array([fc + Vector2(-8, 6), fc + Vector2(0, -14 * fl), fc + Vector2(8, 6)]), Color("#ffd23f"))
+			sb.draw_circle(fc + Vector2(0, 6), 8, Color("#ffd23f"))
+			for m in marks:
+				var mx: float = x0 + (x1 - x0) * float(m) / 10.0
+				var got: bool = st >= m
+				var mc := Vector2(mx, y)
+				sb.draw_circle(mc, 17, Color("#5a3a08"))
+				sb.draw_circle(mc, 14, Color("#ffcf3a") if got else Color("#c9bba5"))
+				var mt := str(m)
+				var ms := font.get_string_size(mt, HORIZONTAL_ALIGNMENT_LEFT, -1, 18)
+				sb.draw_string(font, mc + Vector2(-ms.x / 2, 7), mt, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#5a3a08") if got else Color.WHITE)
+			var bonus := "бонус на старте!" if Save.streak >= 3 else "бонус с 3 побед"
+			var bs := font.get_string_size(bonus, HORIZONTAL_ALIGNMENT_LEFT, -1, 20)
+			sb.draw_string(font, Vector2(sb.size.x - bs.x - 20, 22), bonus, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#c25a00")))
+		var stw := sb.create_tween().set_loops()
+		stw.tween_callback(sb.queue_redraw)
+		stw.tween_interval(0.05)
+		v.add_child(sb)
+		v.move_child(sb, at)
 		at += 1
 	# бустеры на старт — объёмные плитки на кремовой карточке, выбранный — с зелёной галочкой
 	var bcard := _cream_card("Выбери бустеры")
