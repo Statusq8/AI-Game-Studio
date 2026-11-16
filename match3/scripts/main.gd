@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.27.0"
+const VERSION := "2.27.1"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -4394,17 +4394,40 @@ func _show_win_ref(coins: int) -> void:
 	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ribbon.size = body.size
 	ribbon.draw.connect(func() -> void:
+		# надпись по дуге ленты: средняя линия ленты — дуга окружности (центр ленты x 425, y 506,
+		# радиус ~1140 px референса), буквы ставятся по ней по одной и поворачиваются вдоль неё
 		var fs := 58
 		var ts := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 		while ts.x > 500.0 and fs > 30:
 			fs -= 2
 			ts = font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-		# центр ленты: x 425, y 522 референса
-		var p := Vector2(425.0 - ts.x / 2.0, 522.0 - WIN_Y0 + fs * 0.36)
-		for d in range(6, 0, -1):
-			ribbon.draw_string_outline(font, p + Vector2(0, d), title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#6e0f12"))
-		ribbon.draw_string_outline(font, p, title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#6e0f12"))
-		ribbon.draw_string(font, p, title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#fff8e6")))
+		var rad := 1140.0
+		var cen := Vector2(425.0, 506.0 - WIN_Y0 + rad)
+		var rb := rad - fs * 0.36  # базовая линия чуть ниже средней линии ленты
+		var widths: Array = []
+		var total := 0.0
+		for ch in title:
+			var cw := font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+			widths.append(cw)
+			total += cw
+		for pass_i in 3:
+			var acc := 0.0
+			for i in title.length():
+				var cw: float = widths[i]
+				var ang := (acc + cw / 2.0 - total / 2.0) / rb
+				acc += cw
+				var pos := cen + Vector2(sin(ang), -cos(ang)) * rb
+				ribbon.draw_set_transform(pos, ang, Vector2.ONE)
+				var p := Vector2(-cw / 2.0, 0)
+				var ch := title[i]
+				if pass_i == 0:
+					for d in range(6, 0, -1):
+						ribbon.draw_string_outline(font, p + Vector2(0, d), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#6e0f12"))
+				elif pass_i == 1:
+					ribbon.draw_string_outline(font, p, ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#6e0f12"))
+				else:
+					ribbon.draw_string(font, p, ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#fff8e6"))
+		ribbon.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE))
 	body.add_child(ribbon)
 	# «+N» монет — набегает от 0
 	var cn := Control.new()
