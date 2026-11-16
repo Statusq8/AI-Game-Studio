@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.26.1"
+const VERSION := "2.27.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -99,6 +99,8 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--shots="):
 			_run_shots.call_deferred(arg.trim_prefix("--shots="))
+		elif arg.begins_with("--winshot="):
+			_run_winshot.call_deferred(arg.trim_prefix("--winshot="))
 		elif arg == "--finaletest":
 			_run_finaletest.call_deferred()
 		elif arg == "--fxdemo":
@@ -4174,6 +4176,9 @@ func _show_win() -> void:
 	Save.chest_wins = mini(Save.chest_wins + 1, CHEST_WINS)
 	Save.add_coins(coins)
 	Save.vibrate(60)
+	if Zoo.art("winref_window"):
+		_show_win_ref(coins)
+		return
 	var v := _dialog("Уровень %d" % _level.n, [], [])
 	# окно победы шире, лента выше — звезду на окне видно целиком
 	var wpanel := v.get_parent() as Control
@@ -4311,6 +4316,211 @@ func _show_win() -> void:
 	_add_close_x(v, func() -> void: _transition(_show_home))
 	# звезда и монеты летят вверх, конфетти
 	var c := size / 2
+	_confetti()
+	_coin_rain()
+	var star := Control.new()
+	star.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	star.draw.connect(func() -> void: Zoo.draw_star(star, Vector2.ZERO, 60.0))
+	star.position = c - Vector2(0, 260)
+	_overlay.add_child(star)
+	star.scale = Vector2(0.2, 0.2)
+	var st := star.create_tween()
+	st.tween_property(star, "scale", Vector2(1.2, 1.2), 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	st.tween_property(star, "rotation", TAU, 0.6)
+	v.get_parent().get_parent().move_to_front()
+
+
+## ---------- окно победы 1:1 по референсу (слои нарезаны из него: tools/winbuild.py) ----------
+## Референс 852×1846 (references/screen_03_win.webp); координаты ниже — в его пикселях, те же в winbuild.py.
+const WIN_W := 852.0
+const WIN_Y0 := 380.0                       # верх слоя окна
+const WIN_TOP := 196.0                      # верх центральной звезды — верх всей группы
+const WIN_BOT := 1662.0                     # низ окна
+const WIN_STARS := [Vector2(179, 263), Vector2(321, 196), Vector2(523, 263)]
+const WIN_GO := Vector2(194, 1337)
+const WIN_AD := Vector2(217, 1489)
+const WIN_SEG := Vector2(255, 1250)         # 3-я зелёная клетка полоски сундука (с перегородками)
+const WIN_SEG_P := 51.3                     # шаг клеток
+const WIN_COINS_AT := Vector2(234, 1180)    # «+N» монет: левый край и базовая линия
+const WIN_RAYS := Vector2(428, 300)         # центр лучей за звёздами
+
+
+func _show_win_ref(coins: int) -> void:
+	_clear_overlay()
+	var dim := ColorRect.new()
+	dim.color = Color(0.05, 0.03, 0.2, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_overlay.add_child(dim)
+	# вся группа (звёзды + окно) — в пикселях референса, масштаб k, по центру экрана
+	var k := minf(size.x / WIN_W, (size.y - 16.0) / (WIN_BOT - WIN_TOP))
+	var win := Control.new()
+	win.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	win.size = Vector2(WIN_W, 1846)
+	win.position = Vector2(size.x / 2.0 - WIN_W / 2.0 * k, size.y / 2.0 - (WIN_TOP + WIN_BOT) / 2.0 * k)
+	win.scale = Vector2(k, k)
+	_overlay.add_child(win)
+	var font: Font = UiTheme.title_font()
+	# лучи и сияние за звёздами (медленно вращаются)
+	var rays := Control.new()
+	rays.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rays.modulate.a = 0.0
+	rays.draw.connect(func() -> void:
+		var t := Time.get_ticks_msec() / 1000.0
+		var glow := Board.fx_tex("glow")
+		var pulse := 0.92 + 0.08 * sin(t * 2.2)
+		rays.draw_texture_rect(glow, Rect2(WIN_RAYS - Vector2(330, 250) * pulse, Vector2(660, 500) * pulse), false, Color(1.0, 0.9, 0.45, 0.9))
+		for i in 14:
+			var a := TAU * i / 14.0 + t * 0.25
+			var w := 0.11
+			var poly := PackedVector2Array([WIN_RAYS, WIN_RAYS + Vector2(cos(a - w), sin(a - w)) * 420.0, WIN_RAYS + Vector2(cos(a + w), sin(a + w)) * 420.0])
+			rays.draw_colored_polygon(poly, Color(1.0, 0.93, 0.55, 0.3)))
+	win.add_child(rays)
+	_every_frame(rays)
+	# окно (рамка, лента, панда, плашка наград, сундук)
+	var body := Control.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.position = Vector2(0, WIN_Y0)
+	body.size = Vector2(WIN_W, WIN_BOT - WIN_Y0)
+	body.pivot_offset = Vector2(WIN_W / 2.0, 520.0)
+	win.add_child(body)
+	var wt := TextureRect.new()
+	wt.texture = Zoo.art("winref_window")
+	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(wt)
+	# надпись на ленте
+	var title := "Уровень %d пройден!" % _level.n
+	var ribbon := Control.new()
+	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ribbon.size = body.size
+	ribbon.draw.connect(func() -> void:
+		var fs := 58
+		var ts := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		while ts.x > 500.0 and fs > 30:
+			fs -= 2
+			ts = font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		# центр ленты: x 425, y 522 референса
+		var p := Vector2(425.0 - ts.x / 2.0, 522.0 - WIN_Y0 + fs * 0.36)
+		for d in range(6, 0, -1):
+			ribbon.draw_string_outline(font, p + Vector2(0, d), title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#6e0f12"))
+		ribbon.draw_string_outline(font, p, title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#6e0f12"))
+		ribbon.draw_string(font, p, title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#fff8e6")))
+	body.add_child(ribbon)
+	# «+N» монет — набегает от 0
+	var cn := Control.new()
+	cn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cn.size = body.size
+	cn.set_meta("val", 0)
+	cn.draw.connect(func() -> void:
+		var txt := "+%d" % int(cn.get_meta("val"))
+		var fs := 84
+		var p := WIN_COINS_AT - Vector2(0, WIN_Y0)
+		for d in range(7, 0, -1):
+			cn.draw_string_outline(font, p + Vector2(0, d), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 16, Color("#3d1a08"))
+		cn.draw_string_outline(font, p, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 16, Color("#3d1a08"))
+		cn.draw_string(font, p, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	body.add_child(cn)
+	var count_to := func(from: float, to: float, dur: float) -> void:
+		var t := cn.create_tween()
+		t.tween_method(func(val: float) -> void:
+			cn.set_meta("val", int(val))
+			cn.queue_redraw(), from, to, dur)
+	# полоска сундука: зелёные клетки по числу побед, новая — вспыхивает
+	var seg_t := Zoo.art("winref_seg")
+	var segs := Control.new()
+	segs.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	segs.size = body.size
+	segs.set_meta("flash", 0.0)
+	var filled := Save.chest_wins
+	segs.draw.connect(func() -> void:
+		for i in filled:
+			var p := WIN_SEG + Vector2((i - 2) * WIN_SEG_P, -WIN_Y0)
+			var col := Color.WHITE
+			if i == filled - 1:
+				var f: float = segs.get_meta("flash")
+				col = Color(1.0 + f, 1.0 + f, 1.0 + f * 0.5)
+				if f > 0.0:
+					var c := p + seg_t.get_size() / 2.0
+					var sc := 1.0 + f * 0.25
+					segs.draw_texture_rect(seg_t, Rect2(c - seg_t.get_size() * sc / 2.0, seg_t.get_size() * sc), false, col)
+					continue
+			segs.draw_texture_rect(seg_t, Rect2(p, seg_t.get_size()), false, col))
+	body.add_child(segs)
+	# кнопки
+	var mk_btn := func(tex_name: String, at: Vector2) -> TextureButton:
+		var b := TextureButton.new()
+		b.texture_normal = Zoo.art(tex_name)
+		b.position = at - Vector2(0, WIN_Y0)
+		b.size = b.texture_normal.get_size()
+		b.pivot_offset = b.size / 2.0
+		b.button_down.connect(func() -> void: b.create_tween().tween_property(b, "scale", Vector2(0.93, 0.93), 0.06))
+		b.button_up.connect(func() -> void:
+			b.create_tween().tween_property(b, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+		b.pressed.connect(Sfx.play.bind("click"))
+		body.add_child(b)
+		return b
+	var go: TextureButton = mk_btn.call("winref_go", WIN_GO)
+	go.pressed.connect(_next_level)
+	var ad: TextureButton = mk_btn.call("winref_ad", WIN_AD)
+	var ad_off := func() -> void:
+		ad.disabled = true
+		ad.modulate = Color(0.6, 0.6, 0.6, 0.85)
+	if not Ads.is_ready():
+		ad_off.call()
+	ad.pressed.connect(func() -> void:
+		ad_off.call()
+		go.disabled = true
+		Ads.show_rewarded(func() -> void:
+			Save.add_coins(coins)
+			Sfx.play("coin")
+			count_to.call(float(coins), float(coins * 2), 0.5)
+			get_tree().create_timer(0.9).timeout.connect(_next_level)))
+	# звёзды
+	var stars: Array = []
+	for i in 3:
+		var st := TextureRect.new()
+		st.texture = Zoo.art("winref_star_%d" % i)
+		st.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		st.position = WIN_STARS[i]
+		st.size = st.texture.get_size()
+		st.pivot_offset = st.size / 2.0
+		st.scale = Vector2.ZERO
+		win.add_child(st)
+		stars.append(st)
+	# появление: окно «впрыгивает», потом по очереди звёзды, монеты набегают, клетка сундука вспыхивает
+	body.scale = Vector2(0.6, 0.6)
+	body.modulate.a = 0.0
+	var tw := body.create_tween()
+	tw.tween_property(body, "scale", Vector2.ONE, 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+	tw.tween_property(rays, "modulate:a", 1.0, 0.3)
+	for i in [0, 1, 2]:
+		var st: TextureRect = stars[i]
+		tw.tween_callback(func() -> void:
+			Sfx.play("coin", 0.9 + 0.15 * i)
+			_board._sparkles(_fx.to_local(st.get_global_rect().get_center()), Color("#fff3b0"), 8) if _board else null)
+		tw.tween_property(st, "scale", Vector2(1.3, 1.3), 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(st, "scale", Vector2.ONE, 0.1)
+	tw.tween_callback(func() -> void:
+		Sfx.play("coin")
+		count_to.call(0.0, float(coins), 0.7))
+	tw.tween_interval(0.5)
+	tw.tween_method(func(f: float) -> void:
+		segs.set_meta("flash", f)
+		segs.queue_redraw(), 1.0, 0.0, 0.45)
+	# звёзды слегка «дышат»
+	for i in 3:
+		var st: TextureRect = stars[i]
+		var bt := st.create_tween().set_loops()
+		bt.tween_interval(1.6 + i * 0.25)
+		bt.tween_property(st, "rotation", 0.06, 0.25).set_trans(Tween.TRANS_SINE)
+		bt.tween_property(st, "rotation", -0.04, 0.25).set_trans(Tween.TRANS_SINE)
+		bt.tween_property(st, "rotation", 0.0, 0.2).set_trans(Tween.TRANS_SINE)
+	_confetti()
+	_coin_rain()
+
+## Конфетти: залп из двух нижних углов + дождь сверху.
+func _confetti() -> void:
 	for i in 70:
 		var conf := ColorRect.new()
 		conf.color = [Color("#ffe14d"), Color("#ff6b9d"), Color("#5fc4ff"), Color("#7dff8a"), Color("#c47dff"), Color("#ff9a3a")][i % 6]
@@ -4331,17 +4541,6 @@ func _show_win() -> void:
 			tw.tween_property(conf, "position:y", size.y + 40, randf_range(1.6, 2.6)).set_delay(randf() * 0.6)
 		tw.tween_property(conf, "rotation", randf_range(-10, 10), 2.4)
 		tw.chain().tween_callback(conf.queue_free)
-	_coin_rain()
-	var star := Control.new()
-	star.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	star.draw.connect(func() -> void: Zoo.draw_star(star, Vector2.ZERO, 60.0))
-	star.position = c - Vector2(0, 260)
-	_overlay.add_child(star)
-	star.scale = Vector2(0.2, 0.2)
-	var st := star.create_tween()
-	st.tween_property(star, "scale", Vector2(1.2, 1.2), 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	st.tween_property(star, "rotation", TAU, 0.6)
-	v.get_parent().get_parent().move_to_front()
 
 
 ## «Дальше» после победы — сразу следующий уровень (если есть жизни).
@@ -4682,6 +4881,21 @@ func _drag(pos: Vector2) -> void:
 	var e := InputEventScreenDrag.new()
 	e.position = pos
 	get_viewport().push_input(e, true)
+
+
+## Скриншоты окна победы (проверка 1:1 по референсу): -- --winshot=DIR
+func _run_winshot(dir: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	Save.chest_wins = 4
+	_start_level(12)
+	await get_tree().create_timer(1.6).timeout
+	_clear_overlay()
+	_show_win()
+	await get_tree().create_timer(0.35).timeout
+	await _snap(dir, "w1_appear")
+	await get_tree().create_timer(2.6).timeout
+	await _snap(dir, "w2_done")
+	get_tree().quit()
 
 
 func _run_shots(dir: String) -> void:
