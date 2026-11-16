@@ -960,6 +960,14 @@ func booster_hit(kind: String, cell: Vector2i) -> void:
 			for y in H:
 				area[Vector2i(cell.x, y)] = true
 			_beam_fx(cell, Gem.ROCKET_V, -1)
+		"rockets":
+			# ракеты бьют крестом: весь ряд и весь столбец
+			for x in W:
+				area[Vector2i(x, cell.y)] = true
+			for y in H:
+				area[Vector2i(cell.x, y)] = true
+			_beam_fx(cell, Gem.ROCKET_H, -1)
+			_beam_fx(cell, Gem.ROCKET_V, -1)
 	big_hit.emit(1.5)
 	await _clear(area)
 	await _cascade([])
@@ -971,6 +979,11 @@ func _tool_anim(kind: String, cell: Vector2i) -> void:
 		return
 	var gs := get_global_transform().get_scale().x
 	var at := fx.to_local(to_global(cell_pos(cell)))
+	if kind == "rockets":
+		# две ракеты одновременно: по ряду и по столбцу
+		_tool_anim("arrow", cell)
+		await _tool_anim("cannon", cell)
+		return
 	var name := "ui_hammer" if kind == "hammer" else "ui_arrow"
 	var tex: Texture2D = load("res://scripts/zoo.gd").art(name)
 	if tex == null:

@@ -27,7 +27,7 @@ var chest_wins := 0
 var hearts := MAX_HEARTS
 var heart_at := 0.0
 ## Бустеры: на уровне (молот, ряд, столбец, перемешать) и до уровня (ракета, бомба, шар).
-var boosters := {"hammer": 2, "arrow": 2, "cannon": 2, "shuffle": 2, "pre_rocket": 2, "pre_bomb": 2, "pre_orb": 1}  # unix-время, когда придёт следующее сердце (0 — сердца полные)
+var boosters := {"hammer": 2, "rockets": 2, "arrow": 0, "cannon": 0, "shuffle": 2, "pre_rocket": 2, "pre_bomb": 2, "pre_orb": 1}  # unix-время, когда придёт следующее сердце (0 — сердца полные)
 
 
 ## Режим доводки первого уровня: при каждом запуске — чистый прогресс (как у нового игрока).
@@ -70,6 +70,11 @@ func _ready() -> void:
 		if b is Dictionary:
 			for k in boosters:
 				boosters[k] = int(b.get(k, boosters[k]))
+			# «Ряд» и «Столбец» объединены в «Ракеты» (бьют крестом) — старые запасы переносим
+			if not b.has("rockets"):
+				boosters["rockets"] = int(b.get("arrow", 0)) + int(b.get("cannon", 0))
+			boosters["arrow"] = 0
+			boosters["cannon"] = 0
 	update_hearts()
 
 

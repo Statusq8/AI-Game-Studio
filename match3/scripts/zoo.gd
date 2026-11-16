@@ -91,6 +91,8 @@ static func art(name: String) -> Texture2D:
 	var key := "@" + name
 	if not _tex.has(key):
 		var path := "res://assets/art/%s.png" % name
+		if not ResourceLoader.exists(path):
+			path = "res://assets/art/%s.webp" % name
 		_tex[key] = load(path) if ResourceLoader.exists(path) else null
 	return _tex[key]
 

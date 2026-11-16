@@ -9,11 +9,11 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.24.2"
+const VERSION := "2.25.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
-	{"coins": 300}, {"arrow": 2, "shuffle": 1}, {"coins": 500, "pre_orb": 1, "pre_bomb": 1, "hammer": 1}]
+	{"coins": 300}, {"rockets": 2, "shuffle": 1}, {"coins": 500, "pre_orb": 1, "pre_bomb": 1, "hammer": 1}]
 ## Сундук за победы: сколько побед нужно и что в нём.
 const CHEST_WINS := 8
 const CHEST_COINS := 150
@@ -21,7 +21,7 @@ const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
 const EXTRA_MOVES_PRICE := 300
 const BOOSTER_PRICE := 250
-const IN_BOOSTERS := [["hammer", "Молот"], ["arrow", "Ряд"], ["cannon", "Столбец"], ["shuffle", "Микс"]]
+const IN_BOOSTERS := [["hammer", "Молот"], ["rockets", "Ракеты"], ["shuffle", "Микс"]]
 const PRE_BOOSTERS := [["pre_rocket", "Ракета", 1], ["pre_bomb", "Бомба", 3], ["pre_orb", "Шар", 4]]
 
 var _bg: TextureRect
@@ -1015,7 +1015,7 @@ func _dot_badge(ci: CanvasItem, c: Vector2, t: String) -> void:
 ## Значок награды: монета или бустер, с количеством.
 func _draw_reward(ci: CanvasItem, kind: String, n: int, c: Vector2, px: float) -> void:
 	var font: Font = UiTheme.title_font()
-	var art := {"coins": "ui_coin", "hammer": "ui_hammer", "arrow": "ui_arrow", "shuffle": "ui_shuffle",
+	var art := {"coins": "ui_coin", "hammer": "ui_hammer", "arrow": "ui_arrow", "rockets": "lv_rockets", "shuffle": "ui_shuffle",
 		"pre_rocket": "rocket", "pre_bomb": "bomb", "pre_orb": "orb"}
 	var nm: String = art.get(kind, "ui_coin")
 	if nm.begins_with("ui_"):
@@ -1138,7 +1138,7 @@ func _show_chest() -> void:
 	btn.text = "Открыть" if full else "Закрыть"
 	btn.pressed.connect(func() -> void:
 		if Save.chest_wins >= CHEST_WINS:
-			var pool := ["hammer", "arrow", "shuffle", "pre_rocket", "pre_bomb", "pre_orb"]
+			var pool := ["hammer", "rockets", "shuffle", "pre_rocket", "pre_bomb", "pre_orb"]
 			pool.shuffle()
 			var rw := {"coins": CHEST_COINS, pool[0]: 1, pool[1]: 1}
 			_give(rw)
@@ -1336,6 +1336,10 @@ func _build_level_screen() -> void:
 	# мягкая тень под ногами панды — стоит, а не парит
 	_portrait_node.draw.connect(func() -> void:
 		var pn := _portrait_node
+		if _lvref():
+			# маска-круг: панда видна только внутри рамки (clip_children)
+			pn.draw_circle(pn.size / 2.0, pn.size.x / 2.0, Color.WHITE)
+			return
 		var at := Zoo.art("lv_arch")  # панда в золотой арке с листьями
 		if at:
 			# золотая арка с листьями из листа элементов уровня — панда стоит в ней
@@ -1399,6 +1403,13 @@ func _build_level_screen() -> void:
 	var pc := CenterContainer.new()
 	pc.add_child(plaque)
 	col.add_child(pc)
+	if _lvref():
+		_portrait_node.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
+		dim.color.a = 0.0
+		for card in [goal_card, moves_card]:
+			card.self_modulate.a = 0.0  # плашки нарисованы в фоне
+			card.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+		_moves_label.add_theme_font_size_override("font_size", 66)
 	if Zoo.art("lv_goals"):
 		# шапка 1:1 по референсу экрана уровня: плашки и панда стоят по координатам референса
 		for n in [goal_card, moves_card, _portrait_node]:
@@ -1429,7 +1440,7 @@ func _build_level_screen() -> void:
 	frame.patch_margin_bottom = 72
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	frame.z_index = 2
-	frame.visible = lvf != null  # деревянная рамка с золотыми уголками (референс экрана уровня)
+	frame.visible = lvf != null and not _lvref()  # деревянная рамка с золотыми уголками (референс экрана уровня)
 	if lvf:
 		frame.patch_margin_left = 150
 		frame.patch_margin_right = 150
@@ -1471,7 +1482,7 @@ func _build_level_screen() -> void:
 		_booster_bar.add_child(btn)
 		_booster_btns[b[0]] = btn
 	# пауза — последней кнопкой в ряду бустеров
-	if Zoo.art("lv_slot") and Zoo.art("lv_goals"):
+	if Zoo.art("lv_slot") and Zoo.art("lv_goals") and not _lvref():
 		var gap := Control.new()
 		gap.custom_minimum_size = Vector2(44, 10)
 		gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1486,6 +1497,8 @@ func _build_level_screen() -> void:
 	bands.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bands.draw.connect(func() -> void:
 		var w := bands.size.x
+		if _lvref():
+			return  # лоток нарисован в фоне
 		var tr := Zoo.art("lv_tray")
 		if tr:
 			# зелёный лоток с золотым кантом — по референсу: x 8…712, высота 188, низ в 22 px от края
@@ -1511,6 +1524,8 @@ func _build_level_screen() -> void:
 		_draw_tray(bands, Rect2(12, by, w - 24, 132)))
 	_level_screen.add_child(bands)
 	_level_screen.move_child(bands, 1)
+	if _lvref():
+		_build_lvref_layers()
 	_bands = bands
 	_panda = _make_panda(200.0)
 	_panda.visible = false  # на уровне панда — портрет в шапке
@@ -1544,6 +1559,9 @@ func _build_level_screen() -> void:
 func _layout_level_ref() -> void:
 	if _lv_goal_card == null:
 		return
+	if _lvref():
+		_layout_lvref()
+		return
 	var gr := _ref_rect(10, 62, 350, 275)
 	_lv_goal_card.position = gr.position
 	_lv_goal_card.size = gr.size
@@ -1557,6 +1575,79 @@ func _layout_level_ref() -> void:
 	pn.position = Vector2(470.0 * REF_K - pn.size.x / 2.0, 275.0 * REF_K - pn.size.y + 6.0)
 	_lv_goal_card.queue_redraw()
 	_lv_moves_card.queue_redraw()
+
+
+# ---------- экран уровня 1:1 по референсу (фон собран из самого референса: tools/refbuild.py) ----------
+## Референс: 898 px в ширину; фон lvref_bg — референс без 68 строк в середине поля (клетки 86×86).
+## Верх (до строки 1314 фона) прижат к верху экрана, низ (с 1398) — к низу, плитка между ними растягивается.
+const LVREF_SPLIT := 1314.0
+const LVREF_BAND := Vector2(0.0, 1398.0)   # .y — начало нижней части (лоток); между SPLIT и ним — плитка, растягивается
+var _lvref_bg: Control
+var _lvref_ring: Control
+
+
+func _lvref() -> bool:
+	return Zoo.art("lvref_bg") != null
+
+
+func _build_lvref_layers() -> void:
+	var tex := Zoo.art("lvref_bg")
+	_lvref_bg = Control.new()
+	_lvref_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_lvref_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_lvref_bg.draw.connect(func() -> void:
+		var w := _lvref_bg.size.x
+		var h := _lvref_bg.size.y
+		var k := w / float(tex.get_width())
+		var th := float(tex.get_height())
+		# верх (до низа рамки поля) прижат к верху, низ (лоток) — к низу; плитка между ними растягивается
+		var top_h := LVREF_SPLIT * k
+		var bot_src := Rect2(0, LVREF_BAND.y, tex.get_width(), th - LVREF_BAND.y)
+		var bot_h := bot_src.size.y * k
+		var mid_src := Rect2(0, LVREF_SPLIT, tex.get_width(), LVREF_BAND.y - LVREF_SPLIT)
+		_lvref_bg.draw_texture_rect_region(tex, Rect2(0, top_h, w, maxf(1.0, h - bot_h - top_h)), mid_src)
+		_lvref_bg.draw_texture_rect_region(tex, Rect2(0, 0, w, top_h), Rect2(0, 0, tex.get_width(), LVREF_SPLIT))
+		_lvref_bg.draw_texture_rect_region(tex, Rect2(0, h - bot_h, w, bot_h), bot_src))
+	_level_screen.add_child(_lvref_bg)
+	_level_screen.move_child(_lvref_bg, 0)
+	_lvref_bg.resized.connect(_lvref_bg.queue_redraw)
+	# рамка панды поверх панды
+	_lvref_ring = Control.new()
+	_lvref_ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var rt := Zoo.art("lvref_ring")
+	_lvref_ring.draw.connect(func() -> void:
+		var k := _level_screen.size.x / 898.0
+		_lvref_ring.draw_texture_rect(rt, Rect2(Vector2(300, 0) * k, rt.get_size() * k), false))
+	_level_screen.add_child(_lvref_ring)
+	_lvref_ring.set_anchors_preset(Control.PRESET_FULL_RECT)
+
+
+func _layout_lvref() -> void:
+	var k := _level_screen.size.x / 898.0
+	# плашки: только содержимое (сами плашки — в фоне)
+	for cr in [[_lv_goal_card, Vector2(48, 104), Vector2(274, 140)], [_lv_moves_card, Vector2(615, 108), Vector2(245, 132)]]:
+		var cd: Control = cr[0]
+		cd.custom_minimum_size = cr[2] * k
+		cd.position = cr[1] * k
+		cd.size = cr[2] * k
+	# панда — в круге рамки (центр 451,141, радиус 110), обрезана по кругу
+	var pn := _portrait_node
+	var r := 110.0 * k
+	pn.custom_minimum_size = Vector2(r, r) * 2.0
+	pn.size = pn.custom_minimum_size
+	pn.position = Vector2(451, 141) * k - Vector2(r, r)
+	var img: Control = pn.get_node("Img")
+	# крупно, по пояс, как в референсе: верх шляпы у края круга, ниже груди — за рамкой
+	var ph := 360.0 * k
+	img.size = Vector2(ph * 0.9, ph)
+	img.position = Vector2(r - img.size.x / 2.0 + 6.0 * k, 4.0 * k)
+	img.set_meta("rest", img.position)
+	img.pivot_offset = Vector2(img.size.x / 2, img.size.y)
+	if _lvref_ring:
+		_level_screen.move_child(_lvref_ring, pn.get_index() + 1)
+		_lvref_ring.queue_redraw()
+	if _lvref_bg:
+		_lvref_bg.queue_redraw()
 
 
 ## Панда: картинка с «дыханием». Позже заменим на версию из частей (голова, лапы, тело).
@@ -2099,17 +2190,18 @@ func _round_button(kind: String, base: Color) -> Button:
 		if Zoo.art("lv_slot"):
 			# слоты из листа элементов уровня (референс): деревянный круг с золотым ободком
 			if is_pause:
-				Zoo.draw_art(btn, "lv_pause", c, 100.0)
+				Zoo.draw_art(btn, "lv_pause", c, 128.0 * _level_screen.size.x / 898.0 if _lvref() else 100.0)
 				return
 			if active:
 				var g2: float = btn.get_meta("glow")
 				for i in 5:
 					btn.draw_circle(c + lift, 72.0 - i * 5.0 + g2 * 6.0, Color(1.0, 0.86, 0.3, 0.07 + i * 0.03))
-			var slot_art := {"hammer": "lv_hammer", "shuffle": "lv_shuffle"}
+			var slot_art := {"hammer": "lv_hammer", "shuffle": "lv_shuffle", "rockets": "lv_rockets"}
+			var sd := 175.0 * _level_screen.size.x / 898.0 if _lvref() else 124.0
 			if slot_art.has(kind):
-				Zoo.draw_art(btn, slot_art[kind], c + lift, 124.0)
+				Zoo.draw_art(btn, slot_art[kind], c + lift, sd)
 			else:
-				Zoo.draw_art(btn, "lv_slot", c + lift, 124.0)
+				Zoo.draw_art(btn, "lv_slot", c + lift, sd)
 				var ua := Zoo.art("ui_arrow")
 				if ua:
 					btn.draw_set_transform(c + lift, PI / 2.0 if kind == "cannon" else 0.0, Vector2.ONE)
@@ -2170,9 +2262,14 @@ func _draw_count(btn: Button, c: Vector2) -> void:
 	if n < 0:
 		return
 	var bc := c + Vector2(42, 42)
+	var bsz := 50.0
+	if _lvref():
+		var kq := _level_screen.size.x / 898.0
+		bc = c + Vector2(55, 53) * kq
+		bsz = 68.0 * kq
 	var buy := n == 0
 	if Zoo.art("lv_badge"):
-		Zoo.draw_art(btn, "lv_plus" if buy else "lv_badge", bc, 50.0)
+		Zoo.draw_art(btn, "lv_plus" if buy else "lv_badge", bc, bsz)
 		if not buy:
 			var f2: Font = UiTheme.title_font()
 			var t2 := str(n)
@@ -2204,7 +2301,7 @@ func _draw_count(btn: Button, c: Vector2) -> void:
 
 func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 	var ink := Color("#3a2a1a")
-	var art := {"hammer": "ui_hammer", "arrow": "ui_arrow", "cannon": "ui_arrow", "shuffle": "ui_shuffle"}
+	var art := {"hammer": "ui_hammer", "arrow": "ui_arrow", "cannon": "ui_arrow", "shuffle": "ui_shuffle", "rockets": "lv_rockets"}
 	if art.has(kind) and Zoo.art(art[kind]):
 		if kind == "cannon":
 			ci.draw_set_transform(c, PI / 2.0, Vector2.ONE)
@@ -2247,6 +2344,19 @@ func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 
 
 func _layout_bar() -> void:
+	if _lvref():
+		# кнопки ровно на местах референса: центры 165, 364, 562 (слоты) и 775 (пауза), y = 150 px от низа
+		var k := _level_screen.size.x / 898.0
+		_booster_bar.alignment = BoxContainer.ALIGNMENT_BEGIN
+		_booster_bar.add_theme_constant_override("separation", 0)
+		var step := 199.0 * k
+		for b in _booster_btns.values():
+			b.custom_minimum_size = Vector2(step, 140)
+		if _bar_pause:
+			_bar_pause.custom_minimum_size = Vector2(2.0 * (775.0 * k - (165.0 * k - step / 2.0 + step * 3.0)), 140)
+		_booster_bar.position = Vector2(165.0 * k - step / 2.0, _level_screen.size.y - 150.0 * k - 72.0)
+		_booster_bar.size = Vector2(_level_screen.size.x, 140)
+		return
 	if Zoo.art("lv_tray") and _lv_goal_card:
 		# 4 слота: центры 96, 216, 336, 456 px; пауза — 620 px (775 референса); лоток — центр 116 px от низа
 		_booster_bar.alignment = BoxContainer.ALIGNMENT_BEGIN
@@ -2368,7 +2478,8 @@ var _aim_banner: Control
 
 const AIM_TEXT := {"hammer": ["Молот", "Коснись фишки или препятствия — разобьёт его!"],
 	"arrow": ["Стрела", "Коснись клетки — очистит весь ряд!"],
-	"cannon": ["Стрела", "Коснись клетки — очистит весь столбец!"]}
+	"cannon": ["Стрела", "Коснись клетки — очистит весь столбец!"],
+	"rockets": ["Ракеты", "Коснись клетки — очистит весь ряд и столбец!"]}
 
 
 ## Монеты и звезда вылетают из центра экрана в счётчики; счётчики «набегают» с прошлых значений.
@@ -2441,7 +2552,7 @@ func _show_aim_banner(kind: String) -> void:
 		_draw_band(b, Rect2(0, 0, w, 196), false)
 		var ic := Vector2(110, 100)
 		b.draw_texture_rect(Board.fx_tex("glow"), Rect2(ic - Vector2(100, 100), Vector2(200, 200)), false, Color(1, 0.9, 0.5, 0.6))
-		var icon := "ui_hammer" if kind == "hammer" else "ui_arrow"
+		var icon := "ui_hammer" if kind == "hammer" else ("lv_rockets" if kind == "rockets" else "ui_arrow")
 		if kind == "cannon":
 			b.draw_set_transform(ic, -PI / 2.0, Vector2.ONE)
 			Zoo.draw_art(b, icon, Vector2.ZERO, 130.0)
@@ -2489,6 +2600,17 @@ func _close_dialog() -> void:
 
 
 ## Рамка поля обнимает только занятые клетки (поле 6×10, 8×8 и т.п. — без пустых полос внутри рамки).
+func _board_lo() -> Vector2i:
+	if _board.hole.size() < Levels.W:
+		return Vector2i.ZERO
+	var lo := Vector2i(Levels.W, Levels.H)
+	for x in Levels.W:
+		for y in Levels.H:
+			if not _board.hole[x][y]:
+				lo = Vector2i(mini(lo.x, x), mini(lo.y, y))
+	return lo if lo.x < Levels.W else Vector2i.ZERO
+
+
 func _fit_board_to_shape() -> void:
 	var lo := Vector2i(Levels.W, Levels.H)
 	var hi := Vector2i(-1, -1)
@@ -2530,6 +2652,16 @@ func _board_scale() -> float:
 
 
 func _board_rest() -> Vector2:
+	if _lv_goal_card and _lvref():
+		_layout_level_ref()
+		# клетки — ровно во внутренности рамки фона: (105, 400) px фона, клетка 86 px
+		var kk := _level_screen.size.x / 898.0
+		var cellg := 86.0 * kk
+		var ks := cellg / Board.CELL
+		_board_frame.scale = Vector2(ks, ks)
+		var lo := _board_lo()
+		var clip_pos := _board_clip.position
+		return Vector2(105, 400) * kk + Vector2(lo) * cellg - (clip_pos + Vector2(10, 10)) * ks
 	if _lv_goal_card:
 		_layout_level_ref()
 		# поле по референсу: клетки 8 столбцов на 553 px (105…795 px референса), верх клеток на y=320
@@ -3044,6 +3176,9 @@ func _build_goals() -> void:
 	for c in _goals_box.get_children():
 		c.queue_free()
 	_goal_views.clear()
+	if _lvref():
+		_build_goals_lvref()
+		return
 	for goal in _level.goals:
 		var slot := PanelContainer.new()
 		slot.theme_type_variation = "GoalSlot"
@@ -3082,6 +3217,56 @@ func _build_goals() -> void:
 			v.add_child(l)
 		else:
 			v.add_child(l)
+		_goals_box.add_child(slot)
+		_goal_views.append({"goal": goal, "label": l, "icon": icon, "shown": int(goal.left)})
+
+
+## Цели как в референсе: иконки в ряд (шаг 91 px референса), под каждой — маленькая кремовая плашка с числом.
+func _build_goals_lvref() -> void:
+	var k := _level_screen.size.x / 898.0
+	_goals_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	_goals_box.add_theme_constant_override("separation", 0)
+	var plate := Zoo.art("lvref_count")
+	for goal in _level.goals:
+		var slot := VBoxContainer.new()
+		slot.add_theme_constant_override("separation", int(-7.0 * k))
+		slot.custom_minimum_size = Vector2(91, 0) * k
+		var icon := Control.new()
+		icon.custom_minimum_size = Vector2(91, 82) * k
+		slot.add_child(icon)
+		var ic := Vector2(45.5, 41) * k
+		if goal.kind == "color" or goal.kind == "item":
+			var g: Node2D = Gem.new()
+			g.color = goal.get("color", -1)
+			g.size = 80.0 * k
+			g.position = ic
+			icon.add_child(g)
+			if goal.kind == "item":
+				g.set_special(Gem.ITEM)
+		else:
+			var kind: String = goal.kind
+			icon.draw.connect(func() -> void: _draw_goal_icon(icon, kind, ic, 74.0 * k))
+		var stack := Control.new()
+		stack.custom_minimum_size = Vector2(91, 37) * k
+		var back := Control.new()
+		back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		back.draw.connect(func() -> void:
+			var pw := 70.0 * k
+			back.draw_texture_rect(plate, Rect2(Vector2((back.size.x - pw) / 2.0, 0), Vector2(pw, 37.0 * k)), false))
+		stack.add_child(back)
+		back.set_anchors_preset(Control.PRESET_FULL_RECT)
+		var l := Label.new()
+		l.theme_type_variation = "TitleLabel"
+		l.add_theme_font_size_override("font_size", 24)
+		l.add_theme_constant_override("outline_size", 6)
+		l.add_theme_color_override("font_color", Color("#7a3e10"))
+		l.add_theme_color_override("font_outline_color", Color("#fff6e0"))
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		l.text = str(goal.left)
+		stack.add_child(l)
+		l.set_anchors_preset(Control.PRESET_FULL_RECT)
+		slot.add_child(stack)
 		_goals_box.add_child(slot)
 		_goal_views.append({"goal": goal, "label": l, "icon": icon, "shown": int(goal.left)})
 
@@ -4283,7 +4468,7 @@ func _run_bot(levels: int, first: int = 1) -> void:
 					m = cand
 			guard += 1
 			if guard % 7 == 3:
-				_board.booster_hit(["hammer", "arrow", "cannon"].pick_random(), Vector2i(randi() % 8, randi() % 8))
+				_board.booster_hit(["hammer", "rockets"].pick_random(), Vector2i(randi() % 8, randi() % 8))
 			elif guard % 11 == 5:
 				_board.shuffle_now()
 			elif m[0] == m[1]:
