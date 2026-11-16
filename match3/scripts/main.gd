@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.25.1"
+const VERSION := "2.26.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -1409,7 +1409,7 @@ func _build_level_screen() -> void:
 		for card in [goal_card, moves_card]:
 			card.self_modulate.a = 0.0  # плашки нарисованы в фоне
 			card.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
-		_moves_label.add_theme_font_size_override("font_size", 66)
+		_moves_label.add_theme_font_size_override("font_size", 60)
 	if Zoo.art("lv_goals"):
 		# шапка 1:1 по референсу экрана уровня: плашки и панда стоят по координатам референса
 		for n in [goal_card, moves_card, _portrait_node]:
@@ -1580,8 +1580,10 @@ func _layout_level_ref() -> void:
 # ---------- экран уровня 1:1 по референсу (фон собран из самого референса: tools/refbuild.py) ----------
 ## Референс: 898 px в ширину; фон lvref_bg — референс без 68 строк в середине поля (клетки 86×86).
 ## Верх (до строки 1314 фона) прижат к верху экрана, низ (с 1398) — к низу, плитка между ними растягивается.
-const LVREF_SPLIT := 1314.0
-const LVREF_BAND := Vector2(0.0, 1398.0)   # .y — начало нижней части (лоток); между SPLIT и ним — плитка, растягивается
+## Ширина референса уровня (screen_02_level_v3, 830×1895). Координаты ниже — в его пикселях; те же числа в tools/refbuild.py.
+const LVW := 830.0
+const LVREF_SPLIT := 1296.0
+const LVREF_BAND := Vector2(0.0, 1588.0)   # .y — начало нижней части (лоток); между SPLIT и ним — плитка, растягивается
 var _lvref_bg: Control
 var _lvref_ring: Control
 var _lvref_thumb: Control
@@ -1618,8 +1620,8 @@ func _build_lvref_layers() -> void:
 	_lvref_ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var rt := Zoo.art("lvref_ring")
 	_lvref_ring.draw.connect(func() -> void:
-		var k := _level_screen.size.x / 898.0
-		_lvref_ring.draw_texture_rect(rt, Rect2(Vector2(300, 0) * k, rt.get_size() * k), false))
+		var k := _level_screen.size.x / LVW
+		_lvref_ring.draw_texture_rect(rt, Rect2(Vector2(250, 0) * k, rt.get_size() * k), false))
 	_level_screen.add_child(_lvref_ring)
 	_lvref_ring.set_anchors_preset(Control.PRESET_FULL_RECT)
 	# большой палец панды лежит поверх рамки — отдельный слой, двигается вместе с пандой
@@ -1629,35 +1631,35 @@ func _build_lvref_layers() -> void:
 		_lvref_thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_lvref_thumb.set_anchors_preset(Control.PRESET_FULL_RECT)
 		_lvref_thumb.draw.connect(func() -> void:
-			var k := _level_screen.size.x / 898.0
+			var k := _level_screen.size.x / LVW
 			var img: Control = _portrait_node.get_node("Img")
 			var piv: Vector2 = _portrait_node.position + img.get_meta("rest", img.position) + img.pivot_offset
 			var off: Vector2 = img.position - img.get_meta("rest", img.position)
 			var m := Transform2D(img.rotation, img.scale, 0.0, piv + off) * Transform2D(0.0, -piv)
 			_lvref_thumb.draw_set_transform_matrix(m)
-			_lvref_thumb.draw_texture_rect(tt, Rect2(Vector2(300, 0) * k, tt.get_size() * k), false)
+			_lvref_thumb.draw_texture_rect(tt, Rect2(Vector2(250, 0) * k, tt.get_size() * k), false)
 			_lvref_thumb.draw_set_transform_matrix(Transform2D.IDENTITY))
 		_level_screen.add_child(_lvref_thumb)
 		_every_frame(_lvref_thumb)
 
 
 func _layout_lvref() -> void:
-	var k := _level_screen.size.x / 898.0
+	var k := _level_screen.size.x / LVW
 	# плашки: только содержимое (сами плашки — в фоне)
-	for cr in [[_lv_goal_card, Vector2(48, 104), Vector2(274, 140)], [_lv_moves_card, Vector2(615, 108), Vector2(245, 132)]]:
+	for cr in [[_lv_goal_card, Vector2(35, 175), Vector2(260, 120)], [_lv_moves_card, Vector2(565, 172), Vector2(235, 120)]]:
 		var cd: Control = cr[0]
 		cd.custom_minimum_size = cr[2] * k
 		cd.position = cr[1] * k
 		cd.size = cr[2] * k
 	# панда — в круге рамки (центр 451,141, радиус 110), обрезана по кругу
 	var pn := _portrait_node
-	var r := 110.0 * k
+	var r := 104.0 * k
 	pn.custom_minimum_size = Vector2(r, r) * 2.0
 	pn.size = pn.custom_minimum_size
-	pn.position = Vector2(451, 141) * k - Vector2(r, r)
+	pn.position = Vector2(417, 198) * k - Vector2(r, r)
 	var img: Control = pn.get_node("Img")
 	# крупно, по пояс, как в референсе: верх шляпы у края круга, ниже груди — за рамкой
-	var ps := (110.0 + 2.0) * 2.0 * k
+	var ps := (104.0 + 2.0) * 2.0 * k
 	img.size = Vector2(ps, ps)
 	img.position = Vector2(-2.0, -2.0) * k
 	img.set_meta("rest", img.position)
@@ -1843,7 +1845,7 @@ func _panda_react_ref(kind: String, img: Control) -> void:
 		return
 	var t := img.create_tween()
 	img.set_meta("react", t)
-	var up := 14.0 * _level_screen.size.x / 898.0
+	var up := 14.0 * _level_screen.size.x / LVW
 	match kind:
 		"combo", "bigcombo", "goal", "hello", "special":
 			var n := 2 if kind == "bigcombo" else 1
@@ -2284,14 +2286,14 @@ func _round_button(kind: String, base: Color) -> Button:
 		if Zoo.art("lv_slot"):
 			# слоты из листа элементов уровня (референс): деревянный круг с золотым ободком
 			if is_pause:
-				Zoo.draw_art(btn, "lv_pause", c, 128.0 * _level_screen.size.x / 898.0 if _lvref() else 100.0)
+				Zoo.draw_art(btn, "lv_pause", c, 120.0 * _level_screen.size.x / LVW if _lvref() else 100.0)
 				return
 			if active:
 				var g2: float = btn.get_meta("glow")
 				for i in 5:
 					btn.draw_circle(c + lift, 72.0 - i * 5.0 + g2 * 6.0, Color(1.0, 0.86, 0.3, 0.07 + i * 0.03))
 			var slot_art := {"hammer": "lv_hammer", "shuffle": "lv_shuffle", "rockets": "lv_rockets"}
-			var sd := 175.0 * _level_screen.size.x / 898.0 if _lvref() else 124.0
+			var sd := 174.0 * _level_screen.size.x / LVW if _lvref() else 124.0
 			if slot_art.has(kind):
 				Zoo.draw_art(btn, slot_art[kind], c + lift, sd)
 			else:
@@ -2358,9 +2360,9 @@ func _draw_count(btn: Button, c: Vector2) -> void:
 	var bc := c + Vector2(42, 42)
 	var bsz := 50.0
 	if _lvref():
-		var kq := _level_screen.size.x / 898.0
-		bc = c + Vector2(55, 53) * kq
-		bsz = 68.0 * kq
+		var kq := _level_screen.size.x / LVW
+		bc = c + Vector2(55, 49) * kq
+		bsz = 62.0 * kq
 	var buy := n == 0
 	if Zoo.art("lv_badge"):
 		Zoo.draw_art(btn, "lv_plus" if buy else "lv_badge", bc, bsz)
@@ -2440,15 +2442,15 @@ func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 func _layout_bar() -> void:
 	if _lvref():
 		# кнопки ровно на местах референса: центры 165, 364, 562 (слоты) и 775 (пауза), y = 150 px от низа
-		var k := _level_screen.size.x / 898.0
+		var k := _level_screen.size.x / LVW
 		_booster_bar.alignment = BoxContainer.ALIGNMENT_BEGIN
 		_booster_bar.add_theme_constant_override("separation", 0)
-		var step := 199.0 * k
+		var step := 185.0 * k
 		for b in _booster_btns.values():
 			b.custom_minimum_size = Vector2(step, 140)
 		if _bar_pause:
-			_bar_pause.custom_minimum_size = Vector2(2.0 * (775.0 * k - (165.0 * k - step / 2.0 + step * 3.0)), 140)
-		_booster_bar.position = Vector2(165.0 * k - step / 2.0, _level_screen.size.y - 150.0 * k - 72.0)
+			_bar_pause.custom_minimum_size = Vector2(2.0 * (710.0 * k - (150.0 * k - step / 2.0 + step * 3.0)), 140)
+		_booster_bar.position = Vector2(150.0 * k - step / 2.0, _level_screen.size.y - 142.0 * k - 72.0)
 		_booster_bar.size = Vector2(_level_screen.size.x, 140)
 		return
 	if Zoo.art("lv_tray") and _lv_goal_card:
@@ -2749,13 +2751,13 @@ func _board_rest() -> Vector2:
 	if _lv_goal_card and _lvref():
 		_layout_level_ref()
 		# клетки — ровно во внутренности рамки фона: (105, 400) px фона, клетка 86 px
-		var kk := _level_screen.size.x / 898.0
-		var cellg := 86.0 * kk
+		var kk := _level_screen.size.x / LVW
+		var cellg := 78.75 * kk
 		var ks := cellg / Board.CELL
 		_board_frame.scale = Vector2(ks, ks)
 		var lo := _board_lo()
 		var clip_pos := _board_clip.position
-		return Vector2(105, 400) * kk + Vector2(lo) * cellg - (clip_pos + Vector2(10, 10)) * ks
+		return Vector2(100, 462) * kk + Vector2(lo) * cellg - (clip_pos + Vector2(10, 10)) * ks
 	if _lv_goal_card:
 		_layout_level_ref()
 		# поле по референсу: клетки 8 столбцов на 553 px (105…795 px референса), верх клеток на y=320
@@ -3319,7 +3321,7 @@ func _build_goals() -> void:
 func _build_goals_lvref() -> void:
 	# точно как в референсе: центры иконок x 92 / 183 / 273, y 165 (px референса), иконка ~86 px,
 	# под ней плашка 70×37 с верхом на y 197. Меньше трёх целей — тот же шаг, по центру плашки.
-	var k := _level_screen.size.x / 898.0
+	var k := _level_screen.size.x / LVW
 	_goals_box.visible = false
 	if _goals_ref_box == null:
 		_goals_ref_box = Control.new()
@@ -3333,39 +3335,39 @@ func _build_goals_lvref() -> void:
 	var n: int = _level.goals.size()
 	for i in n:
 		var goal: Dictionary = _level.goals[i]
-		var cx: float = 183.0 + (i - (n - 1) / 2.0) * 90.5
+		var cx: float = 171.0 + (i - (n - 1) / 2.0) * 85.0
 		var slot := Control.new()
 		slot.set_meta("goal_ref", true)
 		slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		slot.position = Vector2(cx - 45, 120) * k
-		slot.size = Vector2(90, 115) * k
+		slot.position = Vector2(cx - 40, 184) * k
+		slot.size = Vector2(80, 100) * k
 		box.add_child(slot)
 		var icon := Control.new()
 		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		icon.size = Vector2(90, 90) * k
+		icon.size = Vector2(80, 76) * k
 		slot.add_child(icon)
-		var ic := Vector2(45, 45) * k
+		var ic := Vector2(40, 38) * k
 		if goal.kind == "color" or goal.kind == "item":
 			var g: Node2D = Gem.new()
 			g.color = goal.get("color", -1)
-			g.size = 82.0 * k
+			g.size = 74.0 * k
 			g.position = ic
 			icon.add_child(g)
 			if goal.kind == "item":
 				g.set_special(Gem.ITEM)
 		else:
 			var kind: String = goal.kind
-			icon.draw.connect(func() -> void: _draw_goal_icon(icon, kind, ic, 80.0 * k))
+			icon.draw.connect(func() -> void: _draw_goal_icon(icon, kind, ic, 70.0 * k))
 		var pl := Control.new()
 		pl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pl.position = Vector2(10, 77) * k
-		pl.size = Vector2(70, 37) * k
+		pl.position = Vector2(9, 69) * k
+		pl.size = Vector2(62, 30) * k
 		pl.draw.connect(func() -> void: pl.draw_texture_rect(plate, Rect2(Vector2.ZERO, pl.size), false))
 		slot.add_child(pl)
 		var l := Label.new()
 		l.theme_type_variation = "TitleLabel"
-		l.add_theme_font_size_override("font_size", 24)
-		l.add_theme_constant_override("outline_size", 6)
+		l.add_theme_font_size_override("font_size", 20)
+		l.add_theme_constant_override("outline_size", 5)
 		l.add_theme_color_override("font_color", Color("#7a3e10"))
 		l.add_theme_color_override("font_outline_color", Color("#fff6e0"))
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
