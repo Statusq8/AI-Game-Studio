@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.27.1"
+const VERSION := "2.28.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -4393,41 +4393,7 @@ func _show_win_ref(coins: int) -> void:
 	var ribbon := Control.new()
 	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ribbon.size = body.size
-	ribbon.draw.connect(func() -> void:
-		# надпись по дуге ленты: средняя линия ленты — дуга окружности (центр ленты x 425, y 506,
-		# радиус ~1140 px референса), буквы ставятся по ней по одной и поворачиваются вдоль неё
-		var fs := 58
-		var ts := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-		while ts.x > 500.0 and fs > 30:
-			fs -= 2
-			ts = font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-		var rad := 1140.0
-		var cen := Vector2(425.0, 506.0 - WIN_Y0 + rad)
-		var rb := rad - fs * 0.36  # базовая линия чуть ниже средней линии ленты
-		var widths: Array = []
-		var total := 0.0
-		for ch in title:
-			var cw := font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-			widths.append(cw)
-			total += cw
-		for pass_i in 3:
-			var acc := 0.0
-			for i in title.length():
-				var cw: float = widths[i]
-				var ang := (acc + cw / 2.0 - total / 2.0) / rb
-				acc += cw
-				var pos := cen + Vector2(sin(ang), -cos(ang)) * rb
-				ribbon.draw_set_transform(pos, ang, Vector2.ONE)
-				var p := Vector2(-cw / 2.0, 0)
-				var ch := title[i]
-				if pass_i == 0:
-					for d in range(6, 0, -1):
-						ribbon.draw_string_outline(font, p + Vector2(0, d), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#6e0f12"))
-				elif pass_i == 1:
-					ribbon.draw_string_outline(font, p, ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#6e0f12"))
-				else:
-					ribbon.draw_string(font, p, ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#fff8e6"))
-		ribbon.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE))
+	ribbon.draw.connect(func() -> void: _arc_text(ribbon, title, Vector2(425.0, 506.0 - WIN_Y0), 500.0, 58, Color("#6e0f12")))
 	body.add_child(ribbon)
 	# «+N» монет — набегает от 0
 	var cn := Control.new()
@@ -4542,6 +4508,201 @@ func _show_win_ref(coins: int) -> void:
 	_confetti()
 	_coin_rain()
 
+## Надпись по дуге ленты окна: c — верх средней линии ленты (дуга окружности радиуса ~1140 px референса),
+## буквы ставятся по одной вдоль дуги и поворачиваются по ней. Не шире max_w.
+func _arc_text(ci: CanvasItem, text: String, c: Vector2, max_w: float, fs0: int, outline: Color) -> void:
+	var font: Font = UiTheme.title_font()
+	var fs := fs0
+	while font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > max_w and fs > 30:
+		fs -= 2
+	var rad := 1140.0
+	var cen := c + Vector2(0, rad)
+	var rb := rad - fs * 0.36  # базовая линия чуть ниже средней линии ленты
+	var widths: Array = []
+	var total := 0.0
+	for ch in text:
+		var cw := font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		widths.append(cw)
+		total += cw
+	for pass_i in 3:
+		var acc := 0.0
+		for i in text.length():
+			var cw: float = widths[i]
+			var ang := (acc + cw / 2.0 - total / 2.0) / rb
+			acc += cw
+			ci.draw_set_transform(cen + Vector2(sin(ang), -cos(ang)) * rb, ang, Vector2.ONE)
+			var p := Vector2(-cw / 2.0, 0)
+			var ch := text[i]
+			if pass_i == 0:
+				for d in range(6, 0, -1):
+					ci.draw_string_outline(font, p + Vector2(0, d), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, outline)
+			elif pass_i == 1:
+				ci.draw_string_outline(font, p, ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, outline)
+			else:
+				ci.draw_string(font, p, ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#fff8e6"))
+	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## ---------- окно проигрыша 1:1 по референсу (слои: tools/losebuild.py) ----------
+## Референс 852×1846 (references/screen_04_lose.webp); координаты — в его пикселях, те же в losebuild.py.
+const LOSE_Y0 := 180.0
+const LOSE_TOP := 186.0
+const LOSE_BOT := 1730.0
+const LOSE_STREAK := Vector2(137, 1059)
+const LOSE_BUY := Vector2(174, 1197)
+const LOSE_AD := Vector2(203, 1397)
+const LOSE_QUIT := Vector2(269, 1534)
+const LOSE_PLATE_C := Vector2(426, 960)     # центр плашки целей
+const LOSE_BADGE_OFF := Vector2(48, 42)     # кружок-счётчик относительно центра иконки цели
+
+
+func _show_lose_ref() -> void:
+	_clear_overlay()
+	var dim := ColorRect.new()
+	dim.color = Color(0.05, 0.03, 0.2, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_overlay.add_child(dim)
+	var k := minf(size.x / WIN_W, (size.y - 16.0) / (LOSE_BOT - LOSE_TOP))
+	# внешний слой — масштаб k и место на экране, внутренний (body) — «впрыгивание» вокруг своей середины
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = Vector2(WIN_W, LOSE_BOT - LOSE_Y0)
+	holder.position = Vector2(size.x / 2.0 - WIN_W / 2.0 * k, size.y / 2.0 - ((LOSE_TOP + LOSE_BOT) / 2.0 - LOSE_Y0) * k)
+	holder.scale = Vector2(k, k)
+	_overlay.add_child(holder)
+	var body := Control.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.size = holder.size
+	body.pivot_offset = Vector2(WIN_W / 2.0, 500.0)
+	holder.add_child(body)
+	var font: Font = UiTheme.title_font()
+	var wt := TextureRect.new()
+	wt.texture = Zoo.art("loseref_window")
+	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(wt)
+	var at := func(p: Vector2) -> Vector2: return p - Vector2(0, LOSE_Y0)
+	# надпись на ленте
+	var ribbon := Control.new()
+	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ribbon.size = body.size
+	ribbon.draw.connect(func() -> void: _arc_text(ribbon, "Ходы кончились!", at.call(Vector2(425.0, 322.0)), 500.0, 60, Color("#22146e")))
+	body.add_child(ribbon)
+	# несобранные цели: иконки в плашке, между ними тонкие перегородки, красный кружок-счётчик
+	var left: Array = []
+	for g in _level.goals:
+		if g.left > 0:
+			left.append(g)
+	var n := left.size()
+	var step := 255.0 if n <= 2 else 190.0
+	var isz := 140.0 if n <= 2 else 118.0
+	var goals := Control.new()
+	goals.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	goals.size = body.size
+	var centers: Array = []
+	for i in n:
+		centers.append(at.call(LOSE_PLATE_C + Vector2((i - (n - 1) / 2.0) * step, -4)))
+	for i in n:
+		var gd: Dictionary = left[i]
+		if gd.kind == "color" or gd.kind == "item":
+			var gm: Node2D = Gem.new()
+			gm.color = gd.get("color", -1)
+			gm.size = isz
+			gm.position = centers[i]
+			if gd.kind == "item":
+				gm.set_special(Gem.ITEM)
+			goals.add_child(gm)
+	var badge := Zoo.art("loseref_badge")
+	goals.draw.connect(func() -> void:
+		for i in range(1, n):
+			var x: float = (centers[i - 1].x + centers[i].x) / 2.0
+			var y0: float = centers[i].y - 44.0
+			goals.draw_rect(Rect2(x - 2, y0, 4, 92), Color8(220, 154, 92))
+			goals.draw_rect(Rect2(x - 2, y0, 2, 92), Color8(236, 182, 122)))
+	var badges := Control.new()
+	badges.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badges.size = body.size
+	badges.draw.connect(func() -> void:
+		for i in n:
+			var gd: Dictionary = left[i]
+			var c: Vector2 = centers[i]
+			if gd.kind != "color" and gd.kind != "item":
+				_draw_goal_icon(badges, gd.kind, c, isz * 0.85)
+			var bc: Vector2 = c + LOSE_BADGE_OFF * (isz / 140.0)
+			var bs := badge.get_size() * (isz / 140.0)
+			badges.draw_texture_rect(badge, Rect2(bc - bs / 2.0, bs), false)
+			var t := str(int(gd.left))
+			var fs := int(46.0 * isz / 140.0) if t.length() < 3 else int(34.0 * isz / 140.0)
+			var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			var tp := bc + Vector2(-ts.x / 2.0, fs * 0.36)
+			badges.draw_string_outline(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color("#6a0a04"))
+			badges.draw_string(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	body.add_child(goals)
+	body.add_child(badges)
+	# серия побед сгорит — красная плашка с огоньком (только если серия есть)
+	if Save.streak > 0:
+		var st := TextureRect.new()
+		st.texture = Zoo.art("loseref_streak")
+		st.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		st.position = at.call(LOSE_STREAK)
+		body.add_child(st)
+		var wtxt := "Серия побед (%d) сгорит!" % Save.streak
+		st.draw.connect(func() -> void:
+			var fs := 40
+			while font.get_string_size(wtxt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > 430.0 and fs > 24:
+				fs -= 2
+			var ts := font.get_string_size(wtxt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			# текст — по центру красной части справа от огонька (x 125…560 слоя), середина по высоте
+			var tp := Vector2(125.0 + (435.0 - ts.x) / 2.0, 64.0 + fs * 0.36)
+			st.draw_string_outline(font, tp + Vector2(0, 3), wtxt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color("#4a0804"))
+			st.draw_string_outline(font, tp, wtxt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color("#5a0e06"))
+			st.draw_string(font, tp, wtxt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	# кнопки
+	var mk_btn := func(tex_name: String, pos: Vector2) -> TextureButton:
+		var b := TextureButton.new()
+		b.texture_normal = Zoo.art(tex_name)
+		b.position = at.call(pos)
+		b.size = b.texture_normal.get_size()
+		b.pivot_offset = b.size / 2.0
+		b.button_down.connect(func() -> void: b.create_tween().tween_property(b, "scale", Vector2(0.93, 0.93), 0.06))
+		b.button_up.connect(func() -> void:
+			b.create_tween().tween_property(b, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+		b.pressed.connect(Sfx.play.bind("click"))
+		body.add_child(b)
+		return b
+	var buy: TextureButton = mk_btn.call("loseref_buy", LOSE_BUY)
+	buy.draw.connect(func() -> void:
+		var t := str(EXTRA_MOVES_PRICE)
+		var fs := 56
+		var tp := Vector2(236, 147)
+		buy.draw_string_outline(font, tp + Vector2(0, 3), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#0e3a08"))
+		buy.draw_string_outline(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#14450c"))
+		buy.draw_string(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	buy.pressed.connect(func() -> void:
+		if Save.spend(EXTRA_MOVES_PRICE):
+			_add_moves())
+	if Save.coins < EXTRA_MOVES_PRICE:
+		buy.disabled = true
+		buy.modulate = Color(0.6, 0.6, 0.6, 0.85)
+	var ad: TextureButton = mk_btn.call("loseref_ad", LOSE_AD)
+	ad.pressed.connect(func() -> void: Ads.show_rewarded(_add_moves))
+	if not Ads.is_ready():
+		ad.disabled = true
+		ad.modulate = Color(0.6, 0.6, 0.6, 0.85)
+	var quit: TextureButton = mk_btn.call("loseref_quit", LOSE_QUIT)
+	quit.pressed.connect(func() -> void: _quit_level(_show_home))
+	# появление: окно «впрыгивает»; главная кнопка мягко «дышит» (только она и только если доступна)
+	body.scale = Vector2(0.6, 0.6)
+	body.modulate.a = 0.0
+	var tw := body.create_tween()
+	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+	if not buy.disabled:
+		var bt := buy.create_tween().set_loops()
+		bt.tween_interval(0.4)
+		bt.tween_property(buy, "scale", Vector2(1.04, 1.04), 0.6).set_trans(Tween.TRANS_SINE)
+		bt.tween_property(buy, "scale", Vector2.ONE, 0.6).set_trans(Tween.TRANS_SINE)
+
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
 	for i in 70:
@@ -4616,6 +4777,9 @@ func _show_lose() -> void:
 	if _state != "done":
 		return
 	Sfx.play("lose")
+	if Zoo.art("loseref_window"):
+		_show_lose_ref()
+		return
 	var font: Font = UiTheme.title_font()
 	var v := _dialog("Уровень %d" % _level.n, [], [])
 	var lpanel := v.get_parent() as Control
@@ -4918,6 +5082,19 @@ func _run_winshot(dir: String) -> void:
 	await _snap(dir, "w1_appear")
 	await get_tree().create_timer(2.6).timeout
 	await _snap(dir, "w2_done")
+	_clear_overlay()
+	Save.streak = 4
+	Save.coins = 1000
+	_state = "done"
+	_show_lose()
+	await get_tree().create_timer(0.8).timeout
+	await _snap(dir, "l1_lose")
+	_level.goals = [_level.goals[0], _level.goals[1]]
+	Save.streak = 0
+	Save.coins = 0
+	_show_lose()
+	await get_tree().create_timer(0.8).timeout
+	await _snap(dir, "l2_lose3")
 	get_tree().quit()
 
 

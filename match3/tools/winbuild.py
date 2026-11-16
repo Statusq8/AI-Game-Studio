@@ -40,14 +40,19 @@ def hsv(a):
     return q[..., 0] * 2 / 360, q[..., 1] / 255, q[..., 2] / 255
 
 
-def window_mask(im, h, s, v):
+def window_mask(im, h, s, v, y0=WIN_Y0, body=BODY, arch=ARCH, paw=PAW, rib_y=448, top_end=700,
+                leaf_y=(1440, 1625), side_y=(540, 1440), blue_ribbon=False):
+    """Маска рамки окна: верх (лента, арка, лапка, листья) по цвету + тело-прямоугольник + листья по углам."""
     H, W = v.shape
     gold = (h > 0.05) & (h < 0.17) & (s > 0.5) & (v > 0.55)
     red = ((h < 0.03) | (h > 0.95)) & (s > 0.5) & (v > 0.45)
     green = (h > 0.18) & (h < 0.42) & (s > 0.4) & (v > 0.45)
-    top = (gold | red | green).astype(np.uint8)
-    top[:WIN_Y0 + 8] = 0
-    top[700:] = 0
+    top = gold | red | green
+    if blue_ribbon:
+        top |= (h > 0.6) & (h < 0.8) & (s > 0.45) & (v > 0.35)
+    top = top.astype(np.uint8)
+    top[:y0 + 8] = 0
+    top[top_end:] = 0
     top[:, :30] = 0
     top[:, W - 30:] = 0
     top = cv2.morphologyEx(top, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
@@ -56,13 +61,13 @@ def window_mask(im, h, s, v):
     tm = ndi.binary_fill_holes(lab == big)
     # над лентой — только арка, лапка и листья (лучи звёзд не берём)
     yy, xx = np.mgrid[0:H, 0:W]
-    cx, cy, a, b = ARCH
+    cx, cy, a, b = arch
     allowed = (((xx - cx) / a) ** 2 + ((yy - cy) / b) ** 2 < 1.0)
-    allowed |= (xx - PAW[0]) ** 2 + (yy - PAW[1]) ** 2 < PAW[2] ** 2
-    allowed |= yy > 448 + ((xx - 425) / 275.0) ** 2 * 22
+    allowed |= (xx - paw[0]) ** 2 + (yy - paw[1]) ** 2 < paw[2] ** 2
+    allowed |= yy > rib_y + ((xx - 425) / 275.0) ** 2 * 22
     allowed |= green
     tm &= ndi.binary_closing(allowed, np.ones((5, 5)))
-    L, T, R, B, r = BODY
+    L, T, R, B, r = body
     body = np.zeros((H, W), np.uint8)
     cv2.rectangle(body, (L, T), (R, B - r), 1, -1)
     cv2.rectangle(body, (L + r, B - r), (R - r, B), 1, -1)
@@ -70,8 +75,8 @@ def window_mask(im, h, s, v):
     cv2.circle(body, (R - r, B - r), r, 1, -1)
     # листья внизу по углам
     bl = green.astype(np.uint8)
-    bl[:1440] = 0
-    bl[1625:] = 0
+    bl[:leaf_y[0]] = 0
+    bl[leaf_y[1]:] = 0
     bl[:, 200:650] = 0
     bl[:, :30] = 0
     bl[:, W - 30:] = 0
@@ -85,8 +90,8 @@ def window_mask(im, h, s, v):
             leaves |= ndi.binary_fill_holes(cm)
     # листья по бокам рамки (торчат за край)
     side = green.astype(np.uint8)
-    side[:540] = 0
-    side[1440:] = 0
+    side[:side_y[0]] = 0
+    side[side_y[1]:] = 0
     side[:, 140:710] = 0
     side = cv2.morphologyEx(side, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
     n3, lab3, st3, _ = cv2.connectedComponentsWithStats(side)
