@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.34.1"
+const VERSION := "2.35.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -1131,6 +1131,9 @@ func _show_daily() -> void:
 
 ## Сундук за победы: копится по победам; полный — открыть и забрать.
 func _show_chest() -> void:
+	if Zoo.art("chestref_window"):
+		_show_chest_ref()
+		return
 	var full := Save.chest_wins >= CHEST_WINS
 	var v := _dialog("Сундук побед", [("Внутри: %d монет и 2 бустера!" % CHEST_COINS) if full else
 		"Побед: %d из %d. Выигрывай уровни — сундук наполнится!" % [Save.chest_wins, CHEST_WINS]], [])
@@ -5505,6 +5508,140 @@ func _show_daily_ref() -> void:
 	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
 
+## ---------- «Сундук побед» 1:1 по референсу (слои: tools/chestbuild.py) ----------
+## Референс 852×1846 (references/screen_10_chest.webp); координаты — в его пикселях, те же в chestbuild.py.
+const CHESTREF_Y0 := 286.0
+const CHESTREF_TOP := 290.0
+const CHESTREF_BOT := 1652.0
+const CHESTREF_CLOSE := Vector3(747, 385, 52)
+const CHESTREF_SEG := Vector2(247, 918)        # 3-я клетка полоски побед
+const CHESTREF_SEG_P := 59.6
+const CHESTREF_BTN := Vector2(338, 1298)
+const CHESTREF_PANDA := Vector2(2, 1258)
+
+
+func _show_chest_ref() -> void:
+	var full := Save.chest_wins >= CHEST_WINS
+	_clear_overlay()
+	var dim := ColorRect.new()
+	dim.color = Color(0.05, 0.03, 0.2, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_overlay.add_child(dim)
+	var k := minf(size.x / WIN_W, (size.y - 16.0) / (CHESTREF_BOT - CHESTREF_TOP))
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = Vector2(WIN_W, CHESTREF_BOT - CHESTREF_Y0)
+	holder.position = Vector2(size.x / 2.0 - WIN_W / 2.0 * k, size.y / 2.0 - ((CHESTREF_TOP + CHESTREF_BOT) / 2.0 - CHESTREF_Y0) * k)
+	holder.scale = Vector2(k, k)
+	_overlay.add_child(holder)
+	var body := Control.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.size = holder.size
+	body.pivot_offset = Vector2(WIN_W / 2.0, 700.0)
+	holder.add_child(body)
+	var font: Font = UiTheme.title_font()
+	var at := func(p: Vector2) -> Vector2: return p - Vector2(0, CHESTREF_Y0)
+	var wt := TextureRect.new()
+	wt.texture = Zoo.art("chestref_window")
+	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(wt)
+	var ribbon := Control.new()
+	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ribbon.size = body.size
+	ribbon.draw.connect(func() -> void: _arc_text(ribbon, "Сундук побед", at.call(Vector2(425.0, 416.0)), 470.0, 62, Color("#3c0a5e")))
+	body.add_child(ribbon)
+	# полоска побед: зелёных клеток — сколько побед (из 8); у полного сундука клетки мерцают
+	var seg_t := Zoo.art("chestref_seg")
+	var wins := mini(Save.chest_wins, CHEST_WINS)
+	var bar := Control.new()
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.size = body.size
+	bar.draw.connect(func() -> void:
+		var tt := Time.get_ticks_msec() / 1000.0
+		for i in wins:
+			var p: Vector2 = at.call(CHESTREF_SEG + Vector2((i - 2) * CHESTREF_SEG_P, 0))
+			var f := 0.0
+			if full:
+				f = 0.25 + 0.25 * sin(tt * 5.0 - i * 0.6)
+			bar.draw_texture(seg_t, p, Color(1.0 + f, 1.0 + f, 1.0 + f * 0.6)))
+	body.add_child(bar)
+	if full:
+		_every_frame(bar)
+	# кнопка: «Открыть» (полный сундук) или «Играть»
+	var btn := TextureButton.new()
+	btn.texture_normal = Zoo.art("chestref_btn")
+	btn.position = at.call(CHESTREF_BTN)
+	btn.size = btn.texture_normal.get_size()
+	btn.pivot_offset = btn.size / 2.0
+	var bt := "Открыть" if full else "Играть"
+	btn.draw.connect(func() -> void:
+		var fs := 58
+		var ts := font.get_string_size(bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var p := Vector2(btn.size.x / 2.0 - ts.x / 2.0, btn.size.y / 2.0 + fs * 0.36 - 6)
+		btn.draw_string_outline(font, p + Vector2(0, 4), bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#0e3a08"))
+		btn.draw_string_outline(font, p, bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#14450c"))
+		btn.draw_string(font, p, bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	btn.button_down.connect(func() -> void: btn.create_tween().tween_property(btn, "scale", Vector2(0.93, 0.93), 0.06))
+	btn.button_up.connect(func() -> void:
+		btn.create_tween().tween_property(btn, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+	if full:
+		var bt2 := btn.create_tween().set_loops()
+		bt2.tween_property(btn, "scale", Vector2(1.05, 1.05), 0.55).set_trans(Tween.TRANS_SINE)
+		bt2.tween_property(btn, "scale", Vector2.ONE, 0.55).set_trans(Tween.TRANS_SINE)
+	btn.pressed.connect(func() -> void:
+		Sfx.play("click")
+		if Save.chest_wins >= CHEST_WINS:
+			_open_chest(btn)
+		else:
+			_clear_overlay()
+			_try_play())
+	body.add_child(btn)
+	var pd := TextureRect.new()
+	pd.texture = Zoo.art("chestref_panda")
+	pd.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pd.position = at.call(CHESTREF_PANDA)
+	body.add_child(pd)
+	var close := Button.new()
+	close.flat = true
+	for stn in ["normal", "hover", "pressed", "focus"]:
+		close.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+	close.size = Vector2(CHESTREF_CLOSE.z, CHESTREF_CLOSE.z) * 2.0
+	close.position = at.call(Vector2(CHESTREF_CLOSE.x, CHESTREF_CLOSE.y)) - close.size / 2.0
+	close.pressed.connect(func() -> void:
+		Sfx.play("click")
+		_clear_overlay())
+	body.add_child(close)
+	body.scale = Vector2(0.6, 0.6)
+	body.modulate.a = 0.0
+	var tw := body.create_tween()
+	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+
+
+## Открыть полный сундук: 150 монет и 2 случайных бустера, затем окно «Сундук открыт!».
+func _open_chest(from: Control) -> void:
+	var pool := ["hammer", "rockets", "shuffle", "pre_rocket", "pre_bomb", "pre_orb"]
+	pool.shuffle()
+	var rw := {"coins": CHEST_COINS, pool[0]: 1, pool[1]: 1}
+	_give(rw)
+	Save.chest_wins = 0
+	Save.store()
+	Sfx.play("coin")
+	_dust(from.get_global_rect().get_center())
+	_clear_overlay()
+	var dv := _dialog("Сундук открыт!", [], [["Ура!", "GreenButton", func() -> void:
+		_clear_overlay()
+		_refresh_home()]])
+	var row := Control.new()
+	row.custom_minimum_size = Vector2(0, 130)
+	row.draw.connect(func() -> void:
+		var ks := rw.keys()
+		for i in ks.size():
+			_draw_reward(row, ks[i], int(rw[ks[i]]), Vector2(row.size.x * (i + 0.5) / ks.size(), 50), 80.0))
+	dv.add_child(row)
+	dv.move_child(row, 1)
+
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
 	for i in 70:
@@ -5951,6 +6088,14 @@ func _run_winshot(dir: String) -> void:
 	_show_daily_ref()
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "y2_daily")
+	Save.chest_wins = 5
+	_show_chest_ref()
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "c1_chest")
+	Save.chest_wins = CHEST_WINS
+	_show_chest_ref()
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "c2_chest")
 	Save.music = true
 	get_tree().quit()
 
