@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.39.0"
+const VERSION := "2.39.1"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -5958,7 +5958,10 @@ func _show_collection_ref() -> void:
 			var rx0 := 296.0 if open else 284.0
 			list.draw_texture_rect(rt, Rect2(Vector2(rx0, top - 6.0), Vector2(rt.get_width(), hgt + 12.0)), false)
 			# картинка зоны
+			# открытая зона — цветной портрет (зоны 4–8: references/collection_portraits.webp), закрытая — силуэт
 			var pic := Zoo.art("colref_pic_%d" % i)
+			if open and Zoo.art("colref_picc_%d" % i):
+				pic = Zoo.art("colref_picc_%d" % i)
 			var r: float = COLREF_PIC_R[i]
 			if pic:
 				var ps := Vector2(r, r) * 2.0 + Vector2(5, 5)
@@ -6501,6 +6504,10 @@ func _run_winshot(dir: String) -> void:
 	_show_collection_ref()
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "k1_collection")
+	Save.zone = 7
+	_show_collection_ref()
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "k2_collection")
 	Save.zone = kz
 	Save.built = kb
 	Save.shake = true
