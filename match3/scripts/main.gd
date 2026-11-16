@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.29.0"
+const VERSION := "2.30.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -4940,6 +4940,100 @@ func _show_prelevel_ref(n: int, lv: Dictionary) -> void:
 	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
 
+## ---------- окно паузы 1:1 по референсу (слои: tools/pausebuild.py) ----------
+## Референс 852×1846 (references/screen_06_pause.webp); координаты — в его пикселях, те же в pausebuild.py.
+const PAUSE_Y0 := 280.0
+const PAUSE_TOP := 288.0
+const PAUSE_BOT := 1456.0
+const PAUSE_TOGGLES := [["music", Vector2(244, 879.5)], ["sound", Vector2(424.5, 880)], ["vibration", Vector2(605, 879.5)]]
+const PAUSE_CHECK_OFF := Vector2(52, -50)
+const PAUSE_GO := Vector2(180, 982)
+const PAUSE_RESTART := Vector2(182, 1135)
+const PAUSE_HOME := Vector2(243, 1284)
+
+
+func _show_pause_ref() -> void:
+	_clear_overlay()
+	var dim := ColorRect.new()
+	dim.color = Color(0.05, 0.03, 0.2, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_overlay.add_child(dim)
+	var k := minf(size.x / WIN_W, (size.y - 16.0) / (PAUSE_BOT - PAUSE_TOP))
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = Vector2(WIN_W, PAUSE_BOT - PAUSE_Y0)
+	holder.position = Vector2(size.x / 2.0 - WIN_W / 2.0 * k, size.y / 2.0 - ((PAUSE_TOP + PAUSE_BOT) / 2.0 - PAUSE_Y0) * k)
+	holder.scale = Vector2(k, k)
+	_overlay.add_child(holder)
+	var body := Control.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.size = holder.size
+	body.pivot_offset = Vector2(WIN_W / 2.0, 650.0)
+	holder.add_child(body)
+	var at := func(p: Vector2) -> Vector2: return p - Vector2(0, PAUSE_Y0)
+	var wt := TextureRect.new()
+	wt.texture = Zoo.art("pauseref_window")
+	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(wt)
+	var ribbon := Control.new()
+	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ribbon.size = body.size
+	ribbon.draw.connect(func() -> void: _arc_text(ribbon, "Пауза", at.call(Vector2(425.0, 656.0)), 460.0, 66, Color("#7a2e04")))
+	body.add_child(ribbon)
+	# переключатели: музыка, звук, вибрация (включён — с зелёной галочкой, выключен — тусклый)
+	var check_t := Zoo.art("pauseref_check")
+	for tg in PAUSE_TOGGLES:
+		var key: String = tg[0]
+		var tex := Zoo.art("pauseref_" + key)
+		var b := Button.new()
+		b.flat = true
+		for stn in ["normal", "hover", "pressed", "focus"]:
+			b.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+		b.size = Vector2(190, 190)
+		b.position = at.call(tg[1]) - b.size / 2.0
+		b.pivot_offset = b.size / 2.0
+		var c := b.size / 2.0
+		b.draw.connect(func() -> void:
+			var on := bool(Save.get(key))
+			b.draw_texture_rect(tex, Rect2(c - tex.get_size() / 2.0, tex.get_size()), false, Color.WHITE if on else Color(0.62, 0.58, 0.55))
+			if on:
+				b.draw_texture_rect(check_t, Rect2(c + PAUSE_CHECK_OFF - check_t.get_size() / 2.0, check_t.get_size()), false))
+		b.pressed.connect(func() -> void:
+			Save.set(key, not bool(Save.get(key)))
+			Save.store()
+			if key == "music":
+				Sfx.refresh_music()
+			Sfx.play("click")
+			b.queue_redraw()
+			var tw := b.create_tween()
+			tw.tween_property(b, "scale", Vector2(1.12, 1.12), 0.08)
+			tw.tween_property(b, "scale", Vector2.ONE, 0.14).set_trans(Tween.TRANS_BACK))
+		body.add_child(b)
+	var mk_btn := func(tex_name: String, pos: Vector2, cb: Callable) -> TextureButton:
+		var b := TextureButton.new()
+		b.texture_normal = Zoo.art(tex_name)
+		b.position = at.call(pos)
+		b.size = b.texture_normal.get_size()
+		b.pivot_offset = b.size / 2.0
+		b.button_down.connect(func() -> void: b.create_tween().tween_property(b, "scale", Vector2(0.93, 0.93), 0.06))
+		b.button_up.connect(func() -> void:
+			b.create_tween().tween_property(b, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+		b.pressed.connect(Sfx.play.bind("click"))
+		b.pressed.connect(cb)
+		body.add_child(b)
+		return b
+	mk_btn.call("pauseref_go", PAUSE_GO, func() -> void:
+		_clear_overlay()
+		_board.input_enabled = true)
+	mk_btn.call("pauseref_restart", PAUSE_RESTART, func() -> void: _quit_level(_try_play))
+	mk_btn.call("pauseref_home", PAUSE_HOME, func() -> void: _quit_level(_show_home))
+	body.scale = Vector2(0.6, 0.6)
+	body.modulate.a = 0.0
+	var tw := body.create_tween()
+	tw.tween_property(body, "scale", Vector2.ONE, 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
 	for i in 70:
@@ -5173,6 +5267,9 @@ func _show_pause() -> void:
 	if _state != "play" or _board.busy:
 		return
 	_board.input_enabled = false
+	if Zoo.art("pauseref_window"):
+		_show_pause_ref()
+		return
 	_dialog("Пауза", [], [
 		["Продолжить", "GreenButton", func() -> void:
 			_clear_overlay()
@@ -5350,6 +5447,11 @@ func _run_winshot(dir: String) -> void:
 	_show_lose()
 	await get_tree().create_timer(0.8).timeout
 	await _snap(dir, "l2_lose3")
+	Save.music = false
+	_show_pause_ref()
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "s1_pause")
+	Save.music = true
 	get_tree().quit()
 
 
