@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.28.0"
+const VERSION := "2.29.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -2832,6 +2832,9 @@ func _show_prelevel(n: int) -> void:
 	_level_screen.visible = false
 	_pre_selected.clear()
 	var lv := Levels.make(n)
+	if Zoo.art("preref_window"):
+		_show_prelevel_ref(n, lv)
+		return
 	var hard := int(lv.get("hard", 0))
 	var v := _dialog("Уровень %d" % n, [], [
 		["Играть", "GreenButton", func() -> void:
@@ -4703,6 +4706,240 @@ func _show_lose_ref() -> void:
 		bt.tween_property(buy, "scale", Vector2(1.04, 1.04), 0.6).set_trans(Tween.TRANS_SINE)
 		bt.tween_property(buy, "scale", Vector2.ONE, 0.6).set_trans(Tween.TRANS_SINE)
 
+## ---------- окно перед уровнем 1:1 по референсу (слои: tools/prebuild.py) ----------
+## Референс 852×1846 (references/screen_05_prelevel.webp); координаты — в его пикселях, те же в prebuild.py.
+const PRE_Y0 := 180.0
+const PRE_TOP := 188.0
+const PRE_BOT := 1606.0
+const PRE_CLOSE := Vector3(760, 553, 57)                         # крестик: центр, радиус
+const PRE_GOAL_Y := 785.0                                         # центр иконок целей
+const PRE_GOAL_NUM_Y := 905.0                                     # базовая линия чисел целей
+const PRE_BAR := Vector4(180, 984, 712, 52)                       # жёлоб серии: x0, y, x1, высота
+const PRE_MARKS := [[3, 337.0], [5, 455.0], [8, 575.0], [10, 698.0]]
+const PRE_MARK_Y := 1004.0
+const PRE_TILE_C := [Vector2(216, 1200), Vector2(432, 1200), Vector2(635, 1200)]
+const PRE_ICON_AT := [Vector2(143, 1133), Vector2(353, 1135), Vector2(562, 1138)]
+const PRE_SEL_AT := Vector2(98, 1086)                             # рамка выбора у первой плитки
+const PRE_CHECK_OFF := Vector2(72, -75)                           # кружок с галочкой от центра плитки
+const PRE_COUNT_OFF := Vector2(64, -78)                           # кружок количества от центра плитки
+const PRE_PLAY := Vector2(176, 1332)
+
+
+## x на дорожке серии для числа побед st (между отметками 3/5/8/10 — линейно).
+func _pre_track_x(st: float) -> float:
+	var px := 0.0
+	var px_x := PRE_BAR.x
+	for m in PRE_MARKS:
+		if st <= m[0]:
+			return lerpf(px_x, m[1], (st - px) / (m[0] - px))
+		px = m[0]
+		px_x = m[1]
+	return PRE_BAR.z
+
+
+func _show_prelevel_ref(n: int, lv: Dictionary) -> void:
+	_clear_overlay()
+	var dim := ColorRect.new()
+	dim.color = Color(0.05, 0.03, 0.2, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_overlay.add_child(dim)
+	var k := minf(size.x / WIN_W, (size.y - 16.0) / (PRE_BOT - PRE_TOP))
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = Vector2(WIN_W, PRE_BOT - PRE_Y0)
+	holder.position = Vector2(size.x / 2.0 - WIN_W / 2.0 * k, size.y / 2.0 - ((PRE_TOP + PRE_BOT) / 2.0 - PRE_Y0) * k)
+	holder.scale = Vector2(k, k)
+	_overlay.add_child(holder)
+	var body := Control.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.size = holder.size
+	body.pivot_offset = Vector2(WIN_W / 2.0, 700.0)
+	holder.add_child(body)
+	var font: Font = UiTheme.title_font()
+	var at := func(p: Vector2) -> Vector2: return p - Vector2(0, PRE_Y0)
+	var wt := TextureRect.new()
+	wt.texture = Zoo.art("preref_window")
+	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(wt)
+	# лента: «Уровень N» (на сложных — «Сложный уровень N» / «Очень сложный N»)
+	var hard := int(lv.get("hard", 0))
+	var title: String = ["Уровень %d", "Сложный уровень %d", "Очень сложный %d"][hard] % n
+	var ribbon := Control.new()
+	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ribbon.size = body.size
+	ribbon.draw.connect(func() -> void: _arc_text(ribbon, title, at.call(Vector2(425.0, 566.0)), 500.0, 64, Color("#1d5a0c")))
+	body.add_child(ribbon)
+	# цели: иконки в плашке, под ними числа, между ними тонкие перегородки
+	var goals_l: Array = lv.goals
+	var gn := goals_l.size()
+	var step := 189.0 if gn >= 3 else 255.0
+	var isz := 128.0 if gn >= 3 else 138.0
+	var gx: Array = []
+	for i in gn:
+		gx.append(428.0 + (i - (gn - 1) / 2.0) * step)
+	var goals := Control.new()
+	goals.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	goals.size = body.size
+	for i in gn:
+		var g: Dictionary = goals_l[i]
+		if g.kind == "color":
+			var gm: Node2D = Gem.new()
+			gm.color = int(g.get("color", -1))
+			gm.size = isz
+			gm.position = at.call(Vector2(gx[i], PRE_GOAL_Y))
+			goals.add_child(gm)
+	goals.draw.connect(func() -> void:
+		for i in range(1, gn):
+			var x: float = (gx[i - 1] + gx[i]) / 2.0
+			var r := Rect2(at.call(Vector2(x - 2, 765)), Vector2(4, 122))
+			goals.draw_rect(r, Color8(214, 168, 112))
+			goals.draw_rect(Rect2(r.position + Vector2(2, 0), Vector2(2, r.size.y)), Color8(255, 238, 205))
+		for i in gn:
+			var g: Dictionary = goals_l[i]
+			var c: Vector2 = at.call(Vector2(gx[i], PRE_GOAL_Y))
+			if g.kind != "color":
+				_draw_goal_icon(goals, "birdhouse" if g.kind == "item" and _level_has_birds(lv) else g.kind, c, isz * 0.92)
+			var t := str(int(g.left))
+			var fs := 64
+			var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			var p: Vector2 = at.call(Vector2(gx[i] - ts.x / 2.0, PRE_GOAL_NUM_Y))
+			for d in range(6, 0, -1):
+				goals.draw_string_outline(font, p + Vector2(0, d), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 16, Color("#3d1a08"))
+			goals.draw_string_outline(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 16, Color("#3d1a08"))
+			goals.draw_string(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	body.add_child(goals)
+	# дорожка серии побед: жёлоб, оранжевая заливка до текущей серии, отметки 3/5/8/10, огонёк
+	var track := Control.new()
+	track.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	track.size = body.size
+	var bar_t := Zoo.art("preref_bar")
+	var fill_t := Zoo.art("preref_fill")
+	var cap_t := Zoo.art("preref_fillcap")
+	var on_t := Zoo.art("preref_mark_on")
+	var off_t := Zoo.art("preref_mark_off")
+	var flame_t := Zoo.art("preref_flame")
+	var st := mini(Save.streak, 10)
+	track.draw.connect(func() -> void:
+		var y: float = at.call(Vector2(0, PRE_BAR.y)).y
+		var h := PRE_BAR.w
+		var x0 := PRE_BAR.x
+		var x1 := PRE_BAR.z
+		track.draw_texture_rect(bar_t, Rect2(Vector2(x0, y), Vector2(x1 - x0, h)), false)
+		if st > 0:
+			# заливка до отметки и скруглённый конец (как у «3» в референсе: конец на 22…45 px правее центра)
+			var xe := minf(_pre_track_x(st) + 31.0, x1 - cap_t.get_width())
+			track.draw_texture_rect(fill_t, Rect2(Vector2(x0, y), Vector2(xe - x0, h)), false)
+			track.draw_texture_rect(cap_t, Rect2(Vector2(xe, y), cap_t.get_size()), false)
+		var tt := Time.get_ticks_msec() / 1000.0
+		for m in PRE_MARKS:
+			var c: Vector2 = at.call(Vector2(m[1], PRE_MARK_Y))
+			var lit: bool = st >= m[0]
+			if lit:
+				var gr := 64.0 * (1.0 + 0.06 * sin(tt * 3.0))
+				track.draw_texture_rect(Board.fx_tex("glow"), Rect2(c - Vector2(gr, gr), Vector2(gr, gr) * 2.0), false, Color(1, 0.95, 0.6, 0.9))
+				for j in 10:
+					var a := TAU * j / 10.0 + tt * 0.5
+					track.draw_colored_polygon(PackedVector2Array([c, c + Vector2(cos(a - 0.12), sin(a - 0.12)) * 70.0,
+						c + Vector2(cos(a + 0.12), sin(a + 0.12)) * 70.0]), Color(1.0, 0.97, 0.7, 0.35))
+			var tex: Texture2D = on_t if lit else off_t
+			track.draw_texture_rect(tex, Rect2(c - tex.get_size() / 2.0, tex.get_size()), false)
+			var t := str(m[0])
+			var fs := 38 if t.length() < 2 else 32
+			var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			var p := c + Vector2(-ts.x / 2.0, fs * 0.36)
+			track.draw_string_outline(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color("#4a220a"))
+			track.draw_string(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
+		var fl := 1.0 + 0.05 * sin(tt * 9.0)
+		var fs2 := flame_t.get_size()
+		var fb: Vector2 = at.call(Vector2(102, 942)) + Vector2(fs2.x / 2.0, fs2.y)
+		track.draw_set_transform(fb, 0.0, Vector2(1.0 / fl, fl))
+		track.draw_texture_rect(flame_t, Rect2(Vector2(-fs2.x / 2.0, -fs2.y), fs2), false)
+		track.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE))
+	body.add_child(track)
+	_every_frame(track)
+	# бустеры на старт: деревянные плитки, выбранная — с зелёной светящейся рамкой и галочкой
+	var tile_t := Zoo.art("preref_tile")
+	var sel_t := Zoo.art("preref_sel")
+	var check_t := Zoo.art("preref_check")
+	var count_t := Zoo.art("preref_count")
+	for i in PRE_BOOSTERS.size():
+		var kind: String = PRE_BOOSTERS[i][0]
+		var ic_name: String = ["preref_ic_rocket", "preref_ic_bomb", "preref_ic_orb"][i]
+		var ic_t := Zoo.art(ic_name)
+		var tc: Vector2 = at.call(PRE_TILE_C[i])
+		var cnt := int(Save.boosters.get(kind, 0))
+		var b := Button.new()
+		b.toggle_mode = true
+		b.flat = true
+		for stn in ["normal", "hover", "pressed", "focus", "disabled", "hover_pressed"]:
+			b.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+		b.size = Vector2(230, 240)
+		b.position = tc - b.size / 2.0
+		b.pivot_offset = b.size / 2.0
+		b.disabled = cnt <= 0
+		if cnt <= 0:
+			b.modulate = Color(0.65, 0.65, 0.65, 0.9)
+		var lc := b.size / 2.0  # центр плитки в координатах кнопки
+		var ic_off: Vector2 = PRE_ICON_AT[i] - PRE_TILE_C[i]
+		b.draw.connect(func() -> void:
+			var on := b.button_pressed
+			if on:
+				var gl := Board.fx_tex("glow")
+				b.draw_texture_rect(gl, Rect2(lc - Vector2(150, 150), Vector2(300, 300)), false, Color(0.55, 1.0, 0.4, 0.55))
+			b.draw_texture_rect(tile_t, Rect2(lc - tile_t.get_size() / 2.0, tile_t.get_size()), false)
+			b.draw_texture_rect(ic_t, Rect2(lc + ic_off, ic_t.get_size()), false)
+			if on:
+				b.draw_texture_rect(sel_t, Rect2(lc + PRE_SEL_AT - PRE_TILE_C[0], sel_t.get_size()), false)
+				b.draw_texture_rect(check_t, Rect2(lc + PRE_CHECK_OFF - check_t.get_size() / 2.0, check_t.get_size()), false)
+			elif cnt > 0:
+				var bc := lc + PRE_COUNT_OFF
+				b.draw_texture_rect(count_t, Rect2(bc - count_t.get_size() / 2.0, count_t.get_size()), false)
+				var t := str(cnt)
+				var fs := 40 if t.length() < 2 else 32
+				var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+				var p := bc + Vector2(-ts.x / 2.0, fs * 0.36)
+				b.draw_string_outline(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color("#0e4a08"))
+				b.draw_string(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+		b.toggled.connect(func(on: bool) -> void:
+			_pre_selected[kind] = on
+			Sfx.play("special" if on else "click")
+			b.queue_redraw()
+			var tw := b.create_tween()
+			tw.tween_property(b, "scale", Vector2(1.12, 1.12), 0.08)
+			tw.tween_property(b, "scale", Vector2.ONE, 0.14).set_trans(Tween.TRANS_BACK))
+		body.add_child(b)
+	# «Играть»
+	var play := TextureButton.new()
+	play.texture_normal = Zoo.art("preref_play")
+	play.position = at.call(PRE_PLAY)
+	play.size = play.texture_normal.get_size()
+	play.pivot_offset = play.size / 2.0
+	play.button_down.connect(func() -> void: play.create_tween().tween_property(play, "scale", Vector2(0.93, 0.93), 0.06))
+	play.button_up.connect(func() -> void:
+		play.create_tween().tween_property(play, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+	play.pressed.connect(func() -> void:
+		Sfx.play("click")
+		_clear_overlay()
+		_level_transition(n))
+	body.add_child(play)
+	# крестик нарисован в окне — сверху невидимая круглая кнопка
+	var close := Button.new()
+	close.flat = true
+	for stn in ["normal", "hover", "pressed", "focus"]:
+		close.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+	close.size = Vector2(PRE_CLOSE.z, PRE_CLOSE.z) * 2.0
+	close.position = at.call(Vector2(PRE_CLOSE.x, PRE_CLOSE.y)) - close.size / 2.0
+	close.pressed.connect(func() -> void:
+		Sfx.play("click")
+		_show_home())
+	body.add_child(close)
+	body.scale = Vector2(0.6, 0.6)
+	body.modulate.a = 0.0
+	var tw := body.create_tween()
+	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
 	for i in 70:
@@ -5073,6 +5310,24 @@ func _drag(pos: Vector2) -> void:
 ## Скриншоты окна победы (проверка 1:1 по референсу): -- --winshot=DIR
 func _run_winshot(dir: String) -> void:
 	DirAccess.make_dir_recursive_absolute(dir)
+	Save.streak = 3
+	Save.boosters["pre_rocket"] = 1
+	Save.boosters["pre_bomb"] = 2
+	Save.boosters["pre_orb"] = 1
+	_show_prelevel(12)
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "p1_pre")
+	Save.streak = 6
+	Save.boosters["pre_orb"] = 0
+	_show_prelevel(3)
+	await get_tree().create_timer(0.6).timeout
+	for ch in _overlay.get_children():
+		for b in ch.find_children("*", "Button", true, false):
+			if b.toggle_mode and not b.disabled:
+				b.button_pressed = true
+				break
+	await get_tree().create_timer(0.4).timeout
+	await _snap(dir, "p2_pre")
 	Save.chest_wins = 4
 	_start_level(12)
 	await get_tree().create_timer(1.6).timeout
