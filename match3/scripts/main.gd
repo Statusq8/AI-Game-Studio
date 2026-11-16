@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.35.0"
+const VERSION := "2.36.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -96,9 +96,13 @@ func _ready() -> void:
 	add_child(_overlay)
 	Save.changed.connect(_refresh_coins)
 	_show_home()
+	if OS.get_cmdline_user_args().is_empty() and Zoo.art("loading"):
+		_show_loading.call_deferred()
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--shots="):
 			_run_shots.call_deferred(arg.trim_prefix("--shots="))
+		elif arg.begins_with("--splashshot="):
+			_run_splashshot.call_deferred(arg.trim_prefix("--splashshot="))
 		elif arg.begins_with("--winshot="):
 			_run_winshot.call_deferred(arg.trim_prefix("--winshot="))
 		elif arg == "--finaletest":
@@ -5641,6 +5645,118 @@ func _open_chest(from: Control) -> void:
 			_draw_reward(row, ks[i], int(rw[ks[i]]), Vector2(row.size.x * (i + 0.5) / ks.size(), 50), 80.0))
 	dv.add_child(row)
 	dv.move_child(row, 1)
+
+## ---------- экран загрузки 1:1 по референсу (references/screen_00_loading.webp → assets/art/loading.webp) ----------
+## Он же — заставка при запуске (assets/splash.png снимается с этого экрана: -- --splashshot=PATH).
+## Координаты — в пикселях референса 852×1846.
+const LOAD_SIGN := Vector2(425, 362)           # верх средней линии вывески (дуга, как у лент окон)
+const LOAD_BAR := Rect2(184, 1539, 562, 47)    # внутренность жёлоба полоски загрузки
+const LOAD_ART_PREFIXES := ["lvref_", "winref_", "loseref_", "preref_", "pauseref_", "shopref_", "designref_", "dailyref_", "chestref_", "ui2_"]
+
+
+func _build_loading() -> Control:
+	var root := Control.new()
+	root.mouse_filter = Control.MOUSE_FILTER_STOP
+	root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.z_index = 80
+	root.set_meta("p", 0.0)
+	var bg_t := Zoo.art("loading")
+	var font: Font = UiTheme.title_font()
+	var view := Control.new()
+	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.size = Vector2(852, 1846)
+	root.add_child(view)
+	var place := func() -> void:
+		# картинка закрывает весь экран (лишнее по краям обрезается), центр — по центру
+		var k := maxf(root.size.x / 852.0, root.size.y / 1846.0)
+		view.scale = Vector2(k, k)
+		view.position = (root.size - Vector2(852, 1846) * k) / 2.0
+	root.resized.connect(place)
+	place.call()
+	view.draw.connect(func() -> void:
+		place.call()
+		view.draw_texture_rect(bg_t, Rect2(Vector2.ZERO, Vector2(852, 1846)), false)
+		_arc_text(view, "Зоопарк мечты", LOAD_SIGN, 590.0, 86, Color("#4a1e06"))
+		# заливка полоски: золотисто-оранжевая, с бликом и бегущим отсветом
+		var p: float = root.get_meta("p")
+		var r := LOAD_BAR
+		var w := r.size.x * clampf(p, 0.0, 1.0)
+		if w > 4.0:
+			var fr := Rect2(r.position, Vector2(maxf(w, r.size.y), r.size.y))
+			var sb := StyleBoxFlat.new()
+			sb.set_corner_radius_all(int(r.size.y / 2.0))
+			sb.bg_color = Color("#ff9a1a")
+			sb.border_color = Color("#c25a00")
+			sb.set_border_width_all(3)
+			view.draw_style_box(sb, fr)
+			var hi := StyleBoxFlat.new()
+			hi.set_corner_radius_all(int(r.size.y / 4.0))
+			hi.bg_color = Color("#ffd75a")
+			view.draw_style_box(hi, Rect2(fr.position + Vector2(10, 6), Vector2(fr.size.x - 20, fr.size.y * 0.38)))
+			var t := Time.get_ticks_msec() / 1000.0
+			var sx := fmod(t * 420.0, fr.size.x + 120.0) - 60.0
+			if sx > 8.0 and sx < fr.size.x - 8.0:
+				view.draw_rect(Rect2(fr.position + Vector2(sx - 10, 5), Vector2(20, fr.size.y - 10)), Color(1, 1, 1, 0.35))
+		if root.has_meta("splash"):
+			return
+		var pt := "%d%%" % int(round(p * 100.0))
+		var fs := 34
+		var ts := font.get_string_size(pt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var tp := Vector2(r.get_center().x - ts.x / 2.0, r.get_center().y + fs * 0.36)
+		view.draw_string_outline(font, tp, pt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color("#4a1e06"))
+		view.draw_string(font, tp, pt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	_every_frame(view)
+	add_child(root)
+	return root
+
+
+## Экран загрузки при запуске: подгружает картинки окон (по одной за кадр), полоска заполняется, потом исчезает.
+func _show_loading() -> void:
+	var root := _build_loading()
+	var names: Array = []
+	var d := DirAccess.open("res://assets/art")
+	if d:
+		for f in d.get_files():
+			var n := f.trim_suffix(".import").trim_suffix(".remap")
+			if not (n.ends_with(".png") or n.ends_with(".webp")):
+				continue
+			n = n.get_basename()
+			for pre in LOAD_ART_PREFIXES:
+				if n.begins_with(pre) and not names.has(n):
+					names.append(n)
+	var t0 := Time.get_ticks_msec()
+	var total := maxi(1, names.size())
+	for i in names.size():
+		Zoo.art(names[i])
+		var target := float(i + 1) / total
+		# не быстрее 1.4 с на всю полоску — чтобы её было видно
+		var min_p := (Time.get_ticks_msec() - t0) / 1400.0
+		root.set_meta("p", minf(target, min_p))
+		await get_tree().process_frame
+	while float(root.get_meta("p")) < 1.0:
+		root.set_meta("p", minf(1.0, (Time.get_ticks_msec() - t0) / 1400.0))
+		await get_tree().process_frame
+	await get_tree().create_timer(0.15).timeout
+	var tw := root.create_tween()
+	tw.tween_property(root, "modulate:a", 0.0, 0.35)
+	tw.tween_callback(root.queue_free)
+
+
+## Заставка запуска (assets/splash.png) — экран загрузки с пустой полоской.
+func _run_splashshot(path: String) -> void:
+	var root := _build_loading()
+	root.set_meta("p", 0.0)
+	root.set_meta("splash", true)
+	await get_tree().create_timer(0.5).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(path)
+	print("splash saved")
+	root.remove_meta("splash")
+	root.set_meta("p", 0.63)
+	await get_tree().create_timer(0.3).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(path.get_basename() + "_mid.png")
+	get_tree().quit()
 
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
