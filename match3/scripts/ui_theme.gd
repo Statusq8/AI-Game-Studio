@@ -1,6 +1,6 @@
 extends RefCounted
 ## Стиль интерфейса «Три в ряд»: светлая яркая палитра, объёмные кнопки.
-## Шрифты Rubik и Russo One — SIL Open Font License (assets/fonts/OFL-*.txt).
+## Шрифты Dela Gothic One (заголовки и числа, выбор владельца 2026-11-17), Rubik и Russo One — SIL Open Font License (assets/fonts/OFL-*.txt).
 
 const INK := Color("#2b2350")
 const CREAM := Color("#fff6e3")
@@ -21,8 +21,7 @@ static var _title: Font
 static func title_font() -> Font:
 	if _title == null:
 		var f := FontVariation.new()
-		f.base_font = load("res://assets/fonts/Rubik-Variable.ttf")
-		f.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 900}
+		f.base_font = load("res://assets/fonts/DelaGothicOne-Regular.ttf")
 		_title = f
 	return _title
 
