@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.25.0"
+const VERSION := "2.25.1"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -1584,6 +1584,8 @@ const LVREF_SPLIT := 1314.0
 const LVREF_BAND := Vector2(0.0, 1398.0)   # .y — начало нижней части (лоток); между SPLIT и ним — плитка, растягивается
 var _lvref_bg: Control
 var _lvref_ring: Control
+var _lvref_thumb: Control
+var _goals_ref_box: Control
 
 
 func _lvref() -> bool:
@@ -1620,6 +1622,23 @@ func _build_lvref_layers() -> void:
 		_lvref_ring.draw_texture_rect(rt, Rect2(Vector2(300, 0) * k, rt.get_size() * k), false))
 	_level_screen.add_child(_lvref_ring)
 	_lvref_ring.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# большой палец панды лежит поверх рамки — отдельный слой, двигается вместе с пандой
+	var tt := Zoo.art("lvref_thumb")
+	if tt:
+		_lvref_thumb = Control.new()
+		_lvref_thumb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_lvref_thumb.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_lvref_thumb.draw.connect(func() -> void:
+			var k := _level_screen.size.x / 898.0
+			var img: Control = _portrait_node.get_node("Img")
+			var piv: Vector2 = _portrait_node.position + img.get_meta("rest", img.position) + img.pivot_offset
+			var off: Vector2 = img.position - img.get_meta("rest", img.position)
+			var m := Transform2D(img.rotation, img.scale, 0.0, piv + off) * Transform2D(0.0, -piv)
+			_lvref_thumb.draw_set_transform_matrix(m)
+			_lvref_thumb.draw_texture_rect(tt, Rect2(Vector2(300, 0) * k, tt.get_size() * k), false)
+			_lvref_thumb.draw_set_transform_matrix(Transform2D.IDENTITY))
+		_level_screen.add_child(_lvref_thumb)
+		_every_frame(_lvref_thumb)
 
 
 func _layout_lvref() -> void:
@@ -1638,13 +1657,15 @@ func _layout_lvref() -> void:
 	pn.position = Vector2(451, 141) * k - Vector2(r, r)
 	var img: Control = pn.get_node("Img")
 	# крупно, по пояс, как в референсе: верх шляпы у края круга, ниже груди — за рамкой
-	var ph := 360.0 * k
-	img.size = Vector2(ph * 0.9, ph)
-	img.position = Vector2(r - img.size.x / 2.0 + 6.0 * k, 4.0 * k)
+	var ps := (110.0 + 2.0) * 2.0 * k
+	img.size = Vector2(ps, ps)
+	img.position = Vector2(-2.0, -2.0) * k
 	img.set_meta("rest", img.position)
 	img.pivot_offset = Vector2(img.size.x / 2, img.size.y)
 	if _lvref_ring:
 		_level_screen.move_child(_lvref_ring, pn.get_index() + 1)
+		if _lvref_thumb:
+			_level_screen.move_child(_lvref_thumb, _lvref_ring.get_index() + 1)
 		_lvref_ring.queue_redraw()
 	if _lvref_bg:
 		_lvref_bg.queue_redraw()
@@ -1700,6 +1721,9 @@ func _panda_react(kind: String) -> void:
 		return
 	var img: Control = _portrait_node.get_node("Img")
 	var body := _portrait_node
+	if _lvref() and Zoo.art("lvref_panda"):
+		_panda_react_ref(kind, img)
+		return
 	if body.has_meta("react"):
 		var old: Tween = body.get_meta("react")
 		if old and old.is_valid():
@@ -1805,6 +1829,56 @@ func _panda_react(kind: String) -> void:
 			_panda_emote("zzz")
 
 
+## Реакции панды-портрета из референса: движение внутри круга (подпрыгнуть, покачать головой) + облачко.
+func _panda_react_ref(kind: String, img: Control) -> void:
+	var rest: Vector2 = img.get_meta("rest", img.position)
+	if img.has_meta("react"):
+		var old: Tween = img.get_meta("react")
+		if old and old.is_valid():
+			old.kill()
+	img.position = rest
+	img.rotation = 0.0
+	img.modulate = Color.WHITE
+	if kind == "reset":
+		return
+	var t := img.create_tween()
+	img.set_meta("react", t)
+	var up := 14.0 * _level_screen.size.x / 898.0
+	match kind:
+		"combo", "bigcombo", "goal", "hello", "special":
+			var n := 2 if kind == "bigcombo" else 1
+			for i in n:
+				t.tween_property(img, "position:y", rest.y - up, 0.13).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_QUAD)
+				t.tween_property(img, "position:y", rest.y, 0.16).set_ease(Tween.EASE_IN).set_trans(Tween.TRANS_QUAD)
+		"win":
+			for i in 3:
+				t.tween_property(img, "rotation", 0.08, 0.14)
+				t.parallel().tween_property(img, "position:y", rest.y - up, 0.14)
+				t.tween_property(img, "rotation", -0.08, 0.14)
+				t.parallel().tween_property(img, "position:y", rest.y, 0.14)
+			t.tween_property(img, "rotation", 0.0, 0.1)
+		"bad":
+			for i in 2:
+				t.tween_property(img, "rotation", -0.06, 0.08)
+				t.tween_property(img, "rotation", 0.06, 0.1)
+			t.tween_property(img, "rotation", 0.0, 0.08)
+		"nervous":
+			for i in 6:
+				t.tween_property(img, "position:x", rest.x - 3.0, 0.04)
+				t.tween_property(img, "position:x", rest.x + 3.0, 0.04)
+			t.tween_property(img, "position:x", rest.x, 0.04)
+		"sad":
+			t.tween_property(img, "position:y", rest.y + up * 0.6, 0.4)
+			t.parallel().tween_property(img, "modulate", Color(0.75, 0.78, 0.9), 0.4)
+		"yawn", "think":
+			t.tween_property(img, "rotation", 0.05, 0.4)
+			t.tween_property(img, "rotation", 0.0, 0.5)
+	var emo := {"combo": "hearts", "bigcombo": "stars", "goal": "check", "win": "stars", "sad": "rain",
+		"nervous": "sweat", "special": "wow", "yawn": "zzz"}
+	if emo.has(kind):
+		_panda_emote(emo[kind])
+
+
 ## Эмоция над пандой: кружок-облачко с иконкой выпрыгивает, чуть всплывает и тает.
 func _panda_emote(kind: String) -> void:
 	if _portrait_node == null or _bot:
@@ -1818,9 +1892,17 @@ func _panda_emote(kind: String) -> void:
 	e.size = Vector2(64, 64)
 	e.pivot_offset = Vector2(32, 56)
 	e.position = Vector2(_portrait_node.size.x - 46, 8)
+	var host: Control = _portrait_node
+	if _lvref():
+		# панда обрезана по кругу — облачко рисуем поверх экрана, у правого края рамки
+		host = _level_screen
+		e.position += _portrait_node.position + Vector2(18, -10)
+		for old2 in _level_screen.get_children():
+			if old2.has_meta("emote"):
+				old2.queue_free()
 	e.z_index = 5
 	e.draw.connect(_draw_emote.bind(e, kind))
-	_portrait_node.add_child(e)
+	host.add_child(e)
 	e.scale = Vector2(0.2, 0.2)
 	e.modulate.a = 0.0
 	var t := e.create_tween()
@@ -1968,6 +2050,18 @@ func _hud_panda() -> Control:
 	img.pivot_offset = Vector2(img.size.x / 2, img.size.y)
 	img.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	c.add_child(img)
+	if Zoo.art("lvref_panda"):
+		# панда из референса (по пояс, большой палец вверх): дышит и реагирует движением, кадров видео нет
+		img.texture = Zoo.art("lvref_panda")
+		img.stretch_mode = TextureRect.STRETCH_SCALE
+		c.mouse_filter = Control.MOUSE_FILTER_STOP
+		c.gui_input.connect(func(ev: InputEvent) -> void:
+			if (ev is InputEventMouseButton or ev is InputEventScreenTouch) and ev.pressed:
+				_panda_react("hello"))
+		var br := img.create_tween().set_loops()
+		br.tween_property(img, "scale", Vector2(1.012, 0.988), 1.1).set_trans(Tween.TRANS_SINE)
+		br.tween_property(img, "scale", Vector2(0.995, 1.01), 1.1).set_trans(Tween.TRANS_SINE)
+		return c
 	if _attach_panda_anim(img):
 		# нажатие на панду — машет «привет»
 		c.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -3223,38 +3317,51 @@ func _build_goals() -> void:
 
 ## Цели как в референсе: иконки в ряд (шаг 91 px референса), под каждой — маленькая кремовая плашка с числом.
 func _build_goals_lvref() -> void:
+	# точно как в референсе: центры иконок x 92 / 183 / 273, y 165 (px референса), иконка ~86 px,
+	# под ней плашка 70×37 с верхом на y 197. Меньше трёх целей — тот же шаг, по центру плашки.
 	var k := _level_screen.size.x / 898.0
-	_goals_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	_goals_box.add_theme_constant_override("separation", 0)
+	_goals_box.visible = false
+	if _goals_ref_box == null:
+		_goals_ref_box = Control.new()
+		_goals_ref_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_level_screen.add_child(_goals_ref_box)
+	var box := _goals_ref_box
+	box.position = Vector2.ZERO
+	for ch in box.get_children():
+		ch.queue_free()
 	var plate := Zoo.art("lvref_count")
-	for goal in _level.goals:
-		var slot := VBoxContainer.new()
-		slot.add_theme_constant_override("separation", int(-7.0 * k))
-		slot.custom_minimum_size = Vector2(91, 0) * k
+	var n: int = _level.goals.size()
+	for i in n:
+		var goal: Dictionary = _level.goals[i]
+		var cx: float = 183.0 + (i - (n - 1) / 2.0) * 90.5
+		var slot := Control.new()
+		slot.set_meta("goal_ref", true)
+		slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		slot.position = Vector2(cx - 45, 120) * k
+		slot.size = Vector2(90, 115) * k
+		box.add_child(slot)
 		var icon := Control.new()
-		icon.custom_minimum_size = Vector2(91, 82) * k
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon.size = Vector2(90, 90) * k
 		slot.add_child(icon)
-		var ic := Vector2(45.5, 41) * k
+		var ic := Vector2(45, 45) * k
 		if goal.kind == "color" or goal.kind == "item":
 			var g: Node2D = Gem.new()
 			g.color = goal.get("color", -1)
-			g.size = 80.0 * k
+			g.size = 82.0 * k
 			g.position = ic
 			icon.add_child(g)
 			if goal.kind == "item":
 				g.set_special(Gem.ITEM)
 		else:
 			var kind: String = goal.kind
-			icon.draw.connect(func() -> void: _draw_goal_icon(icon, kind, ic, 74.0 * k))
-		var stack := Control.new()
-		stack.custom_minimum_size = Vector2(91, 37) * k
-		var back := Control.new()
-		back.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		back.draw.connect(func() -> void:
-			var pw := 70.0 * k
-			back.draw_texture_rect(plate, Rect2(Vector2((back.size.x - pw) / 2.0, 0), Vector2(pw, 37.0 * k)), false))
-		stack.add_child(back)
-		back.set_anchors_preset(Control.PRESET_FULL_RECT)
+			icon.draw.connect(func() -> void: _draw_goal_icon(icon, kind, ic, 80.0 * k))
+		var pl := Control.new()
+		pl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pl.position = Vector2(10, 77) * k
+		pl.size = Vector2(70, 37) * k
+		pl.draw.connect(func() -> void: pl.draw_texture_rect(plate, Rect2(Vector2.ZERO, pl.size), false))
+		slot.add_child(pl)
 		var l := Label.new()
 		l.theme_type_variation = "TitleLabel"
 		l.add_theme_font_size_override("font_size", 24)
@@ -3264,10 +3371,10 @@ func _build_goals_lvref() -> void:
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		l.text = str(goal.left)
-		stack.add_child(l)
-		l.set_anchors_preset(Control.PRESET_FULL_RECT)
-		slot.add_child(stack)
-		_goals_box.add_child(slot)
+		pl.add_child(l)
+		l.position = Vector2.ZERO
+		l.size = pl.size
+		l.pivot_offset = pl.size / 2
 		_goal_views.append({"goal": goal, "label": l, "icon": icon, "shown": int(goal.left)})
 
 

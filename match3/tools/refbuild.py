@@ -38,6 +38,16 @@ def main() -> None:
     mx = (2 * CX - xx).clip(0, W - 1)
     a[fix] = orig[yy[fix], mx[fix]]
     ring_src = a.copy()
+    # панда из референса: содержимое круга (для портрета) и палец поверх рамки (отдельным слоем)
+    box = (CX - RI - 2, CY - RI - 2, CX + RI + 2, CY + RI + 2)
+    pc = src.crop(box).convert("RGBA")
+    pm = Image.new("L", pc.size, 0)
+    ImageDraw.Draw(pm).ellipse((2, 2, 2 * RI + 2, 2 * RI + 2), fill=255)
+    pc.putalpha(pm.filter(ImageFilter.GaussianBlur(0.8)))
+    pc.save(os.path.join(OUT, "lvref_panda.png"))
+    th = Image.fromarray(orig[0:300, 300:640].astype(np.uint8)).convert("RGBA")
+    th.putalpha(Image.fromarray((fix[0:300, 300:640] * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.8)))
+    th.save(os.path.join(OUT, "lvref_thumb.png"))
     # плашка целей: внутренность заменяем чистой внутренностью плашки ходов
     im = Image.fromarray(a.astype(np.uint8))
     mv = src.crop((628, 112, 848, 240)).resize((266, 140), Image.LANCZOS)
