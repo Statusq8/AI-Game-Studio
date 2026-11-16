@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.22.3"
+const VERSION := "2.23.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -1995,11 +1995,22 @@ func _round_button(kind: String, base: Color) -> Button:
 
 
 ## Скруглённый прямоугольник (StyleBoxFlat) — основа объёмных плиток.
+## Скруглённые плашки рисуются очень часто (каждый кадр в анимированных окнах) —
+## стиль кэшируется по цвету и радиусу, а не создаётся заново на каждый вызов.
+static var _tile_cache := {}
+
+
 func _tile(ci: CanvasItem, r: Rect2, col: Color, radius: float) -> void:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = col
-	sb.set_corner_radius_all(int(radius))
-	sb.anti_aliasing = true
+	var key := col.to_rgba32() * 64 + int(radius)
+	var sb: StyleBoxFlat = _tile_cache.get(key)
+	if sb == null:
+		sb = StyleBoxFlat.new()
+		sb.bg_color = col
+		sb.set_corner_radius_all(int(radius))
+		sb.anti_aliasing = true
+		if _tile_cache.size() > 2000:
+			_tile_cache.clear()
+		_tile_cache[key] = sb
 	ci.draw_style_box(sb, r)
 
 
