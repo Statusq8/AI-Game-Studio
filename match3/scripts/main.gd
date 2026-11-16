@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.32.0"
+const VERSION := "2.33.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -1056,6 +1056,9 @@ func _give(reward: Dictionary) -> void:
 ## Окно ежедневного подарка: 7 дней, сегодняшний подсвечен, полученные — с галочкой.
 ## Пропустил день — неделя начинается заново.
 func _show_daily() -> void:
+	if Zoo.art("dailyref_window"):
+		_show_daily_ref()
+		return
 	var ready := Save.daily_ready()
 	var cur := Save.daily_day
 	var font: Font = UiTheme.title_font()
@@ -5341,6 +5344,167 @@ func _show_design_ref(i: int, task: Dictionary) -> void:
 	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
 
+## ---------- «Подарок дня» 1:1 по референсу (слои: tools/dailybuild.py; значки бустеров — из магазина) ----------
+## Референс 852×1846 (references/screen_09_daily.webp); координаты — в его пикселях, те же в dailybuild.py.
+const DAILYREF_Y0 := 120.0
+const DAILYREF_TOP := 124.0
+const DAILYREF_BOT := 1655.0
+const DAILYREF_CLOSE := Vector3(745, 216, 52)
+const DAILYREF_CARD := Vector2(105, 423)          # тело карточки 1-го дня
+const DAILYREF_STEP := Vector2(217.5, 290.0)
+const DAILYREF_CARD_IMG := Vector2(-4, -21)       # картинка карточки от угла тела
+const DAILYREF_DAY7 := Rect2(110, 1012, 632, 350) # карточка 7-го дня (нарисована в окне)
+const DAILYREF_TAKE := Vector2(263, 1386)
+const DAILYREF_PANDA := Vector2(5, 1299)
+const DAILYREF_ICON := {"hammer": "shopref_ic_0", "rockets": "shopref_ic_1", "shuffle": "shopref_ic_2",
+	"pre_rocket": "shopref_ic_3", "pre_bomb": "shopref_ic_4", "pre_orb": "shopref_ic_5", "coins": "dailyref_coins"}
+
+
+func _show_daily_ref() -> void:
+	var ready := Save.daily_ready()
+	var cur := Save.daily_day
+	_clear_overlay()
+	var dim := ColorRect.new()
+	dim.color = Color(0.05, 0.03, 0.2, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_overlay.add_child(dim)
+	var k := minf(size.x / WIN_W, (size.y - 16.0) / (DAILYREF_BOT - DAILYREF_TOP))
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = Vector2(WIN_W, DAILYREF_BOT - DAILYREF_Y0)
+	holder.position = Vector2(size.x / 2.0 - WIN_W / 2.0 * k, size.y / 2.0 - ((DAILYREF_TOP + DAILYREF_BOT) / 2.0 - DAILYREF_Y0) * k)
+	holder.scale = Vector2(k, k)
+	_overlay.add_child(holder)
+	var body := Control.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.size = holder.size
+	body.pivot_offset = Vector2(WIN_W / 2.0, 800.0)
+	holder.add_child(body)
+	var font: Font = UiTheme.title_font()
+	var at := func(p: Vector2) -> Vector2: return p - Vector2(0, DAILYREF_Y0)
+	var wt := TextureRect.new()
+	wt.texture = Zoo.art("dailyref_window")
+	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(wt)
+	var ribbon := Control.new()
+	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ribbon.size = body.size
+	ribbon.draw.connect(func() -> void: _arc_text(ribbon, "Подарок дня", at.call(Vector2(425.0, 250.0)), 470.0, 62, Color("#0a3a78")))
+	body.add_child(ribbon)
+	var card_t := Zoo.art("dailyref_card")
+	var check_t := Zoo.art("dailyref_check")
+	var ring_t := Zoo.art("dailyref_ring")
+	var num := func(ci: CanvasItem, t: String, c: Vector2, fs: int) -> void:
+		var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var p := c + Vector2(-ts.x / 2.0, 0)
+		for d in range(5, 0, -1):
+			ci.draw_string_outline(font, p + Vector2(0, d), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#3d1a08"))
+		ci.draw_string_outline(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#3d1a08"))
+		ci.draw_string(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
+	var cards := Control.new()
+	cards.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cards.size = body.size
+	cards.draw.connect(func() -> void:
+		var tt := Time.get_ticks_msec() / 1000.0
+		for d in 6:
+			var o: Vector2 = at.call(DAILYREF_CARD + Vector2(d % 3, d / 3) * DAILYREF_STEP)
+			var got := d < cur
+			var today := d == cur and ready
+			var mid := o + Vector2(103.5, 0)
+			if today:
+				var gr := 170.0 * (1.0 + 0.05 * sin(tt * 3.0))
+				cards.draw_texture_rect(Board.fx_tex("glow"), Rect2(mid + Vector2(0, 125) - Vector2(gr, gr), Vector2(gr, gr) * 2.0), false, Color(1.0, 0.85, 0.3, 0.8))
+			var tint := Color(0.82, 0.72, 0.62) if got else Color.WHITE
+			cards.draw_texture(card_t, o + DAILYREF_CARD_IMG, Color(1.12, 1.02, 0.72) if today else tint)
+			if today:
+				cards.draw_texture_rect(Board.fx_tex("glow"), Rect2(mid + Vector2(-110, 15), Vector2(220, 220)), false, Color(1.0, 0.92, 0.4, 0.95))
+			num.call(cards, str(d + 1), mid + Vector2(0, 26), 42)
+			var rw: Dictionary = DAILY[d]
+			var keys := rw.keys()
+			var n := keys.size()
+			for i in n:
+				var key: String = keys[i]
+				var c := mid + Vector2((i - (n - 1) / 2.0) * 86.0, 127)
+				var tex := Zoo.art(DAILYREF_ICON.get(key, "dailyref_coins"))
+				if tex:
+					var box := 150.0 if n == 1 else 92.0
+					if key == "coins":
+						box = 120.0 + 40.0 * clampf(float(rw[key]) / 300.0, 0.0, 1.0)
+					var sz := tex.get_size()
+					var sc := box / maxf(sz.x, sz.y)
+					cards.draw_texture_rect(tex, Rect2(c - sz * sc / 2.0, sz * sc), false, tint)
+				num.call(cards, str(int(rw[key])), Vector2(c.x, o.y + 228), 50 if n == 1 else 46)
+			if today:
+				var pulse := 0.75 + 0.25 * sin(tt * 4.0)
+				cards.draw_texture(ring_t, o + Vector2(-14, -19), Color(1, 1, 1, pulse))
+			if got:
+				cards.draw_texture(check_t, o + Vector2(63, 89))
+		# 7-й день нарисован в окне: отметки поверх
+		var r7: Rect2 = DAILYREF_DAY7
+		r7.position = at.call(r7.position)
+		if cur == 6 and ready:
+			var pulse2 := 0.6 + 0.4 * sin(tt * 4.0)
+			var sb := StyleBoxFlat.new()
+			sb.draw_center = false
+			sb.set_border_width_all(10)
+			sb.border_color = Color(0.45, 0.95, 0.2, pulse2)
+			sb.set_corner_radius_all(30)
+			sb.shadow_color = Color(0.5, 1.0, 0.3, 0.5 * pulse2)
+			sb.shadow_size = 14
+			cards.draw_style_box(sb, r7.grow(4)))
+	body.add_child(cards)
+	_every_frame(cards)
+	# «Забрать»
+	var take := TextureButton.new()
+	take.texture_normal = Zoo.art("dailyref_take")
+	take.position = at.call(DAILYREF_TAKE)
+	take.size = take.texture_normal.get_size()
+	take.pivot_offset = take.size / 2.0
+	take.button_down.connect(func() -> void: take.create_tween().tween_property(take, "scale", Vector2(0.93, 0.93), 0.06))
+	take.button_up.connect(func() -> void:
+		take.create_tween().tween_property(take, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+	if not ready:
+		take.modulate = Color(0.6, 0.6, 0.6, 0.85)
+	else:
+		var bt := take.create_tween().set_loops()
+		bt.tween_property(take, "scale", Vector2(1.04, 1.04), 0.6).set_trans(Tween.TRANS_SINE)
+		bt.tween_property(take, "scale", Vector2.ONE, 0.6).set_trans(Tween.TRANS_SINE)
+	take.pressed.connect(func() -> void:
+		if not Save.daily_ready():
+			Sfx.play("click")
+			_clear_overlay()
+			return
+		_give(DAILY[Save.daily_day])
+		Save.daily_last = Save.today()
+		Save.daily_day = (Save.daily_day + 1) % 7
+		Save.store()
+		Sfx.play("coin")
+		_dust(take.get_global_rect().get_center())
+		_clear_overlay()
+		_refresh_home())
+	body.add_child(take)
+	var pd := TextureRect.new()
+	pd.texture = Zoo.art("dailyref_panda")
+	pd.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pd.position = at.call(DAILYREF_PANDA)
+	body.add_child(pd)
+	var close := Button.new()
+	close.flat = true
+	for stn in ["normal", "hover", "pressed", "focus"]:
+		close.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+	close.size = Vector2(DAILYREF_CLOSE.z, DAILYREF_CLOSE.z) * 2.0
+	close.position = at.call(Vector2(DAILYREF_CLOSE.x, DAILYREF_CLOSE.y)) - close.size / 2.0
+	close.pressed.connect(func() -> void:
+		Sfx.play("click")
+		_clear_overlay())
+	body.add_child(close)
+	body.scale = Vector2(0.6, 0.6)
+	body.modulate.a = 0.0
+	var tw := body.create_tween()
+	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
 	for i in 70:
@@ -5777,6 +5941,16 @@ func _run_winshot(dir: String) -> void:
 	_show_design_ref(1, Zones.ZONES[0].tasks[1])
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "g2_design")
+	Save.daily_day = 2
+	Save.daily_last = Save.today() - 1
+	_show_daily_ref()
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "y1_daily")
+	Save.daily_day = 6
+	Save.daily_last = Save.today() - 1
+	_show_daily_ref()
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "y2_daily")
 	Save.music = true
 	get_tree().quit()
 
