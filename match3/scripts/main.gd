@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.37.2"
+const VERSION := "2.38.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -1261,6 +1261,9 @@ func _show_collection() -> void:
 
 
 func _show_settings() -> void:
+	if Zoo.art("setref_window"):
+		_show_settings_ref()
+		return
 	var font: Font = UiTheme.title_font()
 	var v := _dialog("Настройки", [], [])
 	(v.get_parent() as Control).custom_minimum_size.x = 600
@@ -5773,6 +5776,119 @@ func _run_splashshot(path: String) -> void:
 	get_viewport().get_texture().get_image().save_png(path.get_basename() + "_mid.png")
 	get_tree().quit()
 
+## ---------- настройки 1:1 по референсу (слои: tools/setbuild.py) ----------
+## Референс 852×1846 (references/screen_11_settings.webp); координаты — в его пикселях, те же в setbuild.py.
+const SETREF_Y0 := 186.0
+const SETREF_TOP := 190.0
+const SETREF_BOT := 1690.0
+const SETREF_CLOSE := Vector3(747, 297, 52)
+const SETREF_ROWS := [["Звук", "sound", 504], ["Музыка", "music", 673], ["Вибрация", "vibration", 843],
+	["Тряска", "shake", 1012], ["Частицы", "particles", 1181]]
+const SETREF_TOG_X := 528.0
+const SETREF_INFO := Rect2(124, 1372, 298, 98)
+
+
+func _show_settings_ref() -> void:
+	_clear_overlay()
+	var dim := ColorRect.new()
+	dim.color = Color(0.05, 0.03, 0.2, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_overlay.add_child(dim)
+	var k := minf(size.x / WIN_W, (size.y - 16.0) / (SETREF_BOT - SETREF_TOP))
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = Vector2(WIN_W, SETREF_BOT - SETREF_Y0)
+	holder.position = Vector2(size.x / 2.0 - WIN_W / 2.0 * k, size.y / 2.0 - ((SETREF_TOP + SETREF_BOT) / 2.0 - SETREF_Y0) * k)
+	holder.scale = Vector2(k, k)
+	_overlay.add_child(holder)
+	var body := Control.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.size = holder.size
+	body.pivot_offset = Vector2(WIN_W / 2.0, 750.0)
+	holder.add_child(body)
+	var font: Font = UiTheme.title_font()
+	var at := func(p: Vector2) -> Vector2: return p - Vector2(0, SETREF_Y0)
+	var wt := TextureRect.new()
+	wt.texture = Zoo.art("setref_window")
+	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(wt)
+	var ribbon := Control.new()
+	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ribbon.size = body.size
+	ribbon.draw.connect(func() -> void: _arc_text(ribbon, "Настройки", at.call(Vector2(425.0, 323.0)), 470.0, 62, Color("#0b4a55")))
+	body.add_child(ribbon)
+	var on_t := Zoo.art("setref_on")
+	var off_t := Zoo.art("setref_off")
+	for r in SETREF_ROWS:
+		var key: String = r[1]
+		var title: String = r[0]
+		var y: float = r[2]
+		var row := Button.new()
+		row.flat = true
+		for stn in ["normal", "hover", "pressed", "focus"]:
+			row.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+		row.position = at.call(Vector2(118, y - 12))
+		row.size = Vector2(620, 114)
+		row.set_meta("k", 1.0 if bool(Save.get(key)) else 0.0)
+		row.draw.connect(func() -> void:
+			var fs := 40
+			var ts := font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			while ts.x > 222.0 and fs > 22:
+				fs -= 2
+				ts = font.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			var tp := Vector2(170.0, 57.0 + fs * 0.36)
+			row.draw_string_outline(font, tp + Vector2(0, 3), title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color("#4a1e06"))
+			row.draw_string_outline(font, tp, title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color("#4a1e06"))
+			row.draw_string(font, tp, title, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
+			# переключатель: перетекание «выкл → вкл» (k 0…1) — две картинки с прозрачностью
+			var kk: float = row.get_meta("k")
+			var tpos := Vector2(SETREF_TOG_X - 118.0, 10.0)
+			if kk < 1.0:
+				row.draw_texture(off_t, tpos, Color(1, 1, 1, 1.0 - kk))
+			if kk > 0.0:
+				row.draw_texture(on_t, tpos, Color(1, 1, 1, kk)))
+		row.pressed.connect(func() -> void:
+			var on := not bool(Save.get(key))
+			Save.set(key, on)
+			Save.store()
+			if key == "music":
+				Sfx.refresh_music()
+			Sfx.play("click")
+			var t := row.create_tween()
+			t.tween_method(func(x: float) -> void:
+				row.set_meta("k", x)
+				row.queue_redraw(), float(row.get_meta("k")), 1.0 if on else 0.0, 0.18))
+		body.add_child(row)
+	# строка на плашке под настройками
+	var info := Control.new()
+	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info.position = at.call(SETREF_INFO.position)
+	info.size = SETREF_INFO.size
+	info.draw.connect(func() -> void:
+		var t := "Язык: русский"
+		var fs := 30
+		var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var p := Vector2(info.size.x / 2.0 - ts.x / 2.0, info.size.y / 2.0 + fs * 0.36)
+		info.draw_string_outline(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 8, Color("#5a2c0a"))
+		info.draw_string(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	body.add_child(info)
+	var close := Button.new()
+	close.flat = true
+	for stn in ["normal", "hover", "pressed", "focus"]:
+		close.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+	close.size = Vector2(SETREF_CLOSE.z, SETREF_CLOSE.z) * 2.0
+	close.position = at.call(Vector2(SETREF_CLOSE.x, SETREF_CLOSE.y)) - close.size / 2.0
+	close.pressed.connect(func() -> void:
+		Sfx.play("click")
+		_clear_overlay())
+	body.add_child(close)
+	body.scale = Vector2(0.6, 0.6)
+	body.modulate.a = 0.0
+	var tw := body.create_tween()
+	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
 	for i in 70:
@@ -6227,6 +6343,11 @@ func _run_winshot(dir: String) -> void:
 	_show_chest_ref()
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "c2_chest")
+	Save.shake = false
+	_show_settings_ref()
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "t1_settings")
+	Save.shake = true
 	Save.music = true
 	get_tree().quit()
 
