@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.37.1"
+const VERSION := "2.37.2"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -531,18 +531,21 @@ func _ref_plate(plate: Rect2, icon: String, icon_c: Vector2, icon_d: float, plus
 	l.add_theme_font_size_override("font_size", 30)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	var lx := ic.x + idd * 0.42
-	l.position = Vector2(lx, 0)
-	# справа — до левого края плюсика (плюсик не закрывает число), у плашки без плюса — до края
-	var rx := (plus_c.x - 23.0) * REF_K - plate.position.x - 2.0 if with_plus else plate.size.x - 14.0
-	l.size = Vector2(rx - lx, plate.size.y)
+	# число — по центру свободной части плашки (от правого края иконки до правого края плашки);
+	# плюсик сдвинут в самый угол и стоит ниже числа — число его не задевает
+	var lx := ic.x + idd * 0.5
+	var rx := plate.size.x - 12.0
+	var cx := (lx + rx) / 2.0
+	var half := (rx - lx) / 2.0
+	l.position = Vector2(cx - half, 0)
+	l.size = Vector2(half * 2.0, plate.size.y)
 	l.clip_text = false
 	c.add_child(l)
 	# число уменьшается, если не помещается (2410, 12500 …): от 30 до 18
 	var fit := func() -> void:
 		var f: Font = UiTheme.title_font()
 		var fs := 30
-		while fs > 18 and f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 8.0 > l.size.x:
+		while fs > 18 and f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 4.0 > l.size.x:
 			fs -= 1
 		if l.get_theme_font_size("font_size") != fs:
 			l.add_theme_font_size_override.call_deferred("font_size", fs)
@@ -552,7 +555,7 @@ func _ref_plate(plate: Rect2, icon: String, icon_c: Vector2, icon_d: float, plus
 		var pd := 46.0 * REF_K
 		b.custom_minimum_size = Vector2(pd, pd)
 		b.size = Vector2(pd, pd)
-		b.position = plus_c * REF_K - Vector2(pd, pd) / 2
+		b.position = (plus_c + Vector2(6, 6)) * REF_K - Vector2(pd, pd) / 2
 		_topbar.add_child(b)
 	return l
 
