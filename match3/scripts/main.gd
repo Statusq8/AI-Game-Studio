@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.24.1"
+const VERSION := "2.24.2"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -1336,12 +1336,12 @@ func _build_level_screen() -> void:
 	# мягкая тень под ногами панды — стоит, а не парит
 	_portrait_node.draw.connect(func() -> void:
 		var pn := _portrait_node
-		var at: Texture2D = null  # арки нет в референсе — панда стоит на фоне между плашками
+		var at := Zoo.art("lv_arch")  # панда в золотой арке с листьями
 		if at:
 			# золотая арка с листьями из листа элементов уровня — панда стоит в ней
-			var w := pn.size.x * 1.08
+			var w := pn.size.x * 1.12
 			var h := w * at.get_height() / at.get_width()
-			pn.draw_texture_rect(at, Rect2(Vector2((pn.size.x - w) / 2, pn.size.y - h + 6), Vector2(w, h)), false)
+			pn.draw_texture_rect(at, Rect2(Vector2((pn.size.x - w) / 2, pn.size.y - h), Vector2(w, h)), false)
 			return
 		pn.draw_set_transform(Vector2(pn.size.x / 2, pn.size.y - 6), 0.0, Vector2(1.0, 0.22))
 		pn.draw_circle(Vector2.ZERO, pn.size.x * 0.36, Color(0, 0, 0, 0.35))
@@ -1614,7 +1614,7 @@ func _panda_react(kind: String) -> void:
 		if old and old.is_valid():
 			old.kill()
 	img.rotation = 0.0
-	img.position = Vector2(-10, -14)
+	img.position = img.get_meta("rest", Vector2(-10, -14))
 	body.pivot_offset = Vector2(body.size.x / 2.0, body.size.y)
 	body.scale = Vector2.ONE
 	if kind == "reset":
@@ -1821,7 +1821,17 @@ func _hud_card(title: String, art := "") -> PanelContainer:
 		b.name = "Body"
 		b.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 		o.add_child(b)
-		o.draw.connect(func() -> void: o.draw_texture_rect(at, Rect2(Vector2.ZERO, o.size), false))
+		# рисуем по 9 частям: углы с лапкой и листьями не растягиваются, тянется только середина
+		var nsb := StyleBoxTexture.new()
+		nsb.texture = at
+		nsb.texture_margin_left = 150
+		nsb.texture_margin_right = 150
+		nsb.texture_margin_top = 170
+		nsb.texture_margin_bottom = 110
+		o.draw.connect(func() -> void:
+			o.draw_set_transform(Vector2.ZERO, 0.0, Vector2(0.5, 0.5))
+			o.draw_style_box(nsb, Rect2(Vector2.ZERO, o.size * 2.0))
+			o.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE))
 		o.resized.connect(o.queue_redraw)
 		return o
 	var outer := PanelContainer.new()
@@ -1859,7 +1869,12 @@ func _hud_panda() -> Control:
 	img.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT
 	img.size = Vector2(210, 240)
 	img.position = Vector2(-10, -14)
-	img.pivot_offset = Vector2(105, 240)
+	if Zoo.art("lv_arch") and Zoo.art("lv_goals"):
+		# панда внутри арки: ноги на основании арки, голова под сводом
+		img.size = Vector2(112, 132)
+		img.position = Vector2(39, 50)
+	img.set_meta("rest", img.position)
+	img.pivot_offset = Vector2(img.size.x / 2, img.size.y)
 	img.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	c.add_child(img)
 	if _attach_panda_anim(img):
@@ -3056,27 +3071,15 @@ func _build_goals() -> void:
 		l.add_theme_color_override("font_outline_color", Color("#2a1440"))
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.text = str(goal.left)
-		if Zoo.art("lv_counter"):
-			# число цели — на маленькой кремовой плашке под иконкой (как в референсе)
-			l.add_theme_font_size_override("font_size", 26)
-			l.add_theme_constant_override("outline_size", 6)
-			l.add_theme_color_override("font_color", Color("#7a3e10"))
-			l.add_theme_color_override("font_outline_color", Color("#fff6e0"))
-			l.custom_minimum_size = Vector2(66, 32)
-			l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			# рисуем плашку под текстом: подложка отдельным узлом
-			var back := Control.new()
-			back.custom_minimum_size = Vector2(66, 32)
-			back.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			back.draw.connect(func() -> void:
-				back.draw_texture_rect(Zoo.art("lv_counter"), Rect2(Vector2(-2, 0), back.size + Vector2(4, 0)), false))
-			var stack := Control.new()
-			stack.custom_minimum_size = Vector2(66, 32)
-			stack.add_child(back)
-			back.set_anchors_preset(Control.PRESET_FULL_RECT)
-			stack.add_child(l)
-			l.set_anchors_preset(Control.PRESET_FULL_RECT)
-			v.add_child(stack)
+		if Zoo.art("lv_goals"):
+			# число цели — крупно под иконкой, белое с тёмной обводкой (без плашки)
+			l.add_theme_font_size_override("font_size", 30)
+			l.add_theme_constant_override("outline_size", 10)
+			l.add_theme_color_override("font_color", Color.WHITE)
+			l.add_theme_color_override("font_outline_color", Color("#5a2a08"))
+			l.custom_minimum_size = Vector2(66, 30)
+			v.add_theme_constant_override("separation", -6)
+			v.add_child(l)
 		else:
 			v.add_child(l)
 		_goals_box.add_child(slot)
