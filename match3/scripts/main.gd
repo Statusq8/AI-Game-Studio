@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.34.0"
+const VERSION := "2.34.1"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -4771,7 +4771,6 @@ func _show_prelevel_ref(n: int, lv: Dictionary) -> void:
 	wt.texture = Zoo.art("preref_window")
 	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	body.add_child(wt)
-	_win_anim(body, "prelevel", at)
 	# лента: «Уровень N» (на сложных — «Сложный уровень N» / «Очень сложный N»)
 	var hard := int(lv.get("hard", 0))
 	var title: String = ["Уровень %d", "Сложный уровень %d", "Очень сложный %d"][hard] % n
@@ -5506,29 +5505,6 @@ func _show_daily_ref() -> void:
 	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
 
-## Живая панда окна из ИИ-видео владельца (tools/winpanda.py → assets/anim/win_NAME/NN.webp).
-## Рамка кадров в пикселях референса окна: x, y, w, h; кадры хранятся в 0.8 размера.
-const WIN_ANIMS := {"prelevel": {"x": 11, "y": 187, "w": 442, "h": 388, "fps": 10.0, "n": 60}}
-
-
-func _win_anim(parent: Control, name: String, at: Callable) -> void:
-	var m: Dictionary = WIN_ANIMS.get(name, {})
-	if m.is_empty() or not ResourceLoader.exists("res://assets/anim/win_%s/00.webp" % name):
-		return
-	var frames: Array = []
-	for i in int(m.n):
-		frames.append(load("res://assets/anim/win_%s/%02d.webp" % [name, i]))
-	var c := Control.new()
-	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	c.position = at.call(Vector2(m.x, m.y))
-	c.size = Vector2(m.w, m.h)
-	var t0 := Time.get_ticks_msec()
-	c.draw.connect(func() -> void:
-		var i := int((Time.get_ticks_msec() - t0) / 1000.0 * float(m.fps)) % frames.size()
-		c.draw_texture_rect(frames[i], Rect2(Vector2.ZERO, c.size), false))
-	parent.add_child(c)
-	_every_frame(c)
-
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
 	for i in 70:
@@ -5909,10 +5885,6 @@ func _run_winshot(dir: String) -> void:
 	_show_prelevel(12)
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "p1_pre")
-	await get_tree().create_timer(1.7).timeout
-	await _snap(dir, "p1b_pre")
-	await get_tree().create_timer(1.5).timeout
-	await _snap(dir, "p1c_pre")
 	Save.streak = 6
 	Save.boosters["pre_orb"] = 0
 	_show_prelevel(3)
