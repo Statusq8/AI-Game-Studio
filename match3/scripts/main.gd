@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.38.0"
+const VERSION := "2.39.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -1198,6 +1198,9 @@ func _show_chest() -> void:
 
 
 func _show_collection() -> void:
+	if Zoo.art("colref_window"):
+		_show_collection_ref()
+		return
 	var font: Font = UiTheme.title_font()
 	var v := _dialog("Коллекция", [], [])
 	(v.get_parent() as Control).custom_minimum_size.x = 640
@@ -5889,6 +5892,150 @@ func _show_settings_ref() -> void:
 	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
 
+## ---------- коллекция 1:1 по референсу (слои: tools/colbuild.py) ----------
+## Референс 852×1846 (references/screen_12_collection.webp); координаты — в его пикселях, те же в colbuild.py.
+## Строки по местам референса; вид строки — по состоянию зоны (готова / ремонт / закрыта).
+const COLREF_Y0 := 58.0
+const COLREF_TOP := 62.0
+const COLREF_BOT := 1750.0
+const COLREF_CLOSE := Vector3(742, 152, 52)
+const COLREF_ROWS := [Vector2(323, 451), Vector2(486, 616), Vector2(651, 790), Vector2(819, 937),
+	Vector2(957, 1075), Vector2(1095, 1215), Vector2(1233, 1354), Vector2(1373, 1496)]
+const COLREF_PIC_R := [89.0, 89.0, 89.0, 79.0, 79.0, 79.0, 79.0, 79.0]
+const COLREF_PANDA := Vector2(7, 1465)
+
+
+func _show_collection_ref() -> void:
+	_clear_overlay()
+	var dim := ColorRect.new()
+	dim.color = Color(0.05, 0.03, 0.2, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_overlay.add_child(dim)
+	var k := minf(size.x / WIN_W, (size.y - 16.0) / (COLREF_BOT - COLREF_TOP))
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = Vector2(WIN_W, COLREF_BOT - COLREF_Y0)
+	holder.position = Vector2(size.x / 2.0 - WIN_W / 2.0 * k, size.y / 2.0 - ((COLREF_TOP + COLREF_BOT) / 2.0 - COLREF_Y0) * k)
+	holder.scale = Vector2(k, k)
+	_overlay.add_child(holder)
+	var body := Control.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.size = holder.size
+	body.pivot_offset = Vector2(WIN_W / 2.0, 800.0)
+	holder.add_child(body)
+	var font: Font = UiTheme.title_font()
+	var at := func(p: Vector2) -> Vector2: return p - Vector2(0, COLREF_Y0)
+	var wt := TextureRect.new()
+	wt.texture = Zoo.art("colref_window")
+	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(wt)
+	var ribbon := Control.new()
+	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ribbon.size = body.size
+	ribbon.draw.connect(func() -> void: _arc_text(ribbon, "Коллекция", at.call(Vector2(425.0, 182.0)), 470.0, 62, Color("#6e2a04")))
+	body.add_child(ribbon)
+	var on_t := Zoo.art("colref_row_on")
+	var off_t := Zoo.art("colref_row_off")
+	var check_t := Zoo.art("colref_check")
+	var lock_t := Zoo.art("colref_lock")
+	var track_t := Zoo.art("colref_track")
+	var fill_t := Zoo.art("colref_fill")
+	var list := Control.new()
+	list.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	list.size = body.size
+	list.draw.connect(func() -> void:
+		for i in mini(Zones.ZONES.size(), COLREF_ROWS.size()):
+			var z: Dictionary = Zones.ZONES[i]
+			var done := i < Save.zone
+			var cur := i == Save.zone
+			var ry: Vector2 = COLREF_ROWS[i]
+			var top: float = at.call(Vector2(0, ry.x)).y
+			var hgt: float = ry.y - ry.x
+			var cy := top + hgt / 2.0
+			var open := done or cur
+			var rt: Texture2D = on_t if open else off_t
+			var rx0 := 296.0 if open else 284.0
+			list.draw_texture_rect(rt, Rect2(Vector2(rx0, top - 6.0), Vector2(rt.get_width(), hgt + 12.0)), false)
+			# картинка зоны
+			var pic := Zoo.art("colref_pic_%d" % i)
+			var r: float = COLREF_PIC_R[i]
+			if pic:
+				var ps := Vector2(r, r) * 2.0 + Vector2(5, 5)
+				list.draw_texture_rect(pic, Rect2(Vector2(206.0, cy) - ps / 2.0, ps), false)
+			# название и подпись
+			var sub: String
+			if done:
+				sub = ("Живут: %s" % z.animal) if z.animal != "" else "Открыт для гостей"
+			elif cur:
+				sub = "Ремонт: %d из %d" % [Save.built.size(), z.tasks.size()]
+			else:
+				sub = ("Скоро: %s" % z.animal) if z.animal != "" else "Закрыта"
+			var maxw := 270.0
+			var name_s: String = z.name
+			var fs := 38
+			while font.get_string_size(name_s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > (270.0 if not cur else 400.0) and fs > 22:
+				fs -= 2
+			var tx := 312.0
+			var ink := Color("#4a1e06") if open else Color("#5e4a3a")
+			var p1 := Vector2(tx, cy - (14.0 if cur else 6.0))
+			list.draw_string_outline(font, p1 + Vector2(0, 3), name_s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 9, ink)
+			list.draw_string_outline(font, p1, name_s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 9, ink)
+			list.draw_string(font, p1, name_s, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE if open else Color("#efe6dc"))
+			var fs2 := 24
+			while font.get_string_size(sub, HORIZONTAL_ALIGNMENT_LEFT, -1, fs2).x > maxw and fs2 > 16:
+				fs2 -= 1
+			if not cur:
+				list.draw_string(font, Vector2(tx, cy + 30.0), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, fs2, Color("#8a4e1c") if open else Color("#7a6a5a"))
+			# справа: галочка / полоска ремонта / замок
+			if done:
+				list.draw_texture(check_t, Vector2(662.0, cy) - check_t.get_size() / 2.0)
+			elif cur:
+				# полоска ремонта — под названием, «N из M» на ней
+				var tp := Vector2(tx - 8.0, cy + 2.0)
+				list.draw_set_transform(tp, 0.0, Vector2(1.55, 0.9))
+				list.draw_texture(track_t, Vector2.ZERO)
+				var f := clampf(float(Save.built.size()) / float(maxi(1, z.tasks.size())), 0.0, 1.0)
+				if f > 0.0:
+					# заливка тянется по ширине жёлоба (от 10 до 244 px), с округлым концом самой картинки
+					var fw := lerpf(36.0, 234.0, f)
+					var src := Rect2(Vector2(10, 7), Vector2(126, 43))
+					var dst := Rect2(Vector2(10, 7), Vector2(fw, 43))
+					var cap := 20.0
+					list.draw_texture_rect_region(fill_t, Rect2(dst.position, Vector2(fw - cap, 43)), Rect2(src.position, Vector2(src.size.x - cap, 43)))
+					list.draw_texture_rect_region(fill_t, Rect2(dst.position + Vector2(fw - cap, 0), Vector2(cap, 43)), Rect2(src.position + Vector2(src.size.x - cap, 0), Vector2(cap, 43)))
+				list.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+				var pt := "%d из %d" % [Save.built.size(), z.tasks.size()]
+				var pfs := 26
+				var pts := font.get_string_size(pt, HORIZONTAL_ALIGNMENT_LEFT, -1, pfs)
+				var pc := tp + Vector2(127.0 * 1.55, 31.0 * 0.9)
+				var pp := pc + Vector2(-pts.x / 2.0, pfs * 0.36)
+				list.draw_string_outline(font, pp, pt, HORIZONTAL_ALIGNMENT_LEFT, -1, pfs, 8, Color("#14450c"))
+				list.draw_string(font, pp, pt, HORIZONTAL_ALIGNMENT_LEFT, -1, pfs, Color.WHITE)
+			else:
+				list.draw_texture(lock_t, Vector2(660.0, cy) - lock_t.get_size() / 2.0))
+	body.add_child(list)
+	var pd := TextureRect.new()
+	pd.texture = Zoo.art("colref_panda")
+	pd.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pd.position = at.call(COLREF_PANDA)
+	body.add_child(pd)
+	var close := Button.new()
+	close.flat = true
+	for stn in ["normal", "hover", "pressed", "focus"]:
+		close.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+	close.size = Vector2(COLREF_CLOSE.z, COLREF_CLOSE.z) * 2.0
+	close.position = at.call(Vector2(COLREF_CLOSE.x, COLREF_CLOSE.y)) - close.size / 2.0
+	close.pressed.connect(func() -> void:
+		Sfx.play("click")
+		_clear_overlay())
+	body.add_child(close)
+	body.scale = Vector2(0.6, 0.6)
+	body.modulate.a = 0.0
+	var tw := body.create_tween()
+	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
 	for i in 70:
@@ -6347,6 +6494,15 @@ func _run_winshot(dir: String) -> void:
 	_show_settings_ref()
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "t1_settings")
+	var kz := Save.zone
+	var kb: Dictionary = Save.built
+	Save.zone = 2
+	Save.built = {0: 0, 1: 1, 2: 2, 3: 0}
+	_show_collection_ref()
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "k1_collection")
+	Save.zone = kz
+	Save.built = kb
 	Save.shake = true
 	Save.music = true
 	get_tree().quit()
