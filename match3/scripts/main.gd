@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.24.0"
+const VERSION := "2.24.1"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -58,6 +58,8 @@ var _board_frame: Control
 var _board_clip: Control
 var _pause_btn: Control
 var _bar_pause: Button
+var _lv_goal_card: Control
+var _lv_moves_card: Control
 var _bands: Control
 var _moves_label: Label
 var _level_label: Label
@@ -1334,7 +1336,7 @@ func _build_level_screen() -> void:
 	# мягкая тень под ногами панды — стоит, а не парит
 	_portrait_node.draw.connect(func() -> void:
 		var pn := _portrait_node
-		var at := Zoo.art("lv_arch")
+		var at: Texture2D = null  # арки нет в референсе — панда стоит на фоне между плашками
 		if at:
 			# золотая арка с листьями из листа элементов уровня — панда стоит в ней
 			var w := pn.size.x * 1.08
@@ -1397,6 +1399,14 @@ func _build_level_screen() -> void:
 	var pc := CenterContainer.new()
 	pc.add_child(plaque)
 	col.add_child(pc)
+	if Zoo.art("lv_goals"):
+		# шапка 1:1 по референсу экрана уровня: плашки и панда стоят по координатам референса
+		for n in [goal_card, moves_card, _portrait_node]:
+			n.get_parent().remove_child(n)
+			_level_screen.add_child(n)
+		_lv_goal_card = goal_card
+		_lv_moves_card = moves_card
+		top.visible = false
 
 	_board_frame = PanelContainer.new()
 	_board_frame.theme_type_variation = "BoardPanel"
@@ -1461,6 +1471,11 @@ func _build_level_screen() -> void:
 		_booster_bar.add_child(btn)
 		_booster_btns[b[0]] = btn
 	# пауза — последней кнопкой в ряду бустеров
+	if Zoo.art("lv_slot") and Zoo.art("lv_goals"):
+		var gap := Control.new()
+		gap.custom_minimum_size = Vector2(44, 10)
+		gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_booster_bar.add_child(gap)
 	var pause := _round_button("pause", Color("#3f8cff"))
 	_bar_pause = pause
 	pause.pressed.connect(_show_pause)
@@ -1517,10 +1532,31 @@ func _build_level_screen() -> void:
 			_shake = maxf(_shake, a)
 		Save.vibrate(40))
 	_level_screen.resized.connect(func() -> void:
+		_layout_level_ref()
 		_board_frame.position = _board_rest()
 		_place_pause()
 		_panda.position = _panda_rest()
 		_layout_bar())
+
+
+## Расстановка шапки по референсу (px референса 898×1752 × REF_K): цели (10…350, 62…275),
+## ходы (590…890), панда — между плашками, ноги на линии низа плашек.
+func _layout_level_ref() -> void:
+	if _lv_goal_card == null:
+		return
+	var gr := _ref_rect(10, 62, 350, 275)
+	_lv_goal_card.position = gr.position
+	_lv_goal_card.size = gr.size
+	_lv_goal_card.custom_minimum_size = gr.size
+	var mr := _ref_rect(590, 62, 890, 275)
+	_lv_moves_card.position = mr.position
+	_lv_moves_card.size = mr.size
+	_lv_moves_card.custom_minimum_size = mr.size
+	var pn := _portrait_node
+	pn.size = pn.custom_minimum_size
+	pn.position = Vector2(470.0 * REF_K - pn.size.x / 2.0, 275.0 * REF_K - pn.size.y + 6.0)
+	_lv_goal_card.queue_redraw()
+	_lv_moves_card.queue_redraw()
 
 
 ## Панда: картинка с «дыханием». Позже заменим на версию из частей (голова, лапы, тело).
@@ -1775,10 +1811,10 @@ func _hud_card(title: String, art := "") -> PanelContainer:
 		# плашка из листа элементов уровня: без подписи, содержимое — в кремовом поле
 		var o := PanelContainer.new()
 		var e := StyleBoxEmpty.new()
-		e.content_margin_left = 24
-		e.content_margin_right = 24
-		e.content_margin_top = 44
-		e.content_margin_bottom = 22
+		e.content_margin_left = 26
+		e.content_margin_right = 26
+		e.content_margin_top = 48
+		e.content_margin_bottom = 26
 		o.add_theme_stylebox_override("panel", e)
 		o.custom_minimum_size = Vector2(0, 168)
 		var b := PanelContainer.new()
@@ -2028,7 +2064,7 @@ func _round_button(kind: String, base: Color) -> Button:
 	var btn := Button.new()
 	var is_pause := kind == "pause"
 	if Zoo.art("lv_slot"):
-		btn.custom_minimum_size = Vector2(118, 140) if is_pause else Vector2(132, 140)
+		btn.custom_minimum_size = Vector2(104, 140) if is_pause else Vector2(120, 140)
 	else:
 		btn.custom_minimum_size = Vector2(104, 140) if is_pause else Vector2(134, 140)
 	btn.flat = true
@@ -2048,7 +2084,7 @@ func _round_button(kind: String, base: Color) -> Button:
 		if Zoo.art("lv_slot"):
 			# слоты из листа элементов уровня (референс): деревянный круг с золотым ободком
 			if is_pause:
-				Zoo.draw_art(btn, "lv_pause", c, 104.0)
+				Zoo.draw_art(btn, "lv_pause", c, 100.0)
 				return
 			if active:
 				var g2: float = btn.get_meta("glow")
@@ -2056,9 +2092,9 @@ func _round_button(kind: String, base: Color) -> Button:
 					btn.draw_circle(c + lift, 72.0 - i * 5.0 + g2 * 6.0, Color(1.0, 0.86, 0.3, 0.07 + i * 0.03))
 			var slot_art := {"hammer": "lv_hammer", "shuffle": "lv_shuffle"}
 			if slot_art.has(kind):
-				Zoo.draw_art(btn, slot_art[kind], c + lift, 128.0)
+				Zoo.draw_art(btn, slot_art[kind], c + lift, 124.0)
 			else:
-				Zoo.draw_art(btn, "lv_slot", c + lift, 128.0)
+				Zoo.draw_art(btn, "lv_slot", c + lift, 124.0)
 				var ua := Zoo.art("ui_arrow")
 				if ua:
 					btn.draw_set_transform(c + lift, PI / 2.0 if kind == "cannon" else 0.0, Vector2.ONE)
@@ -2196,6 +2232,14 @@ func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 
 
 func _layout_bar() -> void:
+	if Zoo.art("lv_tray") and _lv_goal_card:
+		# 4 слота: центры 96, 216, 336, 456 px; пауза — 620 px (775 референса); лоток — центр 116 px от низа
+		_booster_bar.alignment = BoxContainer.ALIGNMENT_BEGIN
+		_booster_bar.size = Vector2(_level_screen.size.x, 140)
+		_booster_bar.position = Vector2(36, _level_screen.size.y - 116.0 - 70.0)
+		if _bands:
+			_bands.queue_redraw()
+		return
 	if Zoo.art("lv_tray"):
 		# кнопки по центру лотка (центр лотка — 116 px от низа)
 		_booster_bar.size = Vector2(_level_screen.size.x, 140)
@@ -2471,6 +2515,17 @@ func _board_scale() -> float:
 
 
 func _board_rest() -> Vector2:
+	if _lv_goal_card:
+		_layout_level_ref()
+		# поле по референсу: клетки 8 столбцов на 553 px (105…795 px референса), верх клеток на y=320
+		# экран телефона выше референса — клетки чуть крупнее (8 столбцов на 600 px), поле по центру
+		# между шапкой (низ плашек 220 px) и лотком (верх — 210 px от низа)
+		var kr := 600.0 / (8.0 * Board.CELL)
+		_board_frame.scale = Vector2(kr, kr)
+		var sr := _board_frame.get_combined_minimum_size() * kr
+		var top_y := 262.0
+		var bot_y := _level_screen.size.y - 250.0
+		return Vector2((_level_screen.size.x - sr.x) / 2.0, top_y + maxf(0.0, (bot_y - top_y - sr.y) * 0.5))
 	var k := _board_scale()
 	_board_frame.scale = Vector2(k, k)
 	var s := _board_frame.get_combined_minimum_size() * k
