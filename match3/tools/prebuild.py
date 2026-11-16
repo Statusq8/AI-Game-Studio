@@ -30,6 +30,7 @@ BODY = (48, 617, 803, 1593, 90)
 ARCH = (425, 529, 178, 58)
 PAW = (425, 477, 47)
 PANDA_BOX = (45, 185, 470, 545)
+PANDA_KEEP = (452, 482)                    # от панды в окне остаётся низ: плавно с 452 до 482
 PLATE_IN = (162, 724, 690, 938)            # внутренность плашки целей
 INNER = (101, 948, 747, 1420)              # дорожка серии побед, плитки, кнопка — стирается целиком
 FLAME = (100, 940, 200, 1076)
@@ -243,7 +244,10 @@ def main() -> None:
     mask = window_mask(im, h, s, v, y0=PRE_Y0 + 230, body=BODY, arch=ARCH, paw=PAW, rib_y=505, top_end=780,
                        leaf_y=(1420, 1585), side_y=(600, 1420))
     pa = cv2.GaussianBlur(panda.astype(np.float32) * 255, (0, 0), 0.9)
-    mask = np.maximum(mask, pa)
+    # живая панда (assets/anim/win_prelevel, tools/winpanda.py) рисуется поверх окна; в самом окне от панды
+    # остаётся только низ (лапы на ленте), голова и рука выше — убраны, иначе просвечивают под анимацией
+    ramp = np.clip((np.arange(H, dtype=np.float32) - PANDA_KEEP[0]) / (PANDA_KEEP[1] - PANDA_KEEP[0]), 0, 1)[:, None]
+    mask = np.maximum(mask, pa * ramp)
     cm2 = np.zeros((H, W), np.uint8)
     cv2.circle(cm2, CLOSE[:2], CLOSE[2], 1, -1)
     mask = np.maximum(mask, cv2.GaussianBlur(cm2.astype(np.float32) * 255, (0, 0), 1.0))
