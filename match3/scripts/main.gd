@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.31.0"
+const VERSION := "2.32.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -694,6 +694,9 @@ func _on_spot(i: int) -> void:
 		])
 		return
 	# выбор дизайна из трёх вариантов
+	if Zoo.art("designref_window"):
+		_show_design_ref(i, task)
+		return
 	var v := _dialog(task.name, ["Выбери дизайн (можно перекрасить потом)"], [["Отмена", "Button", _clear_overlay]])
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -5207,6 +5210,137 @@ func _show_shop_ref() -> void:
 	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
 
+## ---------- выбор дизайна 1:1 по референсу (слои: tools/designbuild.py) ----------
+## Референс 852×1846 (references/screen_08_design.webp); координаты — в его пикселях, те же в designbuild.py.
+const DESIGN_Y0 := 362.0
+const DESIGN_TOP := 368.0
+const DESIGN_BOT := 1605.0
+const DESIGN_CLOSE := Vector3(745, 475, 52)
+const DESIGN_CARD := Vector2(97, 773)
+const DESIGN_STEP := 220.5
+const DESIGN_OK_OFF := Vector2(19, 311)
+const DESIGN_COST := Vector2(268, 628)
+const DESIGN_PANDA := Vector2(406, 1200)
+
+
+func _show_design_ref(i: int, task: Dictionary) -> void:
+	_clear_overlay()
+	var dim := ColorRect.new()
+	dim.color = Color(0.05, 0.03, 0.2, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_overlay.add_child(dim)
+	var k := minf(size.x / WIN_W, (size.y - 16.0) / (DESIGN_BOT - DESIGN_TOP))
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = Vector2(WIN_W, DESIGN_BOT - DESIGN_Y0)
+	holder.position = Vector2(size.x / 2.0 - WIN_W / 2.0 * k, size.y / 2.0 - ((DESIGN_TOP + DESIGN_BOT) / 2.0 - DESIGN_Y0) * k)
+	holder.scale = Vector2(k, k)
+	_overlay.add_child(holder)
+	var body := Control.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.size = holder.size
+	body.pivot_offset = Vector2(WIN_W / 2.0, 600.0)
+	holder.add_child(body)
+	var font: Font = UiTheme.title_font()
+	var at := func(p: Vector2) -> Vector2: return p - Vector2(0, DESIGN_Y0)
+	var wt := TextureRect.new()
+	wt.texture = Zoo.art("designref_window")
+	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(wt)
+	var title: String = task.name
+	var ribbon := Control.new()
+	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ribbon.size = body.size
+	ribbon.draw.connect(func() -> void: _arc_text(ribbon, title, at.call(Vector2(425.0, 508.0)), 470.0, 60, Color("#5e0a4a")))
+	body.add_child(ribbon)
+	# цена ремонта в звёздах
+	var cost_t := Zoo.art("designref_cost")
+	var cost := Control.new()
+	cost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cost.position = at.call(DESIGN_COST)
+	cost.size = cost_t.get_size()
+	var ct := str(int(task.cost))
+	cost.draw.connect(func() -> void:
+		cost.draw_texture(cost_t, Vector2.ZERO)
+		var fs := 70
+		var p := Vector2(168, 81)
+		for d in range(5, 0, -1):
+			cost.draw_string_outline(font, p + Vector2(0, d), ct, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#2a0d44"))
+		cost.draw_string_outline(font, p, ct, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#2a0d44"))
+		cost.draw_string(font, p, ct, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	body.add_child(cost)
+	# три варианта: карточка, сияние, предмет на круглой плитке, зелёная кнопка с галочкой
+	var card_t := Zoo.art("designref_card")
+	var ok_t := Zoo.art("designref_ok")
+	var kind: String = task.kind
+	for d in Zones.DESIGNS.size():
+		var card := Control.new()
+		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.position = at.call(DESIGN_CARD + Vector2(d * DESIGN_STEP, 0))
+		card.size = card_t.get_size()
+		card.pivot_offset = card.size / 2.0
+		var col: Color = Zones.DESIGNS[d]
+		var it := Zoo.item_tex(kind, d)
+		card.draw.connect(func() -> void:
+			card.draw_texture(card_t, Vector2.ZERO)
+			var tt := Time.get_ticks_msec() / 1000.0
+			var gc := Vector2(108, 150)
+			var gr := 130.0 * (1.0 + 0.04 * sin(tt * 2.0 + d))
+			card.draw_texture_rect(Board.fx_tex("glow"), Rect2(gc - Vector2(gr, gr), Vector2(gr, gr) * 2.0), false, Color(1.0, 0.9, 0.45, 0.8))
+			for j in 10:
+				var a := -PI / 2.0 + (j - 4.5) * 0.22 + 0.04 * sin(tt + j)
+				card.draw_colored_polygon(PackedVector2Array([gc, gc + Vector2(cos(a - 0.07), sin(a - 0.07)) * 140.0,
+					gc + Vector2(cos(a + 0.07), sin(a + 0.07)) * 140.0]), Color(1.0, 0.97, 0.75, 0.35))
+			# круглая плитка-площадка под предметом
+			var pc := Vector2(108, 238)
+			card.draw_set_transform(pc, 0.0, Vector2(1.0, 0.3))
+			card.draw_circle(Vector2(0, 14), 96, Color(0.45, 0.35, 0.25, 0.25))
+			card.draw_circle(Vector2.ZERO, 92, Color("#cbbfb0"))
+			card.draw_circle(Vector2(0, -6), 84, Color("#e8dfd2"))
+			card.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			if it:
+				var sz := it.get_size()
+				var sc := minf(200.0 / sz.x, 190.0 / sz.y)
+				var r := Rect2(Vector2(108, 246) - Vector2(sz.x * sc / 2.0, sz.y * sc), sz * sc)
+				card.draw_texture_rect(it, r, false)
+			else:
+				Zoo.draw_item(card, kind, col, Vector2(108, 230), 0.8, d))
+		body.add_child(card)
+		_every_frame(card)
+		var ok := TextureButton.new()
+		ok.texture_normal = ok_t
+		ok.position = DESIGN_OK_OFF
+		ok.size = ok_t.get_size()
+		ok.pivot_offset = ok.size / 2.0
+		ok.button_down.connect(func() -> void: ok.create_tween().tween_property(ok, "scale", Vector2(0.93, 0.93), 0.06))
+		ok.button_up.connect(func() -> void:
+			ok.create_tween().tween_property(ok, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+		ok.pressed.connect(func() -> void:
+			Sfx.play("click")
+			_build_task(i, d))
+		card.add_child(ok)
+	var pd := TextureRect.new()
+	pd.texture = Zoo.art("designref_panda")
+	pd.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pd.position = at.call(DESIGN_PANDA)
+	body.add_child(pd)
+	var close := Button.new()
+	close.flat = true
+	for stn in ["normal", "hover", "pressed", "focus"]:
+		close.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+	close.size = Vector2(DESIGN_CLOSE.z, DESIGN_CLOSE.z) * 2.0
+	close.position = at.call(Vector2(DESIGN_CLOSE.x, DESIGN_CLOSE.y)) - close.size / 2.0
+	close.pressed.connect(func() -> void:
+		Sfx.play("click")
+		_clear_overlay())
+	body.add_child(close)
+	body.scale = Vector2(0.6, 0.6)
+	body.modulate.a = 0.0
+	var tw := body.create_tween()
+	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
 	for i in 70:
@@ -5632,6 +5766,17 @@ func _run_winshot(dir: String) -> void:
 	_show_shop_ref()
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "h2_shop")
+	_clear_overlay()
+	_show_home()
+	Save.zone = 0
+	Save.built = {}
+	_refresh_home()
+	_show_design_ref(0, Zones.ZONES[0].tasks[0])
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "g1_design")
+	_show_design_ref(1, Zones.ZONES[0].tasks[1])
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "g2_design")
 	Save.music = true
 	get_tree().quit()
 
