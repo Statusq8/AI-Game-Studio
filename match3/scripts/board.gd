@@ -449,10 +449,16 @@ func _draw() -> void:
 			var even := (x + y) % 2 == 0
 			# светлая доска (как в топовых три-в-ряд): на тёмном фоне фишки «горят»
 			var col := Color("#dcecf8", 0.97) if even else Color("#c6dcef", 0.97)
+			var tt: Texture2D = Gem.tex("lv_tile_a" if even else "lv_tile_b")
 			if grass[x][y]:
 				col = Color("#5cc24a") if even else Color("#4fb33f")
 			elif grass_target[x][y]:
 				col = Color("#8a6440") if even else Color("#7d5a39")
+			elif tt:
+				# кремовые плитки из листа элементов уровня (референс): под плиткой — тёплая подложка без щелей
+				draw_rect(rect, Color("#e9d2ad"))
+				draw_texture_rect(tt, rect.grow(-1.0), false)
+				continue
 			draw_rect(rect, col)
 			# мягкая тень сверху клетки — объём
 			draw_rect(Rect2(rect.position, Vector2(CELL, 4)), Color(0.2, 0.35, 0.55, 0.10))
@@ -466,6 +472,9 @@ func _draw() -> void:
 			for d: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 				var nb: Vector2i = Vector2i(x, y) + d
 				if inside(nb) and not hole[nb.x][nb.y]:
+					continue
+				# с деревянной рамкой внешний край обводит рамка — линию рисуем только у дыр внутри поля
+				if Gem.tex("lv_frame") and not inside(nb):
 					continue
 				match d:
 					Vector2i.LEFT: edges.append([p0, p0 + Vector2(0, CELL), Vector2(-1, 0)])

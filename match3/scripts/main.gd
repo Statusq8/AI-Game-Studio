@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.23.0"
+const VERSION := "2.24.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -57,6 +57,7 @@ var _pre_selected := {}
 var _board_frame: Control
 var _board_clip: Control
 var _pause_btn: Control
+var _bar_pause: Button
 var _bands: Control
 var _moves_label: Label
 var _level_label: Label
@@ -1300,7 +1301,7 @@ func _build_level_screen() -> void:
 	add_child(_level_screen)
 	# фон уровня приглушён — внимание на поле
 	var dim := ColorRect.new()
-	dim.color = Color(0.02, 0.06, 0.12, 0.45)
+	dim.color = Color(0.02, 0.06, 0.12, 0.12)  # по референсу фон светлый
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_level_screen.add_child(dim)
@@ -1309,7 +1310,7 @@ func _build_level_screen() -> void:
 	top.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	for side in ["left", "right"]:
 		top.add_theme_constant_override("margin_" + side, 16)
-	top.add_theme_constant_override("margin_top", 30)
+	top.add_theme_constant_override("margin_top", 46)
 	_level_screen.add_child(top)
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 10)
@@ -1320,8 +1321,9 @@ func _build_level_screen() -> void:
 	hud.add_theme_constant_override("separation", 10)
 	hud.alignment = BoxContainer.ALIGNMENT_CENTER
 	col.add_child(hud)
-	var goal_card := _hud_card("Цель")
+	var goal_card := _hud_card("Цель", "lv_goals")
 	goal_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	goal_card.size_flags_stretch_ratio = 272.0 / 242.0
 	hud.add_child(goal_card)
 	_goals_box = HBoxContainer.new()
 	_goals_box.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -1332,16 +1334,23 @@ func _build_level_screen() -> void:
 	# мягкая тень под ногами панды — стоит, а не парит
 	_portrait_node.draw.connect(func() -> void:
 		var pn := _portrait_node
+		var at := Zoo.art("lv_arch")
+		if at:
+			# золотая арка с листьями из листа элементов уровня — панда стоит в ней
+			var w := pn.size.x * 1.08
+			var h := w * at.get_height() / at.get_width()
+			pn.draw_texture_rect(at, Rect2(Vector2((pn.size.x - w) / 2, pn.size.y - h + 6), Vector2(w, h)), false)
+			return
 		pn.draw_set_transform(Vector2(pn.size.x / 2, pn.size.y - 6), 0.0, Vector2(1.0, 0.22))
 		pn.draw_circle(Vector2.ZERO, pn.size.x * 0.36, Color(0, 0, 0, 0.35))
 		pn.draw_circle(Vector2.ZERO, pn.size.x * 0.26, Color(0, 0, 0, 0.25))
 		pn.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE))
-	var moves_card := _hud_card("Ходы")
+	var moves_card := _hud_card("Ходы", "lv_moves")
 	moves_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hud.add_child(moves_card)
 	_moves_label = Label.new()
 	_moves_label.theme_type_variation = "TitleLabel"
-	_moves_label.add_theme_font_size_override("font_size", 66)
+	_moves_label.add_theme_font_size_override("font_size", 72)
 	_moves_label.add_theme_constant_override("outline_size", 12)
 	_moves_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_moves_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1354,15 +1363,35 @@ func _build_level_screen() -> void:
 	_level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	# номер уровня — на тёмной плашке, а не «в воздухе»
 	var plaque := PanelContainer.new()
-	var psb := StyleBoxFlat.new()
-	psb.bg_color = Color(0.05, 0.12, 0.22, 0.72)
-	psb.set_corner_radius_all(18)
-	psb.border_color = Color("#bfe3ff", 0.6)
-	psb.set_border_width_all(2)
-	psb.content_margin_left = 22
-	psb.content_margin_right = 22
-	psb.content_margin_top = 2
-	psb.content_margin_bottom = 4
+	var psb: StyleBox
+	if Zoo.art("lv_counter"):
+		# плашка уровня — кремовая с деревянным кантом (лист элементов уровня)
+		var tsb := StyleBoxTexture.new()
+		tsb.texture = Zoo.art("lv_counter")
+		tsb.texture_margin_left = 60
+		tsb.texture_margin_right = 60
+		tsb.texture_margin_top = 50
+		tsb.texture_margin_bottom = 50
+		tsb.content_margin_left = 26
+		tsb.content_margin_right = 26
+		tsb.content_margin_top = 4
+		tsb.content_margin_bottom = 6
+		psb = tsb
+		_level_label.add_theme_color_override("font_color", Color("#7a3e10"))
+		_level_label.add_theme_color_override("font_outline_color", Color("#fff6e0"))
+		_level_label.add_theme_constant_override("outline_size", 4)
+		_level_label.add_theme_font_size_override("font_size", 24)
+	else:
+		var fsb := StyleBoxFlat.new()
+		fsb.bg_color = Color(0.05, 0.12, 0.22, 0.72)
+		fsb.set_corner_radius_all(18)
+		fsb.border_color = Color("#bfe3ff", 0.6)
+		fsb.set_border_width_all(2)
+		fsb.content_margin_left = 22
+		fsb.content_margin_right = 22
+		fsb.content_margin_top = 2
+		fsb.content_margin_bottom = 4
+		psb = fsb
 	plaque.add_theme_stylebox_override("panel", psb)
 	plaque.add_child(_level_label)
 	var pc := CenterContainer.new()
@@ -1380,7 +1409,8 @@ func _build_level_screen() -> void:
 	_board_frame.add_child(clip)
 	_board_clip = clip
 	# рамка поля — ИИ-картинка (дерево, лианы, золотой кант), растягивается по 9 частям поверх края поля
-	var ft: Texture2D = load("res://assets/art/ui_board_frame.png")
+	var lvf := Zoo.art("lv_frame")
+	var ft: Texture2D = lvf if lvf else load("res://assets/art/ui_board_frame.png")
 	var frame := NinePatchRect.new()
 	frame.texture = ft
 	frame.patch_margin_left = 72
@@ -1389,8 +1419,13 @@ func _build_level_screen() -> void:
 	frame.patch_margin_bottom = 72
 	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	frame.z_index = 2
-	frame.visible = false  # деревянную рамку убрали: доску обводит тонкая золотая линия по форме
-	var fk := 0.28
+	frame.visible = lvf != null  # деревянная рамка с золотыми уголками (референс экрана уровня)
+	if lvf:
+		frame.patch_margin_left = 150
+		frame.patch_margin_right = 150
+		frame.patch_margin_top = 150
+		frame.patch_margin_bottom = 150
+	var fk := 0.56 if lvf else 0.28
 	frame.scale = Vector2(fk, fk)
 	frame.top_level = false
 	var holder := Control.new()
@@ -1398,7 +1433,7 @@ func _build_level_screen() -> void:
 	holder.set_anchors_preset(Control.PRESET_FULL_RECT)
 	holder.add_child(frame)
 	holder.resized.connect(func() -> void:
-		var out := 40.0
+		var out := 44.0 if lvf else 40.0
 		frame.position = Vector2(-out, -out)
 		frame.size = (holder.size + Vector2(out, out) * 2) / fk)
 	_board_frame.add_child(holder)
@@ -1427,6 +1462,7 @@ func _build_level_screen() -> void:
 		_booster_btns[b[0]] = btn
 	# пауза — последней кнопкой в ряду бустеров
 	var pause := _round_button("pause", Color("#3f8cff"))
+	_bar_pause = pause
 	pause.pressed.connect(_show_pause)
 	_booster_bar.add_child(pause)
 	# сплошные полосы: шапка сверху и подставка бустеров снизу, с золотой каймой
@@ -1435,6 +1471,25 @@ func _build_level_screen() -> void:
 	bands.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bands.draw.connect(func() -> void:
 		var w := bands.size.x
+		var tr := Zoo.art("lv_tray")
+		if tr:
+			# зелёный лоток с золотым кантом — по референсу: x 8…712, высота 188, низ в 22 px от края
+			var h := bands.size.y
+			var r := Rect2(Vector2(8, h - 22 - 188), Vector2(w - 16, 188))
+			var sb := StyleBoxTexture.new()
+			sb.texture = tr
+			sb.texture_margin_left = 190
+			sb.texture_margin_right = 190
+			sb.texture_margin_top = 130
+			sb.texture_margin_bottom = 130
+			bands.draw_set_transform(r.position, 0.0, Vector2(0.5, 0.5))
+			bands.draw_style_box(sb, Rect2(Vector2.ZERO, r.size * 2.0))
+			bands.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			# золотая черта перед паузой
+			var dx := _pause_divider_x()
+			bands.draw_rect(Rect2(Vector2(dx - 2, r.position.y + 58), Vector2(5, 76)), Color("#8a5a10"))
+			bands.draw_rect(Rect2(Vector2(dx - 1, r.position.y + 58), Vector2(3, 76)), Color("#ffd23f"))
+			return
 		var top_h := 238.0
 		_draw_band(bands, Rect2(0, 0, w, top_h), false)
 		var by := _booster_bar.position.y + 4.0
@@ -1714,7 +1769,25 @@ func _panda_rest() -> Vector2:
 
 
 ## Объёмная карточка шапки: лента-заголовок сверху, кремовое «окно» внутри деревянной рамки.
-func _hud_card(title: String) -> PanelContainer:
+func _hud_card(title: String, art := "") -> PanelContainer:
+	var at := Zoo.art(art) if art != "" else null
+	if at:
+		# плашка из листа элементов уровня: без подписи, содержимое — в кремовом поле
+		var o := PanelContainer.new()
+		var e := StyleBoxEmpty.new()
+		e.content_margin_left = 24
+		e.content_margin_right = 24
+		e.content_margin_top = 44
+		e.content_margin_bottom = 22
+		o.add_theme_stylebox_override("panel", e)
+		o.custom_minimum_size = Vector2(0, 168)
+		var b := PanelContainer.new()
+		b.name = "Body"
+		b.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+		o.add_child(b)
+		o.draw.connect(func() -> void: o.draw_texture_rect(at, Rect2(Vector2.ZERO, o.size), false))
+		o.resized.connect(o.queue_redraw)
+		return o
 	var outer := PanelContainer.new()
 	var sb := StyleBoxEmpty.new()
 	sb.content_margin_left = 18
@@ -1954,7 +2027,10 @@ func _draw_icon_button(btn: Button, kind: String, d: float, base: Color) -> void
 func _round_button(kind: String, base: Color) -> Button:
 	var btn := Button.new()
 	var is_pause := kind == "pause"
-	btn.custom_minimum_size = Vector2(104, 140) if is_pause else Vector2(134, 140)
+	if Zoo.art("lv_slot"):
+		btn.custom_minimum_size = Vector2(118, 140) if is_pause else Vector2(132, 140)
+	else:
+		btn.custom_minimum_size = Vector2(104, 140) if is_pause else Vector2(134, 140)
 	btn.flat = true
 	for st in ["normal", "hover", "pressed", "focus", "disabled"]:
 		btn.add_theme_stylebox_override(st, StyleBoxEmpty.new())
@@ -1969,6 +2045,29 @@ func _round_button(kind: String, base: Color) -> Button:
 		btn.draw_set_transform(c + Vector2(0, 54), 0.0, Vector2(1.0, 0.26))
 		btn.draw_circle(Vector2.ZERO, 50.0 if not is_pause else 38.0, Color(0, 0, 0, 0.32 if not active else 0.2))
 		btn.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+		if Zoo.art("lv_slot"):
+			# слоты из листа элементов уровня (референс): деревянный круг с золотым ободком
+			if is_pause:
+				Zoo.draw_art(btn, "lv_pause", c, 104.0)
+				return
+			if active:
+				var g2: float = btn.get_meta("glow")
+				for i in 5:
+					btn.draw_circle(c + lift, 72.0 - i * 5.0 + g2 * 6.0, Color(1.0, 0.86, 0.3, 0.07 + i * 0.03))
+			var slot_art := {"hammer": "lv_hammer", "shuffle": "lv_shuffle"}
+			if slot_art.has(kind):
+				Zoo.draw_art(btn, slot_art[kind], c + lift, 128.0)
+			else:
+				Zoo.draw_art(btn, "lv_slot", c + lift, 128.0)
+				var ua := Zoo.art("ui_arrow")
+				if ua:
+					btn.draw_set_transform(c + lift, PI / 2.0 if kind == "cannon" else 0.0, Vector2.ONE)
+					Zoo.draw_art(btn, "ui_arrow", Vector2.ZERO, 84.0)
+					btn.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+				else:
+					_draw_tool_icon(btn, kind, c + lift)
+			_draw_count(btn, c + lift)
+			return
 		if is_pause:
 			if not Zoo.draw_art(btn, "ui_pause", c, 90.0):
 				btn.draw_circle(c, 44, Color("#2f7fe0"))
@@ -2021,6 +2120,17 @@ func _draw_count(btn: Button, c: Vector2) -> void:
 		return
 	var bc := c + Vector2(42, 42)
 	var buy := n == 0
+	if Zoo.art("lv_badge"):
+		Zoo.draw_art(btn, "lv_plus" if buy else "lv_badge", bc, 50.0)
+		if not buy:
+			var f2: Font = UiTheme.title_font()
+			var t2 := str(n)
+			var fs2 := 26 if n < 10 else 21
+			var ts2 := f2.get_string_size(t2, HORIZONTAL_ALIGNMENT_LEFT, -1, fs2)
+			var p2 := bc + Vector2(-ts2.x / 2, fs2 * 0.36)
+			btn.draw_string_outline(f2, p2, t2, HORIZONTAL_ALIGNMENT_LEFT, -1, fs2, 6, Color("#14531c"))
+			btn.draw_string(f2, p2, t2, HORIZONTAL_ALIGNMENT_LEFT, -1, fs2, Color.WHITE)
+		return
 	var rim := Color("#ffffff")
 	var lo := Color("#c25a00") if buy else Color("#1f7a2c")
 	var hi := Color("#ffb21e") if buy else Color("#5fd34a")
@@ -2086,10 +2196,23 @@ func _draw_tool_icon(ci: CanvasItem, kind: String, c: Vector2) -> void:
 
 
 func _layout_bar() -> void:
+	if Zoo.art("lv_tray"):
+		# кнопки по центру лотка (центр лотка — 116 px от низа)
+		_booster_bar.size = Vector2(_level_screen.size.x, 140)
+		_booster_bar.position = Vector2(0, _level_screen.size.y - 116.0 - 70.0)
+		if _bands:
+			_bands.queue_redraw()
+		return
 	_booster_bar.size = Vector2(_level_screen.size.x, 140)
 	_booster_bar.position = Vector2(0, _level_screen.size.y - 140.0 - 22.0)
 	if _bands:
 		_bands.queue_redraw()
+
+
+func _pause_divider_x() -> float:
+	if _bar_pause == null or not is_instance_valid(_bar_pause):
+		return _level_screen.size.x - 150.0
+	return _booster_bar.position.x + _bar_pause.position.x - 2.0
 
 
 ## Подставка бустеров: «парящий» лоток с закруглёнными углами, золотой кантом и бликом,
@@ -2337,11 +2460,13 @@ func _place_pause() -> void:
 ## Клетки не крупнее, чем у полного поля 8 в ширину — узкое поле не раздувается.
 func _board_scale() -> float:
 	var s := _board_frame.get_combined_minimum_size()
-	var free_top := 264.0
-	var free_bottom := 176.0
-	var k := minf((_level_screen.size.x - 8.0) / s.x, (_level_screen.size.y - free_top - free_bottom) / s.y)
+	var free_top := 296.0
+	var free_bottom := 222.0
+	# с деревянной рамкой — поля по бокам, как в референсе (клетки поля занимают ~77% ширины экрана)
+	var side := 84.0 if Zoo.art("lv_frame") else 4.0
+	var k := minf((_level_screen.size.x - side * 2.0) / s.x, (_level_screen.size.y - free_top - free_bottom) / s.y)
 	var pad := s.x - _board_clip.custom_minimum_size.x
-	var k8 := (_level_screen.size.x - 8.0) / (8.0 * Board.CELL + pad)
+	var k8 := (_level_screen.size.x - side * 2.0) / (8.0 * Board.CELL + pad)
 	return clampf(minf(k, k8), 0.6, 1.35)
 
 
@@ -2349,8 +2474,9 @@ func _board_rest() -> Vector2:
 	var k := _board_scale()
 	_board_frame.scale = Vector2(k, k)
 	var s := _board_frame.get_combined_minimum_size() * k
-	var free_top := 264.0
-	var y := free_top + maxf(0.0, (_level_screen.size.y - free_top - 176.0 - s.y) * 0.5)
+	var free_top := 296.0
+	# поле ближе к шапке, как в референсе (свободное место — больше снизу)
+	var y := free_top + maxf(0.0, (_level_screen.size.y - free_top - 222.0 - s.y) * (0.3 if Zoo.art("lv_frame") else 0.5))
 	return Vector2((_level_screen.size.x - s.x) / 2.0, y)
 
 
@@ -2875,7 +3001,29 @@ func _build_goals() -> void:
 		l.add_theme_color_override("font_outline_color", Color("#2a1440"))
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.text = str(goal.left)
-		v.add_child(l)
+		if Zoo.art("lv_counter"):
+			# число цели — на маленькой кремовой плашке под иконкой (как в референсе)
+			l.add_theme_font_size_override("font_size", 26)
+			l.add_theme_constant_override("outline_size", 6)
+			l.add_theme_color_override("font_color", Color("#7a3e10"))
+			l.add_theme_color_override("font_outline_color", Color("#fff6e0"))
+			l.custom_minimum_size = Vector2(66, 32)
+			l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			# рисуем плашку под текстом: подложка отдельным узлом
+			var back := Control.new()
+			back.custom_minimum_size = Vector2(66, 32)
+			back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			back.draw.connect(func() -> void:
+				back.draw_texture_rect(Zoo.art("lv_counter"), Rect2(Vector2(-2, 0), back.size + Vector2(4, 0)), false))
+			var stack := Control.new()
+			stack.custom_minimum_size = Vector2(66, 32)
+			stack.add_child(back)
+			back.set_anchors_preset(Control.PRESET_FULL_RECT)
+			stack.add_child(l)
+			l.set_anchors_preset(Control.PRESET_FULL_RECT)
+			v.add_child(stack)
+		else:
+			v.add_child(l)
 		_goals_box.add_child(slot)
 		_goal_views.append({"goal": goal, "label": l, "icon": icon, "shown": int(goal.left)})
 
