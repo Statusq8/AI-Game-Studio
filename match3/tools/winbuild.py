@@ -41,7 +41,7 @@ def hsv(a):
 
 
 def window_mask(im, h, s, v, y0=WIN_Y0, body=BODY, arch=ARCH, paw=PAW, rib_y=448, top_end=700,
-                leaf_y=(1440, 1625), side_y=(540, 1440), blue_ribbon=False):
+                leaf_y=(1440, 1625), side_y=(540, 1440), blue_ribbon=False, ribbon_hue=None):
     """Маска рамки окна: верх (лента, арка, лапка, листья) по цвету + тело-прямоугольник + листья по углам."""
     H, W = v.shape
     gold = (h > 0.05) & (h < 0.17) & (s > 0.5) & (v > 0.55)
@@ -50,6 +50,8 @@ def window_mask(im, h, s, v, y0=WIN_Y0, body=BODY, arch=ARCH, paw=PAW, rib_y=448
     top = gold | red | green
     if blue_ribbon:
         top |= (h > 0.6) & (h < 0.8) & (s > 0.45) & (v > 0.35)
+    if ribbon_hue:
+        top |= (h > ribbon_hue[0]) & (h < ribbon_hue[1]) & (s > 0.45) & (v > 0.3)
     top = top.astype(np.uint8)
     top[:y0 + 8] = 0
     top[top_end:] = 0

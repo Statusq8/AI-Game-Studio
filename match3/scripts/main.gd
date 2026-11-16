@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.30.0"
+const VERSION := "2.31.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -839,6 +839,9 @@ func _show_soon(what: String) -> void:
 
 
 func _show_shop() -> void:
+	if Zoo.art("shopref_window"):
+		_show_shop_ref()
+		return
 	var font: Font = UiTheme.title_font()
 	var v := _dialog("Магазин", [], [])
 	(v.get_parent() as Control).custom_minimum_size.x = 660
@@ -5034,6 +5037,176 @@ func _show_pause_ref() -> void:
 	tw.tween_property(body, "scale", Vector2.ONE, 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
 
+## ---------- магазин 1:1 по референсу (слои: tools/shopbuild.py) ----------
+## Референс 852×1846 (references/screen_07_shop.webp); координаты — в его пикселях, те же в shopbuild.py.
+const SHOP_Y0 := 100.0
+const SHOP_TOP := 110.0
+const SHOP_BOT := 1745.0
+const SHOP_CLOSE := Vector3(731, 213, 52)
+const SHOP_CARD := Vector2(128, 470)                 # левая верхняя карточка
+const SHOP_STEP := Vector2(309.0, 322.5)             # шаг сетки 2×3
+const SHOP_ICONS := [Vector2(208, 497), Vector2(501, 513), Vector2(192, 826), Vector2(505, 819), Vector2(196, 1140), Vector2(502, 1148)]
+const SHOP_PRICE_OFF := Vector2(20, 197)             # кнопка цены от угла карточки
+const SHOP_BADGE_OFF := Vector2(248.5, 20.5)         # кружок количества от угла карточки
+const SHOP_GLOW_OFF := Vector2(143, 100)             # сияние за значком
+const SHOP_COINS := Vector2(242, 338)
+const SHOP_PANDA := Vector2(0, 1308)
+
+
+func _show_shop_ref() -> void:
+	_clear_overlay()
+	var dim := ColorRect.new()
+	dim.color = Color(0.05, 0.03, 0.2, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_overlay.add_child(dim)
+	var k := minf(size.x / WIN_W, (size.y - 16.0) / (SHOP_BOT - SHOP_TOP))
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = Vector2(WIN_W, SHOP_BOT - SHOP_Y0)
+	holder.position = Vector2(size.x / 2.0 - WIN_W / 2.0 * k, size.y / 2.0 - ((SHOP_TOP + SHOP_BOT) / 2.0 - SHOP_Y0) * k)
+	holder.scale = Vector2(k, k)
+	_overlay.add_child(holder)
+	var body := Control.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.size = holder.size
+	body.pivot_offset = Vector2(WIN_W / 2.0, 800.0)
+	holder.add_child(body)
+	var font: Font = UiTheme.title_font()
+	var at := func(p: Vector2) -> Vector2: return p - Vector2(0, SHOP_Y0)
+	var wt := TextureRect.new()
+	wt.texture = Zoo.art("shopref_window")
+	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(wt)
+	var ribbon := Control.new()
+	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ribbon.size = body.size
+	ribbon.draw.connect(func() -> void: _arc_text(ribbon, "Магазин", at.call(Vector2(425.0, 239.0)), 460.0, 66, Color("#0b4a55")))
+	body.add_child(ribbon)
+	# монеты игрока
+	var coins_t := Zoo.art("shopref_coins")
+	var bal := Control.new()
+	bal.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bal.position = at.call(SHOP_COINS)
+	bal.size = coins_t.get_size()
+	bal.pivot_offset = bal.size / 2.0
+	bal.draw.connect(func() -> void:
+		bal.draw_texture(coins_t, Vector2.ZERO)
+		var t := str(Save.coins)
+		var fs := 64
+		while font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > 200.0 and fs > 36:
+			fs -= 4
+		var p := Vector2(150, 74)
+		for d in range(5, 0, -1):
+			bal.draw_string_outline(font, p + Vector2(0, d), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#2a0d44"))
+		bal.draw_string_outline(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#2a0d44"))
+		bal.draw_string(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	body.add_child(bal)
+	# карточки бустеров 2×3
+	var kinds: Array = []
+	for b in IN_BOOSTERS:
+		kinds.append(b[0])
+	for b in PRE_BOOSTERS:
+		kinds.append(b[0])
+	var card_t := Zoo.art("shopref_card")
+	var badge_t := Zoo.art("shopref_badge")
+	var price_t := Zoo.art("shopref_price")
+	var prices: Array = []
+	var cards: Array = []
+	for i in kinds.size():
+		var kind: String = kinds[i]
+		var corner: Vector2 = SHOP_CARD + Vector2(i % 2, i / 2) * SHOP_STEP
+		var ic_t := Zoo.art("shopref_ic_%d" % i)
+		var ic_off: Vector2 = SHOP_ICONS[i] - (SHOP_CARD + Vector2(i % 2, i / 2) * SHOP_STEP)
+		var card := Control.new()
+		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.position = at.call(corner)
+		card.size = card_t.get_size()
+		card.pivot_offset = card.size / 2.0
+		card.draw.connect(func() -> void:
+			card.draw_texture(card_t, Vector2.ZERO)
+			var tt := Time.get_ticks_msec() / 1000.0
+			var gc := SHOP_GLOW_OFF
+			var gr := 120.0 * (1.0 + 0.04 * sin(tt * 2.0 + i))
+			card.draw_texture_rect(Board.fx_tex("glow"), Rect2(gc - Vector2(gr, gr), Vector2(gr, gr) * 2.0), false, Color(1.0, 0.9, 0.45, 0.85))
+			card.draw_texture_rect(Board.fx_tex("glow"), Rect2(gc - Vector2(gr, gr) * 0.6, Vector2(gr, gr) * 1.2), false, Color(1.0, 0.95, 0.6, 0.9))
+			for j in 12:
+				var a := TAU * j / 12.0 + tt * 0.3 + i
+				card.draw_colored_polygon(PackedVector2Array([gc, gc + Vector2(cos(a - 0.1), sin(a - 0.1)) * 115.0,
+					gc + Vector2(cos(a + 0.1), sin(a + 0.1)) * 115.0]), Color(1.0, 0.97, 0.75, 0.3))
+			card.draw_texture(ic_t, ic_off)
+			var bc := SHOP_BADGE_OFF
+			card.draw_texture(badge_t, bc - badge_t.get_size() / 2.0)
+			var t := str(int(Save.boosters.get(kind, 0)))
+			var fs := 44 if t.length() < 2 else 34
+			var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+			var p := bc + Vector2(-ts.x / 2.0, fs * 0.36)
+			card.draw_string_outline(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color("#0e4a08"))
+			card.draw_string(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+		body.add_child(card)
+		_every_frame(card)
+		cards.append(card)
+		var buy := TextureButton.new()
+		buy.texture_normal = price_t
+		buy.position = SHOP_PRICE_OFF
+		buy.size = price_t.get_size()
+		buy.pivot_offset = buy.size / 2.0
+		buy.draw.connect(func() -> void:
+			var t := str(BOOSTER_PRICE)
+			var fs := 54
+			var p := Vector2(114, 63)
+			buy.draw_string_outline(font, p + Vector2(0, 3), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#0e3a08"))
+			buy.draw_string_outline(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#14450c"))
+			buy.draw_string(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+		buy.button_down.connect(func() -> void: buy.create_tween().tween_property(buy, "scale", Vector2(0.93, 0.93), 0.06))
+		buy.button_up.connect(func() -> void:
+			buy.create_tween().tween_property(buy, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+		card.add_child(buy)
+		prices.append(buy)
+		buy.pressed.connect(func() -> void:
+			if not Save.spend(BOOSTER_PRICE):
+				return
+			Save.add_booster(kind)
+			Sfx.play("coin")
+			var t := card.create_tween()
+			t.tween_property(card, "scale", Vector2(1.06, 1.06), 0.08)
+			t.tween_property(card, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			var bt := bal.create_tween()
+			bt.tween_property(bal, "scale", Vector2(1.08, 1.08), 0.08)
+			bt.tween_property(bal, "scale", Vector2.ONE, 0.2)
+			bal.queue_redraw()
+			_refresh_coins()
+			for pb in prices:
+				var off: bool = Save.coins < BOOSTER_PRICE
+				pb.disabled = off
+				pb.modulate = Color(0.6, 0.6, 0.6, 0.85) if off else Color.WHITE)
+		if Save.coins < BOOSTER_PRICE:
+			buy.disabled = true
+			buy.modulate = Color(0.6, 0.6, 0.6, 0.85)
+	# панда с корзинкой — поверх всего
+	var pd := TextureRect.new()
+	pd.texture = Zoo.art("shopref_panda")
+	pd.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pd.position = at.call(SHOP_PANDA)
+	body.add_child(pd)
+	# крестик нарисован в окне — сверху невидимая круглая кнопка
+	var close := Button.new()
+	close.flat = true
+	for stn in ["normal", "hover", "pressed", "focus"]:
+		close.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+	close.size = Vector2(SHOP_CLOSE.z, SHOP_CLOSE.z) * 2.0
+	close.position = at.call(Vector2(SHOP_CLOSE.x, SHOP_CLOSE.y)) - close.size / 2.0
+	close.pressed.connect(func() -> void:
+		Sfx.play("click")
+		_clear_overlay()
+		_refresh_home())
+	body.add_child(close)
+	body.scale = Vector2(0.6, 0.6)
+	body.modulate.a = 0.0
+	var tw := body.create_tween()
+	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
 	for i in 70:
@@ -5451,6 +5624,14 @@ func _run_winshot(dir: String) -> void:
 	_show_pause_ref()
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "s1_pause")
+	Save.coins = 1250
+	_show_shop_ref()
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "h1_shop")
+	Save.coins = 100
+	_show_shop_ref()
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "h2_shop")
 	Save.music = true
 	get_tree().quit()
 
