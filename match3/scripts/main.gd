@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.50.0"
+const VERSION := "2.51.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -4467,7 +4467,7 @@ func _show_win() -> void:
 ## ---------- окно победы 1:1 по референсу (слои нарезаны из него: tools/winbuild.py) ----------
 ## Референс 852×1846 (references/screen_03_win.webp); координаты ниже — в его пикселях, те же в winbuild.py.
 const WIN_W := 852.0
-const WIN_Y0 := 380.0                       # верх слоя окна
+const WIN_Y0 := 355.0                       # верх слоя окна
 const WIN_TOP := 196.0                      # верх центральной звезды — верх всей группы
 const WIN_BOT := 1662.0                     # низ окна
 const WIN_STARS := [Vector2(179, 264), Vector2(321, 199), Vector2(513, 266)]
@@ -5780,7 +5780,8 @@ func _open_chest(from: Control) -> void:
 ## Он же — заставка при запуске (assets/splash.png снимается с этого экрана: -- --splashshot=PATH).
 ## Координаты — в пикселях референса 852×1846.
 const LOAD_SIGN := Vector2(425, 362)           # верх средней линии вывески (дуга, как у лент окон)
-const LOAD_BAR := Rect2(184, 1539, 562, 47)    # внутренность жёлоба полоски загрузки
+const LOAD_FRAME := Rect2(60, 1518, 732, 98)   # своя полоска загрузки: симметрична относительно центра (426)
+const LOAD_PAW := Vector2(117.5, 1565)         # центр лапки-медальона (вырезан из картинки: load_paw.png)
 const LOAD_ART_PREFIXES := ["lvref_", "winref_", "loseref_", "preref_", "pauseref_", "shopref_", "designref_", "dailyref_", "chestref_", "ui2_"]
 
 
@@ -5807,26 +5808,40 @@ func _build_loading() -> Control:
 		place.call()
 		view.draw_texture_rect(bg_t, Rect2(Vector2.ZERO, Vector2(852, 1846)), false)
 		_arc_text(view, "Зоопарк мечты", LOAD_SIGN, 590.0, 86, Color("#4a1e06"))
-		# заливка полоски: золотисто-оранжевая, с бликом и бегущим отсветом
+		# полоска загрузки — своя, ровная и симметричная по центру экрана; закрывает кривую полоску картинки
 		var p: float = root.get_meta("p")
-		var r := LOAD_BAR
-		var w := r.size.x * clampf(p, 0.0, 1.0)
-		if w > 4.0:
-			var fr := Rect2(r.position, Vector2(maxf(w, r.size.y), r.size.y))
+		var rb := func(rect: Rect2, col: Color, rad: float) -> void:
 			var sb := StyleBoxFlat.new()
-			sb.set_corner_radius_all(int(r.size.y / 2.0))
-			sb.bg_color = Color("#ff9a1a")
-			sb.border_color = Color("#c25a00")
-			sb.set_border_width_all(3)
-			view.draw_style_box(sb, fr)
-			var hi := StyleBoxFlat.new()
-			hi.set_corner_radius_all(int(r.size.y / 4.0))
-			hi.bg_color = Color("#ffd75a")
-			view.draw_style_box(hi, Rect2(fr.position + Vector2(10, 6), Vector2(fr.size.x - 20, fr.size.y * 0.38)))
+			sb.set_corner_radius_all(int(minf(rad, rect.size.y / 2.0)))
+			sb.bg_color = col
+			sb.anti_aliasing_size = 1.2
+			view.draw_style_box(sb, rect)
+		var o := LOAD_FRAME
+		rb.call(Rect2(o.position + Vector2(-2, 6), o.size + Vector2(4, 4)), Color(0, 0, 0, 0.3), 60.0)
+		rb.call(o, Color("#4a2806"), 60.0)
+		rb.call(o.grow(-4.0), Color("#e8920f"), 60.0)
+		rb.call(Rect2(o.position + Vector2(8, 6), Vector2(o.size.x - 16, o.size.y * 0.45)), Color("#ffe58a"), 40.0)
+		rb.call(o.grow(-12.0), Color("#5a2c0a"), 60.0)
+		var r := o.grow(-15.0)
+		rb.call(r, Color("#7a3e14"), 60.0)
+		rb.call(Rect2(r.position, Vector2(r.size.x, r.size.y * 0.32)), Color("#5e2e0e"), 30.0)
+		# заливка: от левого края жёлоба (под лапкой) до p
+		var lft := LOAD_PAW.x - r.position.x  # видимая часть начинается от лапки
+		var w := lft + (r.size.x - lft) * clampf(p, 0.0, 1.0)
+		if p > 0.001:
+			var fr := Rect2(r.position, Vector2(maxf(w, r.size.y), r.size.y))
+			rb.call(fr, Color("#c25a00"), 60.0)
+			rb.call(fr.grow(-3.0), Color("#ff9a1a"), 60.0)
+			rb.call(Rect2(fr.position + Vector2(10, fr.size.y * 0.55), Vector2(fr.size.x - 20, fr.size.y * 0.3)), Color("#f07a0c"), 20.0)
+			rb.call(Rect2(fr.position + Vector2(12, 7), Vector2(fr.size.x - 24, fr.size.y * 0.3)), Color("#ffd75a"), 20.0)
 			var t := Time.get_ticks_msec() / 1000.0
 			var sx := fmod(t * 420.0, fr.size.x + 120.0) - 60.0
-			if sx > 8.0 and sx < fr.size.x - 8.0:
-				view.draw_rect(Rect2(fr.position + Vector2(sx - 10, 5), Vector2(20, fr.size.y - 10)), Color(1, 1, 1, 0.35))
+			if sx > lft and sx < fr.size.x - 20.0:
+				view.draw_rect(Rect2(fr.position + Vector2(sx - 10, 6), Vector2(20, fr.size.y - 12)), Color(1, 1, 1, 0.3))
+		var pw := Zoo.art("load_paw")
+		if pw:
+			view.draw_texture_rect(pw, Rect2(LOAD_PAW - pw.get_size() / 2.0, pw.get_size()), false)
+		r = Rect2(Vector2(LOAD_PAW.x + 60.0, r.position.y), Vector2(r.end.x - LOAD_PAW.x - 60.0, r.size.y))
 		if root.has_meta("splash"):
 			return
 		var pt := "%d%%" % int(round(p * 100.0))
