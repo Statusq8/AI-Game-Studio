@@ -64,6 +64,8 @@ var hole: Array = []         # дыра в фигурном поле (клетк
 var honey: Array = []        # мёд на фишке (растекается)
 var _honey_hit := false
 var _player_move := false
+## Ось хода игрока для ракеты (как в Royal Match): 0 — свайп влево/вправо, 1 — вверх/вниз, -1 — каскад.
+var _swap_axis := -1
 var _grass_carry := false  # ход сделан с травы — всё, что убьёт этот бустер/комбо, тоже покрывается травой
 var chain: Array = []        # прочность цепи на фишке
 var grass: Array = []        # bool
@@ -440,14 +442,15 @@ func _tile_box(col: Color) -> StyleBoxFlat:
 func _draw() -> void:
 	var r := Rect2(Vector2.ZERO, board_size())
 	var gap := 2.5
-	# единая доска: тёмно-синие клетки «шахматкой» без зазоров — фишки на ней ярче
+	# клетки рисуются слоями (сначала все подложки, потом все плитки А, потом все плитки Б) —
+	# одинаковые картинки подряд видеокарта склеивает в одну пачку (раньше вперемешку — ~160 вызовов)
+	var tiles := [[], []]
 	for x in W:
 		for y in H:
 			if hole[x][y]:
 				continue
 			var rect := Rect2(Vector2(x, y) * CELL, Vector2(CELL, CELL))
 			var even := (x + y) % 2 == 0
-			# светлая доска (как в топовых три-в-ряд): на тёмном фоне фишки «горят»
 			var col := Color("#dcecf8", 0.97) if even else Color("#c6dcef", 0.97)
 			var tt: Texture2D = Gem.tex("lv_tile_a" if even else "lv_tile_b")
 			if grass[x][y]:
@@ -455,14 +458,17 @@ func _draw() -> void:
 			elif grass_target[x][y]:
 				col = Color("#8a6440") if even else Color("#7d5a39")
 			elif tt:
-				# кремовые плитки из листа элементов уровня (референс): под плиткой — тёплая подложка без щелей
 				draw_rect(rect, Color("#e9d2ad"))
-				draw_texture_rect(tt, rect.grow(-1.0), false)
+				tiles[0 if even else 1].append(rect)
 				continue
 			draw_rect(rect, col)
-			# мягкая тень сверху клетки — объём
 			draw_rect(Rect2(rect.position, Vector2(CELL, 4)), Color(0.2, 0.35, 0.55, 0.10))
-	# контур доски по форме поля: тёмная кайма снаружи + светлая линия
+	for i in 2:
+		var tt: Texture2D = Gem.tex("lv_tile_a" if i == 0 else "lv_tile_b")
+		for rect: Rect2 in tiles[i]:
+			draw_texture_rect(tt, rect.grow(-1.0), false)
+	# обводка поля по его форме, как в Royal Match: тень, тёмная кайма, широкий золотой кант, светлый блик.
+	# Каждая сторона клетки на краю поля — отрезок; на концах кружки, чтобы углы были скруглены.
 	var edges: Array = []
 	for x in W:
 		for y in H:
@@ -473,20 +479,42 @@ func _draw() -> void:
 				var nb: Vector2i = Vector2i(x, y) + d
 				if inside(nb) and not hole[nb.x][nb.y]:
 					continue
-				# с деревянной рамкой внешний край обводит рамка — линию рисуем только у дыр внутри поля
-				if Gem.tex("lv_frame") and not inside(nb):
-					continue
 				match d:
 					Vector2i.LEFT: edges.append([p0, p0 + Vector2(0, CELL), Vector2(-1, 0)])
 					Vector2i.RIGHT: edges.append([p0 + Vector2(CELL, 0), p0 + Vector2(CELL, CELL), Vector2(1, 0)])
 					Vector2i.UP: edges.append([p0, p0 + Vector2(CELL, 0), Vector2(0, -1)])
 					Vector2i.DOWN: edges.append([p0 + Vector2(0, CELL), p0 + Vector2(CELL, CELL), Vector2(0, 1)])
-	for e in edges:
-		var o: Vector2 = e[2]
-		draw_line(e[0] + o * 5 - o.orthogonal().abs() * 5, e[1] + o * 5 + o.orthogonal().abs() * 5, Color("#5a3a08"), 10.0)
-	for e in edges:
-		var o: Vector2 = e[2]
-		draw_line(e[0] + o * 3 - o.orthogonal().abs() * 3, e[1] + o * 3 + o.orthogonal().abs() * 3, Color("#ffcf3a"), 5.0)
+	# слои: [смещение наружу, толщина, цвет, сдвиг вниз]
+	var layers := [[12.0, 30.0, Color(0, 0, 0, 0.28), 7.0], [12.0, 26.0, Color("#3b1f05"), 0.0],
+		[11.0, 18.0, Color("#f2a019"), 0.0], [8.0, 6.0, Color("#ffe58a"), 0.0]]
+	for L in layers:
+		var off: float = L[0]
+		var wd: float = L[1]
+		var col: Color = L[2]
+		var dn := Vector2(0, L[3])
+		# одним вызовом на слой: все стороны — полосы (прямоугольники-полигоны), углы — кружки только там,
+		# где сходятся стороны (без повторов); один тип рисования подряд — одна пачка у видеокарты
+		var rects := PackedVector2Array()
+		var corners := {}
+		for e in edges:
+			var o: Vector2 = e[2]
+			var a: Vector2 = e[0] + o * off + dn
+			var b: Vector2 = e[1] + o * off + dn
+			var nrm := o * wd / 2.0
+			rects.append_array([a - nrm, b - nrm, b + nrm, a - nrm, b + nrm, a + nrm])
+			corners[a.round()] = true
+			corners[b.round()] = true
+		var cols := PackedColorArray()
+		cols.resize(rects.size())
+		cols.fill(col)
+		var circ := _circle_tris(corners.keys(), wd / 2.0)
+		var cc := PackedColorArray()
+		cc.resize(circ.size())
+		cc.fill(col)
+		rects.append_array(circ)
+		cols.append_array(cc)
+		RenderingServer.canvas_item_add_triangle_array(get_canvas_item(), PackedInt32Array(), rects, cols)
+	# внутренние углы (у дыр): кант соседних сторон пересекается — поверх кладём клетки заново ниже
 	for x in W:
 		for y in H:
 			if hole[x][y]:
@@ -513,6 +541,18 @@ func _draw() -> void:
 					var by := rect.position.y + rect.size.y - 10
 					draw_line(Vector2(bx, by), Vector2(bx - 4, by - 12), Color("#2f8f2f"), 3.0)
 					draw_line(Vector2(bx + 4, by), Vector2(bx + 8, by - 10), Color("#2f8f2f"), 3.0)
+
+
+## Кружки (для скругления углов обводки) — треугольниками, чтобы рисовать вместе со сторонами одним вызовом.
+func _circle_tris(centers: Array, r: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var seg := 12
+	for c: Vector2 in centers:
+		for i in seg:
+			var a0 := TAU * i / seg
+			var a1 := TAU * (i + 1) / seg
+			out.append_array([c, c + Vector2(cos(a0), sin(a0)) * r, c + Vector2(cos(a1), sin(a1)) * r])
+	return out
 
 
 # ---------- запросы к полю ----------
@@ -879,6 +919,7 @@ func try_swap(a: Vector2i, b: Vector2i) -> void:
 	_idle = 0.0
 	_hits.clear()
 	_player_move = true
+	_swap_axis = 0 if a.y == b.y else 1
 	_grass_carry = grass[a.x][a.y] or grass[b.x][b.y]
 	Sfx.play("swap")
 	await _animate_swap(ga, gb, a, b)
@@ -1131,6 +1172,7 @@ func _cascade(prefer: Array) -> void:
 
 		await _gravity()
 		prefer = []
+		_swap_axis = -1
 	if _player_move:
 		_player_move = false
 		if not _honey_hit:
@@ -1196,6 +1238,9 @@ func _special_for(group: Dictionary) -> int:
 	if has_h and has_v:
 		return Gem.BOMB
 	if longest == 4:
+		# ракета от хода игрока — по направлению свайпа (вверх/вниз → вертикальная), от каскада — вдоль линии
+		if _swap_axis >= 0:
+			return Gem.ROCKET_V if _swap_axis == 1 else Gem.ROCKET_H
 		return Gem.ROCKET_H if dir == "h" else Gem.ROCKET_V
 	if group.get("square", false):
 		return Gem.PROPELLER
@@ -1253,18 +1298,32 @@ func _hit_block(c0: Vector2i) -> void:
 			shake.emit(8.0)
 		block_kind[c.x][c.y] = B_NONE
 		block_nodes.erase(c)
+		# разрушение заметное: вспышка, кольцо, препятствие «подпрыгивает» и лопается
+		var col: Color = BLOCKS[kind].fx if BLOCKS.has(kind) else Color.WHITE
+		_glow_flash(center, col.lerp(Color.WHITE, 0.5), CELL * (2.6 if big else 1.6), 0.25)
+		_pop_ring(center, col.lerp(Color.WHITE, 0.3))
+		if not big:
+			shake.emit(2.5)
 		if n:
-			var tw := create_tween().set_parallel(true)
-			tw.tween_property(n, "scale", Vector2(1.3, 1.3), 0.15)
-			tw.tween_property(n, "modulate:a", 0.0, 0.15)
-			tw.chain().tween_callback(n.queue_free)
+			n.z_index = 3
+			var tw := create_tween()
+			tw.tween_property(n, "modulate", Color(2.2, 2.2, 2.2, 1.0), 0.05)
+			tw.parallel().tween_property(n, "scale", Vector2(1.28, 1.28), 0.09).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+			tw.tween_property(n, "scale", Vector2(0.3, 0.3), 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+			tw.parallel().tween_property(n, "modulate:a", 0.0, 0.12)
+			tw.tween_callback(n.queue_free)
 		goal_hit.emit(BLOCKS[kind].goal if BLOCKS.has(kind) else "crate", to_global(center))
 		_on_block_destroyed(kind, c)
 	elif n:
+		# удар без разрушения: белая вспышка и упругое «сплющивание» — видно, что попали
 		n.queue_redraw()
 		var tw := create_tween()
-		tw.tween_property(n, "scale", Vector2(1.12, 0.9), 0.06)
-		tw.tween_property(n, "scale", Vector2.ONE, 0.1)
+		tw.tween_property(n, "modulate", Color(1.9, 1.9, 1.9, 1.0), 0.04)
+		tw.parallel().tween_property(n, "scale", Vector2(1.22, 0.82), 0.06)
+		tw.tween_property(n, "modulate", Color.WHITE, 0.14)
+		tw.parallel().tween_property(n, "scale", Vector2(0.94, 1.08), 0.08)
+		tw.tween_property(n, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+		_pop_ring(center, (BLOCKS[kind].fx if BLOCKS.has(kind) else Color.WHITE).lerp(Color.WHITE, 0.4))
 
 
 ## Особое поведение после разрушения: куст и горшок раскидывают газон, скворечник выпускает птиц.

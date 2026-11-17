@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.42.0"
+const VERSION := "2.43.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -111,6 +111,8 @@ func _ready() -> void:
 			_run_fxdemo.call_deferred()
 		elif arg == "--inputtest":
 			_run_input_test.call_deferred()
+		elif arg == "--perf":
+			_run_perf.call_deferred()
 		elif arg.begins_with("--balance="):
 			var bs := arg.trim_prefix("--balance=").split(":")
 			_run_balance.call_deferred(int(bs[0]), int(bs[1]), int(bs[2]) if bs.size() > 2 else 3)
@@ -1648,7 +1650,8 @@ func _lvp(x: float, y: float) -> Vector2:
 
 
 func _build_lvref_layers() -> void:
-	var tex := Zoo.art("lvref_bg")
+	# фон без нарисованной рамки поля (tools/lvbg_clean.py): поле крупнее, обводка — по форме поля
+	var tex := Zoo.art("lvref_bg_open") if Zoo.art("lvref_bg_open") else Zoo.art("lvref_bg")
 	_lvref_bg = Control.new()
 	_lvref_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_lvref_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -2749,6 +2752,22 @@ func _close_dialog() -> void:
 
 
 ## Рамка поля обнимает только занятые клетки (поле 6×10, 8×8 и т.п. — без пустых полос внутри рамки).
+## Отступ вокруг поля под обводку (px поля) и верх области поля под шапкой (px референса).
+const BOARD_PAD := 30.0
+const BOARD_TOP_REF := 330.0
+
+
+func _board_hi() -> Vector2i:
+	if _board.hole.size() < Levels.W:
+		return Vector2i(Levels.W - 1, Levels.H - 1)
+	var hi := Vector2i(-1, -1)
+	for x in Levels.W:
+		for y in Levels.H:
+			if not _board.hole[x][y]:
+				hi = Vector2i(maxi(hi.x, x), maxi(hi.y, y))
+	return hi if hi.x >= 0 else Vector2i(Levels.W - 1, Levels.H - 1)
+
+
 func _board_lo() -> Vector2i:
 	if _board.hole.size() < Levels.W:
 		return Vector2i.ZERO
@@ -2770,9 +2789,9 @@ func _fit_board_to_shape() -> void:
 				hi = Vector2i(maxi(hi.x, x), maxi(hi.y, y))
 	if hi.x < 0:
 		return
-	# +10 px по краям — чтобы золотая обводка доски не обрезалась
-	_board_clip.custom_minimum_size = Vector2(hi - lo + Vector2i.ONE) * Board.CELL + Vector2(20, 20)
-	_board.position = -Vector2(lo) * Board.CELL + Vector2(10, 10)
+	# +BOARD_PAD px по краям — чтобы обводка поля (как в Royal Match) не обрезалась
+	_board_clip.custom_minimum_size = Vector2(hi - lo + Vector2i.ONE) * Board.CELL + Vector2.ONE * BOARD_PAD * 2.0
+	_board.position = -Vector2(lo) * Board.CELL + Vector2.ONE * BOARD_PAD
 	_board_clip.size = _board_clip.custom_minimum_size
 	_board_frame.reset_size()
 	_place_pause()
@@ -2803,14 +2822,23 @@ func _board_scale() -> float:
 func _board_rest() -> Vector2:
 	if _lv_goal_card and _lvref():
 		_layout_level_ref()
-		# клетки — ровно во внутренности рамки фона: (105, 400) px фона, клетка 86 px
+		# поле крупное, как в Royal Match: клетка — по ширине экрана (8 столбцов, поля по 14 px референса)
+		# или по высоте между шапкой и лотком (10 рядов); фигура поля — по центру этой области
 		var kk := _level_screen.size.x / LVW
-		var cellg := 78.75 * kk
+		var top := (BOARD_TOP_REF - LVREF_TOP) * kk
+		var bot := _level_screen.size.y - (1847.0 - LVREF_BAND.y) * kk - 10.0 * kk
+		var cellg := minf((LVW - 48.0) * kk / 8.0, (bot - top) / 10.0)
 		var ks := cellg / Board.CELL
 		_board_frame.scale = Vector2(ks, ks)
 		var lo := _board_lo()
-		var clip_pos := _board_clip.position
-		return _lvp(100, 462) * kk + Vector2(lo) * cellg - (clip_pos + Vector2(10, 10)) * ks
+		var hi := _board_hi()
+		var shape := Vector2(hi - lo + Vector2i.ONE) * cellg
+		var origin := Vector2((_level_screen.size.x - shape.x) / 2.0, top + (bot - top - shape.y) / 2.0)
+		# место поля внутри рамки — по отступам её стиля (позиция клипа может быть старой, пока не прошла раскладка)
+		var sb := _board_frame.get_theme_stylebox("panel")
+		var clip_pos := Vector2(sb.get_margin(SIDE_LEFT), sb.get_margin(SIDE_TOP)) if sb else _board_clip.position
+		_board_frame.size = _board_frame.get_combined_minimum_size()
+		return origin - (clip_pos + Vector2.ONE * BOARD_PAD) * ks
 	if _lv_goal_card:
 		_layout_level_ref()
 		# поле по референсу: клетки 8 столбцов на 553 px (105…795 px референса), верх клеток на y=320
@@ -3259,6 +3287,8 @@ func _refresh_coins() -> void:
 
 
 func _start_level(n: int) -> void:
+	if not _bot and Engine.time_scale != 1.0:
+		Engine.time_scale = 1.0  # на случай, если пропуск финала оборвали
 	if _board:
 		_board.call_deferred("warm_fx")
 	_clear_overlay()
@@ -3942,13 +3972,45 @@ func _on_settled() -> void:
 				_show_lose()
 		"bonus":
 			_state = "done"
+			if _bonus_skip:
+				_bonus_skip = false
+				Engine.time_scale = 1.0
 			_show_win()
+
+
+var _bonus_skip := false
 
 
 func _begin_bonus() -> void:
 	_state = "bonus"
 	_panda_react("win")
 	_board.input_enabled = false
+	_bonus_skip = false
+	# финал можно пропустить: тап по экрану — всё доигрывается в 6 раз быстрее (монеты за ходы те же)
+	if not _bot:
+		var skip := Button.new()
+		skip.flat = true
+		for stn in ["normal", "hover", "pressed", "focus"]:
+			skip.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+		skip.set_anchors_preset(Control.PRESET_FULL_RECT)
+		skip.size = size
+		var hint := Label.new()
+		hint.text = "Нажми, чтобы пропустить"
+		hint.theme_type_variation = "TitleLabel"
+		hint.add_theme_font_size_override("font_size", 30)
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hint.size = Vector2(size.x, 50)
+		hint.position = Vector2(0, size.y - 300)
+		hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		skip.add_child(hint)
+		var ht := hint.create_tween().set_loops()
+		ht.tween_property(hint, "modulate:a", 0.4, 0.6)
+		ht.tween_property(hint, "modulate:a", 1.0, 0.6)
+		skip.pressed.connect(func() -> void:
+			_bonus_skip = true
+			Engine.time_scale = 6.0
+			skip.queue_free())
+		_overlay.add_child(skip)
 	var l := _big_text("Уровень пройден!", 76, Color("#ffe14d"), Color("#ff9a1a"))
 	_overlay.add_child(l)
 	l.size = size
@@ -3959,7 +4021,7 @@ func _begin_bonus() -> void:
 	bt.tween_interval(0.6)
 	bt.tween_property(l, "modulate:a", 0.0, 0.25)
 	bt.tween_callback(l.queue_free)
-	await get_tree().create_timer(1.0).timeout
+	await get_tree().create_timer(0.7).timeout
 	var bonus := _moves
 	_level["bonus_coins"] = bonus * COINS_PER_MOVE
 	# праздник: каждый оставшийся ход вылетает бабочкой из счётчика и превращает фишку в бабочку
@@ -3973,7 +4035,7 @@ func _begin_bonus() -> void:
 				var g: Node2D = _board.gem_at(Vector2i(x, y))
 				if g and g.special == Gem.NONE and not _board._chained(Vector2i(x, y)):
 					cells.append(Vector2i(x, y))
-		if cells.is_empty():
+		if cells.is_empty() or _bonus_skip:
 			break
 		var cell: Vector2i = cells.pick_random()
 		_moves -= 1
@@ -6599,6 +6661,63 @@ func _run_balance(first: int, last: int, tries: int) -> void:
 	print("BAL done")
 	get_tree().quit()
 
+## Замер нагрузки: экран уровня в покое и во время ходов — вызовы отрисовки, объекты, время кадра.
+func _run_perf() -> void:
+	_bot = true
+	Save.seen_tips = TIPS.keys()
+	var report := func(tag: String) -> void:
+		var dc := 0.0
+		var pt := 0.0
+		for i in 30:
+			await get_tree().process_frame
+			dc += Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+			pt += Performance.get_monitor(Performance.TIME_PROCESS)
+		print("PERF %s draw_calls %.0f items %.0f objects %d process_ms %.2f nodes %d" % [tag, dc / 30.0,
+			Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME), Performance.get_monitor(Performance.OBJECT_COUNT),
+			pt / 30.0 * 1000.0, Performance.get_monitor(Performance.OBJECT_NODE_COUNT)])
+	await get_tree().create_timer(1.0).timeout
+	await report.call("home")
+	_start_level(40)
+	await get_tree().create_timer(2.5).timeout
+	await report.call("level_idle")
+	for nd in _level_screen.get_children():
+		if nd is CanvasItem and nd.visible:
+			nd.visible = false
+			await report.call("without_" + str(nd.name) + "_" + nd.get_class())
+			nd.visible = true
+	_board.visible = false
+	await report.call("without_board_only")
+	_board.visible = true
+	var gems: Array = []
+	for ch in _board.get_children():
+		if ch is Gem:
+			gems.append(ch)
+	for g in gems:
+		g.visible = false
+	await report.call("without_gems")
+	for g in gems:
+		g.visible = true
+	for ch in _board.get_children():
+		if ch is CanvasItem and not ch is Gem and ch.visible:
+			ch.visible = false
+			await report.call("b_without_" + str(ch.name) + "_" + ch.get_class() + "_" + str(ch.get_child_count()))
+			ch.visible = true
+	_board.self_modulate.a = 0.0
+	_board.set_meta("x", 1)
+	for k in 4:
+		var all: Array = _board.all_moves()
+		if not all.is_empty():
+			var m: Array = all[0]
+			if m[0] == m[1]:
+				_board.activate_single(m[0])
+			else:
+				_board.try_swap(m[0], m[1])
+		await get_tree().create_timer(0.25).timeout
+		await report.call("level_move%d" % k)
+		while _board.busy:
+			await get_tree().process_frame
+	get_tree().quit()
+
 ## Проверка настоящего ввода: свайп и два тапа через очередь событий, как палец на телефоне.
 func _run_input_test() -> void:
 	Save.hearts = Save.MAX_HEARTS
@@ -6786,6 +6905,8 @@ func _run_winshot(dir: String) -> void:
 
 func _run_shots(dir: String) -> void:
 	DirAccess.make_dir_recursive_absolute(dir)
+	if OS.get_environment("NO_TIPS") != "":
+		Save.seen_tips = TIPS.keys()
 	Save.hearts = 3
 	Save.heart_at = Save.now() + 754
 	Save.stars = 6

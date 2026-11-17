@@ -92,6 +92,26 @@ func _glints(col: Color, n: int) -> void:
 		draw_line(p - Vector2(0, r), p + Vector2(0, r), Color(col, 0.9), 2.0, true)
 
 
+const ATLAS_CELL := 240.0
+static var _atlas := {}
+
+
+## Обычная фишка цвета c из общего атласа (AtlasTexture — общая картинка, поэтому отрисовка склеивается).
+static func _atlas_gem(c: int) -> Texture2D:
+	if c < 0 or c > 5:
+		return null
+	if not _atlas.has(c):
+		var base := tex("gems_atlas")
+		if base == null:
+			_atlas[c] = null
+		else:
+			var a := AtlasTexture.new()
+			a.atlas = base
+			a.region = Rect2(c * ATLAS_CELL, 0, ATLAS_CELL, ATLAS_CELL)
+			_atlas[c] = a
+	return _atlas[c]
+
+
 static func tex(name: String) -> Texture2D:
 	if not _tex.has(name):
 		var path := "res://assets/art/%s.png" % name
@@ -119,6 +139,14 @@ func _draw() -> void:
 				t = tex("orb")
 				if t:
 					_draw_tex(t, box, _t * 3.0, 1.0 + sin(_t * 20.0) * 0.06)
+				return
+			# фишка с тенью — одна картинка из общего атласа (tools/gem_atlas.py): всё поле рисуется одной пачкой
+			var at := _atlas_gem(color)
+			if at:
+				var s := box / 192.0
+				draw_set_transform(Vector2.ZERO, 0.0, Vector2(s, s))
+				draw_texture(at, -Vector2(ATLAS_CELL, ATLAS_CELL) / 2.0)
+				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 				return
 			t = tex("gem_%d" % color)
 			if t:
