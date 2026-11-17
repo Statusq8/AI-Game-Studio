@@ -249,6 +249,8 @@ func _draw_block(n: Node2D, cell: Vector2i) -> void:
 	var hp: int = block_hp[cell.x][cell.y]
 	var kind: int = block_kind[cell.x][cell.y]
 	var t := block_tex(kind, block_max[cell.x][cell.y] - hp)
+	if kind == B_COLORBOX:
+		t = Gem.tex("ob_colorbox_%d" % clampi(block_color[cell.x][cell.y], 0, 4))
 	var big := is_big(cell)
 	if t:
 		var sz := t.get_size()
@@ -1312,6 +1314,8 @@ func _hit_block(c0: Vector2i) -> void:
 	var kind: int = block_kind[c.x][c.y]
 	Sfx.play("glass" if kind in [B_VASE, B_JAR, B_SHELL] else "wood", randf_range(0.9, 1.1), -4.0)
 	var stage_tex := block_tex(kind, block_max[c.x][c.y] - block_hp[c.x][c.y])
+	if kind == B_COLORBOX:
+		stage_tex = Gem.tex("ob_colorbox_%d" % clampi(block_color[c.x][c.y], 0, 4))
 	block_hp[c.x][c.y] -= 1
 	var n: Node2D = block_nodes.get(c)
 	var center := cell_pos(c) + (Vector2(CELL, CELL) / 2.0 if big else Vector2.ZERO)

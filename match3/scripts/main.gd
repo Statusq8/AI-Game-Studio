@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "3.0.0"
+const VERSION := "3.0.1"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -3490,8 +3490,9 @@ func _draw_goal_icon(ci: CanvasItem, kind: String, c: Vector2, px := 54.0) -> vo
 				Board.draw_stone(ci, c, 24.0, 3)
 				return
 		"colorbox":
-			Board.draw_colorbox(ci, c, 24.0, 0)
-			return
+			if Gem.tex("ob_colorbox_0") == null:
+				Board.draw_colorbox(ci, c, 24.0, 0)
+				return
 		"birdhouse":
 			if Gem.tex("ob_birdhouse") == null:
 				Board.draw_birdhouse(ci, c, 24.0, 3)
@@ -3863,7 +3864,7 @@ func _on_gem_cleared(color: int, at: Vector2) -> void:
 const GOAL_NAMES := {"stone": "камни", "colorbox": "цветные ящики", "birdhouse": "скворечник", "color": "фишки", "crate": "ящики", "vase": "горшки", "chain": "лианы", "grass": "газон", "item": "яйца",
 	"ice": "лёд", "honey": "мёд", "safe": "сейфы", "jar": "банки", "cage": "клетки", "balloon": "шарики", "can": "лейки", "flower": "цветы", "bush": "кусты", "shell": "ракушки"}
 const GOAL_TEX := {"crate": "ob_crate_0", "vase": "ob_pot_0", "chain": "ob_vines", "grass": "ob_tile_grass", "ice": "ob_tile_ice",
-	"honey": "ob_honey", "safe": "ob_safe", "jar": "ob_jar", "cage": "ob_cage", "balloon": "ob_balloon", "can": "ob_can", "flower": "ob_flower_0", "bush": "ob_bush", "shell": "ob_shell_0", "item": "item_egg"}
+	"honey": "ob_honey", "safe": "ob_safe", "jar": "ob_jar", "cage": "ob_cage", "balloon": "ob_balloon", "can": "ob_can", "stone": "ob_stone", "birdhouse": "ob_birdhouse", "colorbox": "ob_colorbox_0", "flower": "ob_flower_0", "bush": "ob_bush", "shell": "ob_shell_0", "item": "item_egg"}
 
 
 func _on_goal_hit(kind: String, at: Vector2) -> void:
