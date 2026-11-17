@@ -1523,12 +1523,13 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 		if dl > 0.0:
 			tw.tween_interval(dl)
 			tw.chain()
-		# «к камере»: фишка приподнимается и растёт, затем поворачивается ребром (сжатие по X) и тает
-		tw.tween_property(g, "scale", Vector2(1.35, 1.35), 0.09).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-		tw.tween_property(g, "position:y", g.position.y - 8, 0.09).set_ease(Tween.EASE_OUT)
-		tw.tween_property(g, "modulate", Color(1.7, 1.7, 1.7), 0.09)
-		tw.chain().tween_property(g, "scale", Vector2(0.0, 1.25), 0.13).set_ease(Tween.EASE_IN)
-		tw.tween_property(g, "modulate", Color(2.2, 2.2, 2.2, 0.0), 0.13).set_ease(Tween.EASE_IN)
+		# хлопок, как в Royal Match: фишка коротко вспыхивает и раздувается, затем быстро сжимается в точку
+		# (раньше сплющивалась «ребром» — на поле это выглядело как полоска-блин)
+		tw.tween_property(g, "scale", Vector2(1.28, 1.28), 0.07).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		tw.tween_property(g, "modulate", Color(1.8, 1.8, 1.8), 0.07)
+		tw.chain().tween_property(g, "scale", Vector2(0.05, 0.05), 0.11).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_property(g, "rotation", randf_range(-0.5, 0.5), 0.11)
+		tw.tween_property(g, "modulate", Color(2.2, 2.2, 2.2, 0.0), 0.11).set_ease(Tween.EASE_IN)
 		tw.chain().tween_callback(g.queue_free)
 		last = tw
 	if _grass_carry:
@@ -1538,7 +1539,8 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 			grassify[c2] = true
 	_grow_grass(grassify)
 	if last:
-		await get_tree().create_timer(max_dl + 0.24).timeout
+		# фишки сверху начинают падать сразу, как исчезли эти (раньше пустота висела ~0.25 с)
+		await get_tree().create_timer(max_dl + 0.15).timeout
 
 
 ## Исчезновение особой фишки: у каждой своя анимация.
@@ -1959,9 +1961,10 @@ func _gravity() -> void:
 			# в полёте чуть вытягивается по вертикали — ощущение скорости
 			tw.parallel().tween_property(g, "scale", Vector2(0.93, 1.09), t * 0.6).set_delay(t * 0.25)
 		# «желе»: сплющивается при приземлении (сильнее после долгого падения), подскакивает и пружинит
-		tw.tween_property(g, "scale", Vector2(1.0 + 0.24 * k, 1.0 - 0.26 * k), 0.06)
-		tw.tween_property(g, "scale", Vector2(1.0 - 0.1 * k, 1.0 + 0.12 * k), 0.09)
-		tw.parallel().tween_property(g, "position:y", target.y - 6.0 * k, 0.09).set_ease(Tween.EASE_OUT)
+		# приземление мягче (было сплющивание до «блина»): лёгкий отскок, как в Royal Match
+		tw.tween_property(g, "scale", Vector2(1.0 + 0.12 * k, 1.0 - 0.12 * k), 0.05)
+		tw.tween_property(g, "scale", Vector2(1.0 - 0.05 * k, 1.0 + 0.06 * k), 0.08)
+		tw.parallel().tween_property(g, "position:y", target.y - 5.0 * k, 0.08).set_ease(Tween.EASE_OUT)
 		tw.tween_property(g, "scale", Vector2(1.0 + 0.04 * k, 1.0 - 0.04 * k), 0.07)
 		tw.parallel().tween_property(g, "position:y", target.y, 0.07).set_ease(Tween.EASE_IN)
 		tw.tween_property(g, "scale", Vector2.ONE, 0.07)
@@ -2629,7 +2632,8 @@ func _puff(at: Vector2) -> void:
 	if _fx_load() > FX_SOFT:
 		return
 	# клуб мультяшного дыма (покадровый, объёмный)
-	var sp := _flipbook("smoke", at + Vector2(randf_range(-4, 4), randf_range(-4, 4)), randf_range(52, 66), 0.5, Color(1, 1, 1, 0.9), false, 4)
+	# след ракеты — тёплая искристая вспышка, а не серый дым
+	var sp := _flipbook("smoke", at + Vector2(randf_range(-4, 4), randf_range(-4, 4)), randf_range(40, 50), 0.3, Color(1.0, 0.85, 0.55, 0.55), false, 4)
 	if sp:
 		sp.rotation = randf() * TAU
 
@@ -2699,8 +2703,9 @@ func _bomb_fx(cell: Vector2i, power: float) -> void:
 	var gsc := get_global_transform().get_scale().x
 	# объёмный мультяшный взрыв (покадровый) + свечение
 	# взрыв из ИИ-видео владельца (если листа нет — прежний)
-	if _flipbook("boom", at, CELL * 3.8 * power * gsc, 0.9) == null:
-		_flipbook("explosion", at, CELL * 4.2 * power * gsc, 0.9)
+	# взрыв короче и меньше — раньше жёлтое облако на полсекунды закрывало пол-поля
+	if _flipbook("boom", at, CELL * 2.7 * power * gsc, 0.45) == null:
+		_flipbook("explosion", at, CELL * 3.0 * power * gsc, 0.45)
 	_glow_flash(at, Color(1.0, 0.75, 0.35), CELL * 3.0 * power * gsc, 0.3)
 	var flash := Node2D.new()
 	flash.position = at
