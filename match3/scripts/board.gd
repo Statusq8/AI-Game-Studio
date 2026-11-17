@@ -1489,7 +1489,7 @@ func _grow_grass(cells: Dictionary) -> void:
 
 ## Убирает клетки; особые фишки в зоне взрыва срабатывают цепочкой.
 ## grassify — клетки, которые после очистки покрываются травой.
-func _clear(initial: Dictionary, grassify: Dictionary = {}, seed_delay: Dictionary = {}) -> void:
+func _clear(initial: Dictionary, grassify: Dictionary = {}, seed_delay: Dictionary = {}, force_all := false) -> void:
 	var pending: Array = initial.keys()
 	var cleared := {}
 	var delay_of := seed_delay.duplicate()  # клетка -> задержка исчезновения (ракета долетает не сразу)
@@ -1513,6 +1513,13 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}, seed_delay: Dictiona
 		if g == null or g.special == Gem.ITEM:
 			continue
 		var cdl: float = delay_of.get(c, 0.0)
+		if force_all and _chained(c):
+			# два шара: оковы (лёд, лианы, мёд) слетают целиком, и фишка/бустер внутри тоже срабатывает
+			var guard := 0
+			while _chained(c) and guard < 6:
+				_hits.erase(c)
+				_break_chain(c)
+				guard += 1
 		if _chained(c):
 			# лианы/мёд под целью бабочки или ракеты ломаются, когда удар долетел, а не сразу
 			if cdl > 0.05:
@@ -1774,35 +1781,39 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 	var k2: int = g2.special
 	var area := {}
 	if k1 == Gem.ORB and k2 == Gem.ORB:
-		big_hit.emit(4.0)
-		for g in [g1, g2]:
-			g.set_special(Gem.NONE)
-			g.color = -1
-		# радужная цепная молния: из точки обмена разом бегут цепи по фишкам каждого цвета
-		var by_col := {}
-		for x in W:
-			for y in H:
-				var c := Vector2i(x, y)
-				var g := gem_at(c)
-				if g and g != g1 and g != g2 and g.color >= 0:
-					if not by_col.has(g.color):
-						by_col[g.color] = []
-					by_col[g.color].append(c)
+		# два шара (как в Royal Match): шары слетаются в точку обмена, раскручиваются и вспыхивают,
+		# радужная ударная волна идёт от центра — всё поле лопается волной по расстоянию,
+		# все бустеры на поле срабатывают, препятствия получают удар
+		Sfx.play("orb")
+		for g: Node2D in [g1, g2]:
+			g.z_index = 6
+			var t := g.create_tween().set_parallel(true)
+			t.tween_property(g, "position", cell_pos(at), 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
+			t.tween_property(g, "scale", Vector2(1.7, 1.7), 0.4).set_trans(Tween.TRANS_SINE)
+			t.tween_property(g, "rotation", TAU * 1.5, 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 		if fx:
 			var at_fx := fx.to_local(to_global(cell_pos(at)))
 			var gk := get_global_transform().get_scale().x
-			_glow_flash(at_fx, Color(1, 1, 1), CELL * 4.0 * gk, 0.5)
-			_flipbook("birth", at_fx, CELL * 4.0 * gk, 0.7, Color.WHITE, true, 8)
-		var longest := 0.0
-		for col in by_col:
-			var n: int = by_col[col].size()
-			longest = maxf(longest, n * clampf(0.75 / maxf(1.0, n), 0.04, 0.09))
-			_chain_lightning(at, by_col[col], col)
-		await get_tree().create_timer(longest + 0.25).timeout
+			_glow_flash(at_fx, Color(1, 0.95, 0.8), CELL * 2.5 * gk, 0.45)
+		await get_tree().create_timer(0.42).timeout
+		for g in [g1, g2]:
+			g.set_special(Gem.NONE)
+			g.color = -1
+			g.visible = false
+		big_hit.emit(4.5)
+		if fx:
+			var at_fx := fx.to_local(to_global(cell_pos(at)))
+			var gk := get_global_transform().get_scale().x
+			_glow_flash(at_fx, Color.WHITE, CELL * 5.0 * gk, 0.5)
+			_flipbook("orbburst", at_fx, CELL * 6.0 * gk, 1.0, Color.WHITE, false, 9)
+			_shockwave(at_fx, CELL * 12.0 * gk, 0.75)
+		var seed := {}
 		for x in W:
 			for y in H:
-				area[Vector2i(x, y)] = true
-		await _clear(area)
+				var c := Vector2i(x, y)
+				area[c] = true
+				seed[c] = 0.06 + Vector2(c - at).length() * 0.055
+		await _clear(area, {}, seed, true)
 		return
 	if k1 == Gem.ORB or k2 == Gem.ORB:
 		var orb := g1 if k1 == Gem.ORB else g2
@@ -1983,6 +1994,11 @@ func _chain_lightning(start: Vector2i, targets: Array, col: int, on_hit := Calla
 			var t := create_tween().set_parallel(true)
 			t.tween_property(g, "scale", Vector2(1.25, 1.25), 0.08).set_trans(Tween.TRANS_BACK)
 			t.tween_property(g, "modulate", Color(1.8, 1.8, 2.0), 0.08)
+			if _chained(nxt) or g.special != Gem.NONE:
+				# скованная фишка/бустер останется на поле — вспышка гаснет, иначе она так и «светится»
+				t.chain().tween_interval(0.25)
+				t.chain().tween_property(g, "scale", Vector2.ONE, 0.15)
+				t.parallel().tween_property(g, "modulate", Color.WHITE, 0.15)
 		cur = nxt
 		await get_tree().create_timer(step).timeout
 	await get_tree().create_timer(0.12).timeout
@@ -3003,6 +3019,30 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int, delay: float = 0.0) -
 	tw.tween_callback(shadow.queue_free)
 	tw.tween_property(p, "modulate:a", 0.0, 0.08)
 	tw.tween_callback(p.queue_free)
+
+
+## Радужная ударная волна: кольцо растёт от точки до max_r и гаснет.
+func _shockwave(at: Vector2, max_r: float, time: float) -> void:
+	if fx == null:
+		return
+	var n := Node2D.new()
+	n.position = at
+	n.z_index = 8
+	fx.add_child(n)
+	var st := {"r": 10.0, "a": 1.0}
+	n.draw.connect(func() -> void:
+		var r: float = st.r
+		var w := clampf(r * 0.18, 8.0, 60.0)
+		for i in 6:
+			var col := Color.from_hsv(float(i) / 6.0, 0.55, 1.0, st.a * 0.55)
+			n.draw_arc(Vector2.ZERO, maxf(1.0, r - i * w / 6.0), 0, TAU, 64, col, w / 6.0 + 1.0, true)
+		n.draw_arc(Vector2.ZERO, r + 2.0, 0, TAU, 64, Color(1, 1, 1, st.a * 0.9), 4.0, true))
+	var tw := n.create_tween()
+	tw.tween_method(func(u: float) -> void:
+		st.r = lerpf(10.0, max_r, 1.0 - pow(1.0 - u, 2.0))
+		st.a = 1.0 - u * u
+		n.queue_redraw(), 0.0, 1.0, time)
+	tw.tween_callback(n.queue_free)
 
 
 func _pop_ring(at: Vector2, color: Color) -> void:

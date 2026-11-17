@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "3.0.1"
+const VERSION := "3.0.2"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -6914,6 +6914,8 @@ func _run_orbdemo() -> void:
 	_bot = true
 	Save.seen_tips = TIPS.keys()
 	var plan := [[3, Gem.ORB, Gem.ROCKET_H], [3, Gem.ORB, Gem.BOMB]]
+	if OS.get_environment("ORBORB") != "":
+		plan = [[20, Gem.ORB, Gem.ORB]]
 	if OS.get_environment("PROPDEMO") != "":
 		plan = [[4, Gem.PROPELLER, Gem.ROCKET_H], [6, Gem.PROPELLER, Gem.NONE]]
 	for pl in plan:
@@ -6921,8 +6923,9 @@ func _run_orbdemo() -> void:
 		_start_level(pl[0])
 		await get_tree().create_timer(1.6).timeout
 		_moves = 99
-		var a: Node2D = _board.gem_at(Vector2i(3, 4))
-		var b: Node2D = _board.gem_at(Vector2i(4, 4))
+		var _dy := 6 if pl[0] == 20 else 4
+		var a: Node2D = _board.gem_at(Vector2i(3, _dy))
+		var b: Node2D = _board.gem_at(Vector2i(4, _dy))
 		if a and b:
 			a.set_special(pl[1])
 			if pl[1] == Gem.ORB:
@@ -6930,10 +6933,18 @@ func _run_orbdemo() -> void:
 			await get_tree().create_timer(0.4).timeout
 			print("ORB frame %d" % Engine.get_frames_drawn())
 			if kind == Gem.NONE:
-				_board.activate_single(Vector2i(3, 4))
+				_board.activate_single(Vector2i(3, _dy))
 			else:
 				b.set_special(kind)
-				_board.try_swap(Vector2i(3, 4), Vector2i(4, 4))
+				if kind == Gem.ORB:
+					b.color = -1
+					# бустеры на поле — должны сработать все
+					for pc in [Vector2i(1, 1), Vector2i(6, 2), Vector2i(2, 8), Vector2i(6, 8), Vector2i(0, 5)]:
+						var pg: Node2D = _board.gem_at(pc)
+						if pg:
+							pg.set_special([Gem.ROCKET_H, Gem.BOMB, Gem.PROPELLER, Gem.ROCKET_V, Gem.BOMB][pc.x % 5])
+					await get_tree().create_timer(0.3).timeout
+				_board.try_swap(Vector2i(3, _dy), Vector2i(4, _dy))
 		await get_tree().create_timer(0.3).timeout
 		while _board.busy:
 			await get_tree().process_frame
