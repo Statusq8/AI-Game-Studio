@@ -9,13 +9,13 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "3.0.2"
+const VERSION := "3.1.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
 	{"coins": 300}, {"rockets": 2, "shuffle": 1}, {"coins": 500, "pre_orb": 1, "pre_bomb": 1, "hammer": 1}]
 ## Сундук за победы: сколько побед нужно и что в нём.
-const CHEST_WINS := 8
+const CHEST_WINS := 10
 const CHEST_COINS := 150
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
@@ -1195,7 +1195,7 @@ func _show_chest() -> void:
 		if Save.chest_wins >= CHEST_WINS:
 			var pool := ["hammer", "rockets", "shuffle", "pre_rocket", "pre_bomb", "pre_orb"]
 			pool.shuffle()
-			var rw := {"coins": CHEST_COINS, pool[0]: 1, pool[1]: 1}
+			var rw := {"coins": CHEST_COINS, pool[0]: 1}
 			_give(rw)
 			Save.chest_wins = 0
 			Save.store()
@@ -3342,12 +3342,12 @@ func _start_level(n: int) -> void:
 		if _pre_selected.get(b[0], false) and Save.use_booster(b[0]):
 			fly_kinds.append(b[2])
 	# серия побед (ослаблено по плейтесту): 3 победы — ракета, 5 — ещё бомба, 8 — ещё шар
-	var bonus := [[3, 1], [5, 3], [8, 4]]
+	var bonus := [[3, 1], [5, 3], [8, 4]]  # отметки 3/5/8 на дорожке серии; супер-бонус за 10 убран — игра была слишком лёгкой
 	for b in bonus:
 		if Save.streak >= b[0]:
 			fly_kinds.append(b[1])
 	# супер-бонус: 10 побед подряд — ещё один радужный шар и бабочка
-	if Save.streak >= 10:
+	if false and Save.streak >= 10:
 		fly_kinds.append(4)
 		fly_kinds.append(5)
 	for i in fly_kinds.size():

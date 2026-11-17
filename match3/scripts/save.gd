@@ -27,7 +27,7 @@ var chest_wins := 0
 var hearts := MAX_HEARTS
 var heart_at := 0.0
 ## Бустеры: на уровне (молот, ряд, столбец, перемешать) и до уровня (ракета, бомба, шар).
-var boosters := {"hammer": 2, "rockets": 2, "arrow": 0, "cannon": 0, "shuffle": 2, "pre_rocket": 2, "pre_bomb": 2, "pre_orb": 1}  # unix-время, когда придёт следующее сердце (0 — сердца полные)
+var boosters := {"hammer": 1, "rockets": 1, "arrow": 0, "cannon": 0, "shuffle": 1, "pre_rocket": 1, "pre_bomb": 1, "pre_orb": 0}  # unix-время, когда придёт следующее сердце (0 — сердца полные)
 
 
 ## Режим доводки первого уровня: при каждом запуске — чистый прогресс (как у нового игрока).
