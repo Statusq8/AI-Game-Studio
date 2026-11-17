@@ -32,11 +32,11 @@ const CELL := 84.0
 const PROPELLER_TIME := 0.9  # полёт бабочки к цели: 0.18 взлёт + 0.55 полёт + 0.13 нырок (было 1.5 — «висело»)
 const PROPELLER_DELAY := 0.15  # сначала взрываются соседи, потом бабочка взлетает
 const ROCKET_CELL_TIME := 0.07  # ракета пролетает клетку за столько секунд
-enum { B_NONE, B_CRATE, B_VASE, B_SAFE, B_JAR, B_CAGE, B_BALLOON, B_FLOWER, B_BUSH, B_SHELL, B_STONE, B_COLORBOX, B_BIRDHOUSE }
+enum { B_NONE, B_CRATE, B_VASE, B_SAFE, B_JAR, B_CAGE, B_BALLOON, B_FLOWER, B_BUSH, B_SHELL, B_STONE, B_COLORBOX, B_BIRDHOUSE, B_CAN }
 ## Препятствия-блоки: цель уровня, бьёт ли совпадение рядом, картинки по стадиям поломки.
 const BLOCKS := {
 	B_CRATE: {"goal": "crate", "adj": true, "tex": ["ob_crate_0", "ob_crate_1", "ob_crate_2"], "fx": Color("#c98a4b")},
-	B_VASE: {"goal": "vase", "adj": false, "tex": ["ob_pot_0", "ob_pot_1"], "fx": Color("#e0663a")},
+	B_VASE: {"goal": "vase", "adj": true, "tex": ["ob_pot_0", "ob_pot_1"], "fx": Color("#e0663a")},
 	B_SAFE: {"goal": "safe", "adj": true, "tex": ["ob_safe"], "fx": Color("#8a96b0")},
 	B_JAR: {"goal": "jar", "adj": true, "tex": ["ob_jar"], "fx": Color("#ffd23f")},
 	B_CAGE: {"goal": "cage", "adj": true, "tex": ["ob_cage"], "fx": Color("#ffcf5a")},
@@ -48,6 +48,8 @@ const BLOCKS := {
 	B_STONE: {"goal": "stone", "adj": false, "tex": ["ob_stone"], "fx": Color("#9aa3b5")},
 	B_COLORBOX: {"goal": "colorbox", "adj": true, "tex": [], "fx": Color("#ffffff")},
 	B_BIRDHOUSE: {"goal": "birdhouse", "adj": true, "tex": ["ob_birdhouse"], "fx": Color("#c98a4b")},
+	# лейка: 3 удара рядом (цифра прочности на картинке)
+	B_CAN: {"goal": "can", "adj": true, "tex": ["ob_can"], "fx": Color("#3f8cff")},
 }
 
 var W := 8
@@ -139,7 +141,7 @@ func setup(level: Dictionary) -> void:
 			hole[x].append(c in level.get("holes", []))
 			honey[x].append(c in level.get("honey", []))
 			chain[x].append(int(level.chains.get(c, 0)))
-			grass[x].append(c in level.grass_start)
+			grass[x].append(c in level.grass_target)  # газон как в Royal Match: лежит с начала, совпадение на нём его срезает
 			grass_target[x].append(c in level.grass_target)
 	# слой сияния под особыми фишками: рисуется до фишек, поэтому соседние фишки его не закрывают
 	_halos = preload("res://scripts/redraw_layer.gd").new()
@@ -476,8 +478,6 @@ func _draw() -> void:
 			var tt: Texture2D = Gem.tex("lv_tile_a" if even else "lv_tile_b")
 			if grass[x][y]:
 				col = Color("#5cc24a") if even else Color("#4fb33f")
-			elif grass_target[x][y]:
-				col = Color("#8a6440") if even else Color("#7d5a39")
 			elif tt:
 				draw_rect(rect, Color("#e9d2ad"))
 				tiles[0 if even else 1].append(rect)
@@ -603,6 +603,28 @@ func _spawn_cell(c: Vector2i) -> bool:
 
 
 ## Фишка не двигается: на ней лианы или мёд.
+## Для бота подбора сложности: рядом с клеткой (или на ней) есть препятствие/газон.
+func obstacle_near(c: Vector2i) -> bool:
+	for d in [Vector2i.ZERO, Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+		var n: Vector2i = c + d
+		if not inside(n):
+			continue
+		if block_kind[n.x][n.y] != B_NONE or _chained(n) or (d == Vector2i.ZERO and grass[n.x][n.y]):
+			return true
+	return false
+
+
+## Для бота: в этом столбце выше клетки есть яйцо/птица — ход здесь спускает их вниз.
+func item_above(c: Vector2i) -> bool:
+	if not inside(c):
+		return false
+	for y in range(0, c.y):
+		var g := gem_at(Vector2i(c.x, y))
+		if g and g.special == Gem.ITEM:
+			return true
+	return false
+
+
 ## Фишка скована: лианы, мёд или лёд — её нельзя двигать, она не падает; удар ломает оковы, фишка остаётся.
 func _chained(c: Vector2i) -> bool:
 	return inside(c) and (chain[c.x][c.y] > 0 or honey[c.x][c.y] or ice[c.x][c.y] > 0)
@@ -1168,7 +1190,8 @@ func _cascade(prefer: Array) -> void:
 		_swap_axis = -1
 	if _player_move:
 		_player_move = false
-		if not _honey_hit:
+		# мёд как в Royal Match не растекается (раньше рос каждый ход без удара — уровни становились стеной)
+		if SPREAD_HONEY and not _honey_hit:
 			_spread_honey()
 	_honey_hit = false
 	# страховка: если что-то разрушилось с задержкой и осталась пустая клетка — досыпаем фишки
@@ -1184,6 +1207,9 @@ func _cascade(prefer: Array) -> void:
 
 
 ## Мёд растекается на соседнюю фишку, если за ход его ни разу не задели.
+const SPREAD_HONEY := false
+
+
 func _spread_honey() -> void:
 	var cand: Array = []
 	for x in W:
@@ -1340,7 +1366,7 @@ func _on_block_destroyed(kind: int, c: Vector2i) -> void:
 		for y in H:
 			if grass_target[x][y]:
 				has_grass_goal = true
-	if has_grass_goal and (kind == B_BUSH or kind == B_VASE):
+	if false and has_grass_goal and (kind == B_BUSH or kind == B_VASE):
 		var r := 2 if kind == B_BUSH else 1
 		var area := {}
 		for dx in range(-r, r + 1):
@@ -1429,6 +1455,20 @@ func _break_chain(c: Vector2i) -> void:
 		Sfx.play("vine", randf_range(0.9, 1.1), -4.0)
 	if chain[c.x][c.y] <= 0:
 		goal_hit.emit("chain", to_global(cell_pos(c)))
+
+
+func _cut_grass(c: Vector2i) -> void:
+	if not inside(c) or not grass[c.x][c.y]:
+		return
+	grass[c.x][c.y] = false
+	queue_redraw()
+	if grass_target[c.x][c.y]:
+		goal_hit.emit("grass", to_global(cell_pos(c)))
+	# травинки разлетаются
+	_burst(cell_pos(c), Color("#5cc24a"), 6)
+	var gt := Gem.tex("ob_tile_grass")
+	if gt and fx and _fx_load() < FX_SOFT:
+		_shatter(gt, fx.to_local(to_global(cell_pos(c))), CELL * 0.9, 4, 0.55)
 
 
 func _grow_grass(cells: Dictionary) -> void:
@@ -1586,20 +1626,15 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}, seed_delay: Dictiona
 		tw.tween_property(g, "modulate", Color(2.2, 2.2, 2.2, 0.0), 0.11).set_ease(Tween.EASE_IN)
 		tw.chain().tween_callback(g.queue_free)
 		last = tw
-	if _grass_carry:
-		for c2: Vector2i in cleared:
-			grassify[c2] = true
-		for c2: Vector2i in initial:
-			grassify[c2] = true
-	# трава под целью бабочки/ракеты вырастает, когда удар долетел
-	var now := {}
-	for c2: Vector2i in grassify:
-		var gdl: float = delay_of.get(c2, 0.0)
-		if gdl > 0.05:
-			get_tree().create_timer(gdl).timeout.connect(_grow_grass.bind({c2: true}))
-		else:
-			now[c2] = true
-	_grow_grass(now)
+	# газон (как в Royal Match): фишка, убранная с газона (совпадением или бустером), срезает его —
+	# под целью бабочки/ракеты — когда удар долетел
+	for c2: Vector2i in cleared:
+		if grass[c2.x][c2.y]:
+			var gdl: float = delay_of.get(c2, 0.0)
+			if gdl > 0.05:
+				get_tree().create_timer(gdl).timeout.connect(_cut_grass.bind(c2))
+			else:
+				_cut_grass(c2)
 	if last:
 		# фишки сверху начинают падать сразу, как исчезли эти (раньше пустота висела ~0.25 с)
 		await get_tree().create_timer(max_dl + 0.15).timeout
@@ -1699,7 +1734,7 @@ func _pick_target(exclude: Dictionary, also: Array) -> Vector2i:
 				score = 45.0
 			elif _chained(c):
 				score = 40.0
-			elif grass_target[x][y] and not grass[x][y]:
+			elif grass[x][y]:
 				score = 30.0
 			elif g and g.color in goal_colors:
 				score = 10.0

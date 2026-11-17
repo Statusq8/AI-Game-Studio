@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.53.0"
+const VERSION := "3.0.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -23,6 +23,8 @@ const EXTRA_MOVES_PRICE := 300
 const BOOSTER_PRICE := 250
 const IN_BOOSTERS := [["hammer", "Молот"], ["rockets", "Ракеты"], ["shuffle", "Микс"]]
 const PRE_BOOSTERS := [["pre_rocket", "Ракета", 1], ["pre_bomb", "Бомба", 3], ["pre_orb", "Шар", 4]]
+## Бонусы на старт открываются по ходу игры, как в Royal Match (до этого — замок и «с N ур.»)
+const PRE_UNLOCK := {"pre_rocket": 7, "pre_bomb": 12, "pre_orb": 18}
 
 var _bg: TextureRect
 var _home: Control
@@ -100,6 +102,8 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().is_empty() and Zoo.art("loading"):
 		_show_loading.call_deferred()
 	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--levelshots="):
+			_run_levelshots.call_deferred(arg.trim_prefix("--levelshots="))
 		if arg.begins_with("--shots="):
 			_run_shots.call_deferred(arg.trim_prefix("--shots="))
 		elif arg.begins_with("--splashshot="):
@@ -3564,16 +3568,18 @@ func _intro_banner() -> void:
 
 const TIPS := {
 	"crate": "Ящик ломается, когда рядом собираешь фишки. Бывает в несколько слоёв.",
-	"grass": "Собирай фишки на газоне — газон расползается на соседние клетки. Покрой газоном все земляные клетки!",
-	"vase": "Горшок трескается от совпадений рядом. Разбитый горшок раскидывает газон вокруг.",
+	"grass": "Собери фишки прямо на газоне — газон под ними срежется. Бустеры тоже срезают газон.",
+	"vase": "Горшок бьётся за 2 удара: собирай фишки рядом с ним или взрывай бустерами.",
 	"chain": "Лианы держат фишку — её нельзя двигать. Собери её в ряд или взорви, чтобы освободить.",
-	"bush": "Куст ломается от совпадений рядом и раскидывает много газона вокруг.",
+	"bush": "Куст ломается за 2 удара: собирай фишки рядом с ним.",
+	"balloon": "Шарик лопается от одного совпадения рядом или от бустера.",
+	"can": "Лейке нужно 3 удара: собирай фишки рядом или взрывай бустерами.",
 	"flower": "Сначала бутон распускается, потом цветок собирается. Собирай фишки рядом.",
 	"shell": "Ракушка открывается от совпадений рядом, второй удар забирает жемчужину.",
 	"item": "Доведи золотые яйца и птиц до самого низа поля — убирай фишки под ними.",
 	"ice": "Фишка во льду не двигается. Собери её в ряд или рядом с ней — лёд расколется и освободит фишку.",
 	"stone": "Камень не боится обычных совпадений! Разбей его ракетой, бомбой, бабочкой или шаром.",
-	"honey": "Мёд склеивает фишку и растекается, если его не трогать. Собирай фишки под мёдом каждый ход!",
+	"honey": "Мёд склеивает фишку — её нельзя двигать. Собери её в ряд или ударь бустером, чтобы смыть мёд.",
 	"cage": "В клетке птичка. Собирай фишки рядом, чтобы открыть клетку.",
 	"jar": "Разбей банку — получишь монеты!",
 	"safe": "Сейф прочный: нужно много ударов рядом или бустерами.",
@@ -3855,9 +3861,9 @@ func _on_gem_cleared(color: int, at: Vector2) -> void:
 
 
 const GOAL_NAMES := {"stone": "камни", "colorbox": "цветные ящики", "birdhouse": "скворечник", "color": "фишки", "crate": "ящики", "vase": "горшки", "chain": "лианы", "grass": "газон", "item": "яйца",
-	"ice": "лёд", "honey": "мёд", "safe": "сейфы", "jar": "банки", "cage": "клетки", "balloon": "шарики", "flower": "цветы", "bush": "кусты", "shell": "ракушки"}
+	"ice": "лёд", "honey": "мёд", "safe": "сейфы", "jar": "банки", "cage": "клетки", "balloon": "шарики", "can": "лейки", "flower": "цветы", "bush": "кусты", "shell": "ракушки"}
 const GOAL_TEX := {"crate": "ob_crate_0", "vase": "ob_pot_0", "chain": "ob_vines", "grass": "ob_tile_grass", "ice": "ob_tile_ice",
-	"honey": "ob_honey", "safe": "ob_safe", "jar": "ob_jar", "cage": "ob_cage", "balloon": "ob_balloon", "flower": "ob_flower_0", "bush": "ob_bush", "shell": "ob_shell_0", "item": "item_egg"}
+	"honey": "ob_honey", "safe": "ob_safe", "jar": "ob_jar", "cage": "ob_cage", "balloon": "ob_balloon", "can": "ob_can", "flower": "ob_flower_0", "bush": "ob_bush", "shell": "ob_shell_0", "item": "item_egg"}
 
 
 func _on_goal_hit(kind: String, at: Vector2) -> void:
@@ -5014,6 +5020,9 @@ func _show_prelevel_ref(n: int, lv: Dictionary) -> void:
 		var ic_t := Zoo.art(ic_name)
 		var tc: Vector2 = at.call(PRE_TILE_C[i])
 		var cnt := int(Save.boosters.get(kind, 0))
+		var locked: bool = n < int(PRE_UNLOCK.get(kind, 0))
+		if locked:
+			cnt = 0
 		var b := Button.new()
 		b.toggle_mode = true
 		b.flat = true
@@ -5037,6 +5046,14 @@ func _show_prelevel_ref(n: int, lv: Dictionary) -> void:
 			if on:
 				b.draw_texture_rect(sel_t, Rect2(lc + PRE_SEL_AT - PRE_TILE_C[0], sel_t.get_size()), false)
 				b.draw_texture_rect(check_t, Rect2(lc + PRE_CHECK_OFF - check_t.get_size() / 2.0, check_t.get_size()), false)
+			elif locked:
+				# замок: плашка «с N ур.» снизу плитки
+				var lt := "с %d ур." % int(PRE_UNLOCK[kind])
+				var lfs := 34
+				var lts := font.get_string_size(lt, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs)
+				var lp := lc + Vector2(-lts.x / 2.0, 92.0)
+				b.draw_string_outline(font, lp, lt, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs, 10, Color("#3a1c06"))
+				b.draw_string(font, lp, lt, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs, Color.WHITE)
 			elif cnt > 0:
 				var bc := lc + PRE_COUNT_OFF
 				b.draw_texture_rect(count_t, Rect2(bc - count_t.get_size() / 2.0, count_t.get_size()), false)
@@ -6777,6 +6794,10 @@ func _run_balance(first: int, last: int, tries: int) -> void:
 					if goal_cols.has(a.color) or goal_cols.has(b.color):
 						sc += 2.0
 					sc += (cand[0].y + cand[1].y) * 0.08  # ниже на поле — больше каскадов
+					if _board.obstacle_near(cand[0]) or _board.obstacle_near(cand[1]):
+						sc += 1.5
+					if _board.item_above(cand[0]) or _board.item_above(cand[1]):
+						sc += 2.5
 					if sc > bs:
 						bs = sc
 						best = cand
@@ -7136,6 +7157,21 @@ func _run_winshot(dir: String) -> void:
 	Save.built = kb
 	Save.shake = true
 	Save.music = true
+	get_tree().quit()
+
+
+## Снимки уровней: --levelshots=DIR:первый:последний (без подсказок, сразу после падения фишек).
+func _run_levelshots(spec: String) -> void:
+	var parts := spec.split(":")
+	var dir := parts[0]
+	DirAccess.make_dir_recursive_absolute(dir)
+	Save.seen_tips = TIPS.keys()
+	_bot = true
+	for n in range(int(parts[1]), int(parts[2]) + 1):
+		Save.hearts = Save.MAX_HEARTS
+		_start_level(n)
+		await get_tree().create_timer(1.7).timeout
+		await _snap(dir, "lv%03d" % n)
 	get_tree().quit()
 
 
