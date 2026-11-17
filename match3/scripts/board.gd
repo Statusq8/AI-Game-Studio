@@ -1523,7 +1523,12 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}, seed_delay: Dictiona
 		tiles[c.x][c.y] = null
 		var col: int = g.color
 		if col >= 0:
-			gem_cleared.emit(col, to_global(cell_pos(c)))
+			# фишка-цель бабочки/ракеты засчитывается, когда удар долетел, а не в момент нажатия
+			var edl: float = delay_of.get(c, 0.0)
+			if edl > 0.05:
+				get_tree().create_timer(edl).timeout.connect(func() -> void: gem_cleared.emit(col, to_global(cell_pos(c))))
+			else:
+				gem_cleared.emit(col, to_global(cell_pos(c)))
 		if g.has_meta("merged"):
 			# фишка уже слилась в бонус — без хлопка
 			g.queue_free()
@@ -1558,7 +1563,15 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}, seed_delay: Dictiona
 			grassify[c2] = true
 		for c2: Vector2i in initial:
 			grassify[c2] = true
-	_grow_grass(grassify)
+	# трава под целью бабочки/ракеты вырастает, когда удар долетел
+	var now := {}
+	for c2: Vector2i in grassify:
+		var gdl: float = delay_of.get(c2, 0.0)
+		if gdl > 0.05:
+			get_tree().create_timer(gdl).timeout.connect(_grow_grass.bind({c2: true}))
+		else:
+			now[c2] = true
+	_grow_grass(now)
 	if last:
 		# фишки сверху начинают падать сразу, как исчезли эти (раньше пустота висела ~0.25 с)
 		await get_tree().create_timer(max_dl + 0.15).timeout
@@ -1600,6 +1613,20 @@ func _special_vanish(g: Node2D, kind: int, delay: float) -> Tween:
 			tw.tween_property(g, "scale", Vector2(0.05, 0.05), 0.12).set_ease(Tween.EASE_IN)
 	tw.tween_callback(g.queue_free)
 	return tw
+
+
+func _best_rocket_dir(c: Vector2i) -> int:
+	var h := 0
+	var v := 0
+	for x in W:
+		if block_kind[x][c.y] != B_NONE or ice[x][c.y] > 0 or _chained(Vector2i(x, c.y)):
+			h += 1
+	for y in H:
+		if block_kind[c.x][y] != B_NONE or ice[c.x][y] > 0 or _chained(Vector2i(c.x, y)):
+			v += 1
+	if h == v:
+		return Gem.ROCKET_H if rng.randf() < 0.5 else Gem.ROCKET_V
+	return Gem.ROCKET_H if h > v else Gem.ROCKET_V
 
 
 func _area(kind: int, c: Vector2i) -> Array:
@@ -1780,6 +1807,7 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 		var carried: int = k1 if k2 == Gem.PROPELLER else k2
 		var count := 3 if props == 2 else 1
 		var targets: Array = []
+		var kinds_at: Array = []
 		var used := {at: true}
 		for i in count:
 			var target := _pick_target(used, [])
@@ -1795,16 +1823,19 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 			else:
 				var k := carried
 				if k == Gem.ROCKET_H or k == Gem.ROCKET_V:
-					k = Gem.ROCKET_H if rng.randf() < 0.5 else Gem.ROCKET_V
+					# ракета летит вдоль ряда/столбца, где больше препятствий — и рисуется в ту же сторону
+					k = _best_rocket_dir(target)
+				kinds_at.append(k)
 				for a in _area(k, target):
 					area[a] = true
 		await get_tree().create_timer(PROPELLER_TIME + 0.1).timeout
 		if carried != Gem.PROPELLER:
-			for t in targets:
+			for i in targets.size():
+				var t: Vector2i = targets[i]
 				if carried == Gem.BOMB:
 					_bomb_fx(t, 1.0)
 				else:
-					_rocket_fx(t, randf() < 0.5)
+					_rocket_fx(t, kinds_at[i] == Gem.ROCKET_V)
 		big_hit.emit(2.0)
 	elif rockets == 2:
 		for x in W:

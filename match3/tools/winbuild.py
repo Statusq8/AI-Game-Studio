@@ -33,6 +33,7 @@ SEG_TILE = 464                             # пустая клетка-обра�
 BTN_GO = (188, 1328, 664, 1482)
 BTN_AD = (210, 1484, 642, 1610)
 STARS = [(255, 320), (428, 290), (598, 320)]
+STAR_BOX = [(165, 240, 345, 420), (320, 180, 540, 410), (510, 240, 690, 420)]
 
 
 def hsv(a):
@@ -148,16 +149,27 @@ def main() -> None:
     warm[420:] = 0
     warm = cv2.morphologyEx(warm, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     n, lab, st, _ = cv2.connectedComponentsWithStats(warm)
+    # тёмно-оранжевый контур звезды — замкнутое кольцо; его заливка и есть звезда целиком (с контуром).
+    # Блики рвут кольцо — закрываем разрывы большим ядром, но только рядом с телом звезды (не цепляем соседей)
+    ring = ((s > 0.78) & (h < 0.105) & (v < 0.88) & (v > 0.2)).astype(np.uint8)
     for i, (sx, sy) in enumerate(STARS):
-        k = lab[sy, sx]
-        # закрываем выемки (блики на краю звезды), без расширения наружу — иначе по краю светлая кайма лучей
-        m = (lab == k).astype(np.uint8)
-        m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
-        m = ndi.binary_fill_holes(m).astype(np.uint8)
-        m = cv2.erode(m, np.ones((2, 2), np.uint8))
-        al = cv2.GaussianBlur(m.astype(np.float32) * 255, (0, 0), 0.7)
-        x, y, w, hh = st[k, :4]
-        x, y, w, hh = x - 3, y - 3, w + 6, hh + 6
+        bx0, by0, bx1, by1 = STAR_BOX[i]
+        core0 = (lab == lab[sy, sx]).astype(np.uint8)
+        core = cv2.erode(core0, np.ones((5, 5), np.uint8))
+        rr = np.zeros_like(ring)
+        rr[by0:by1, bx0:bx1] = ring[by0:by1, bx0:bx1]
+        rr &= cv2.dilate(core0, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (23, 23)))
+        m = cv2.morphologyEx(rr | core, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21)))
+        f = ndi.binary_fill_holes(m)
+        fl, _ = ndi.label(f)
+        m = (fl == fl[sy, sx]).astype(np.uint8)
+        m = cv2.morphologyEx(m, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+        fl, _ = ndi.label(m)
+        m = (fl == fl[sy, sx]).astype(np.uint8)
+        al = cv2.GaussianBlur(m.astype(np.float32) * 255, (0, 0), 0.8)
+        ys, xs = np.where(m > 0)
+        x, y = xs.min() - 3, ys.min() - 3
+        w, hh = xs.max() + 4 - x, ys.max() + 4 - y
         rgba = np.dstack([im, al.clip(0, 255)]).astype(np.uint8)[y:y + hh, x:x + w]
         Image.fromarray(rgba, "RGBA").save(os.path.join(OUT, "winref_star_%d.png" % i))
         meta["star_%d" % i] = [int(x), int(y), int(w), int(hh)]
