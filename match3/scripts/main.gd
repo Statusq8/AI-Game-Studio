@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "3.2.0"
+const VERSION := "3.3.0"
 const WIN_COINS := 30
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -114,6 +114,8 @@ func _ready() -> void:
 	if OS.get_cmdline_user_args().is_empty() and Zoo.art("loading"):
 		_show_loading.call_deferred()
 	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--zoneshots="):
+			_run_zoneshots.call_deferred(arg.trim_prefix("--zoneshots="))
 		if arg.begins_with("--levelshots="):
 			_run_levelshots.call_deferred(arg.trim_prefix("--levelshots="))
 		if arg.begins_with("--shots="):
@@ -737,6 +739,9 @@ func _refresh_home() -> void:
 		_avatar_node.queue_redraw()
 	var z := mini(Save.zone, Zones.ZONES.size() - 1)
 	var zone: Dictionary = Zones.ZONES[z]
+	# фон стройки — своя картинка зоны (зоны 2–8), у входа — общий фон
+	var zbg := Zoo.art("zone_bg_%d" % z) if _repair_mode else null
+	_bg.texture = zbg if zbg else load("res://assets/art/bg_zoo.webp")
 	_zoo.setup(z, Save.built)
 	_zone_title.text = "Зона %d: %s" % [z + 1, zone.name]
 	_zone_bar.max_value = zone.tasks.size()
@@ -764,7 +769,10 @@ func _on_spot(i: int) -> void:
 			["Закрыть", "Button", _clear_overlay],
 		])
 		return
-	# выбор дизайна из трёх вариантов
+	# без выбора дизайна (владелец): сразу строим
+	if true:
+		_build_task(i, 0)
+		return
 	if Zoo.art("designref_window"):
 		_show_design_ref(i, task)
 		return
@@ -1704,22 +1712,42 @@ func _build_lvref_layers() -> void:
 	_lvref_bg = Control.new()
 	_lvref_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_lvref_bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_lvref_bg.draw.connect(func() -> void:
-		var w := _lvref_bg.size.x
-		var h := _lvref_bg.size.y
-		var k := w / float(tex.get_width())
-		var th := float(tex.get_height())
-		# верх (до низа рамки поля) прижат к верху, низ (лоток) — к низу; плитка между ними растягивается
-		var top_h := (LVREF_SPLIT - LVREF_TOP) * k
-		var bot_src := Rect2(0, LVREF_BAND.y, tex.get_width(), th - LVREF_BAND.y)
-		var bot_h := bot_src.size.y * k
-		var mid_src := Rect2(0, LVREF_SPLIT, tex.get_width(), LVREF_BAND.y - LVREF_SPLIT)
-		_lvref_bg.draw_texture_rect_region(tex, Rect2(0, top_h, w, maxf(1.0, h - bot_h - top_h)), mid_src)
-		_lvref_bg.draw_texture_rect_region(tex, Rect2(0, 0, w, top_h), Rect2(0, LVREF_TOP, tex.get_width(), LVREF_SPLIT - LVREF_TOP))
-		_lvref_bg.draw_texture_rect_region(tex, Rect2(0, h - bot_h, w, bot_h), bot_src))
-	_level_screen.add_child(_lvref_bg)
-	_level_screen.move_child(_lvref_bg, 0)
-	_lvref_bg.resized.connect(_lvref_bg.queue_redraw)
+	var nbg := Zoo.art("level_bg2")
+	var ltop := Zoo.art("lvlayer_top")
+	var lbot := Zoo.art("lvlayer_bot")
+	if nbg and ltop and lbot:
+		# новый фон владельца (площадь сада) на весь экран + шапка и лоток из референса поверх, с мягкими краями
+		_lvref_bg.draw.connect(func() -> void:
+			var w := _lvref_bg.size.x
+			var h := _lvref_bg.size.y
+			var bs := nbg.get_size()
+			var ks := maxf(w / bs.x, h / bs.y)
+			var dsz := bs * ks
+			_lvref_bg.draw_texture_rect(nbg, Rect2(Vector2((w - dsz.x) / 2.0, (h - dsz.y) / 2.0), dsz), false)
+			var k := w / float(ltop.get_width())
+			_lvref_bg.draw_texture_rect(ltop, Rect2(0, 0, w, ltop.get_height() * k), false)
+			var bh := lbot.get_height() * k
+			_lvref_bg.draw_texture_rect(lbot, Rect2(0, h - bh, w, bh), false))
+		_level_screen.add_child(_lvref_bg)
+		_level_screen.move_child(_lvref_bg, 0)
+		_lvref_bg.resized.connect(_lvref_bg.queue_redraw)
+	else:
+		_lvref_bg.draw.connect(func() -> void:
+			var w := _lvref_bg.size.x
+			var h := _lvref_bg.size.y
+			var k := w / float(tex.get_width())
+			var th := float(tex.get_height())
+			# верх (до низа рамки поля) прижат к верху, низ (лоток) — к низу; плитка между ними растягивается
+			var top_h := (LVREF_SPLIT - LVREF_TOP) * k
+			var bot_src := Rect2(0, LVREF_BAND.y, tex.get_width(), th - LVREF_BAND.y)
+			var bot_h := bot_src.size.y * k
+			var mid_src := Rect2(0, LVREF_SPLIT, tex.get_width(), LVREF_BAND.y - LVREF_SPLIT)
+			_lvref_bg.draw_texture_rect_region(tex, Rect2(0, top_h, w, maxf(1.0, h - bot_h - top_h)), mid_src)
+			_lvref_bg.draw_texture_rect_region(tex, Rect2(0, 0, w, top_h), Rect2(0, LVREF_TOP, tex.get_width(), LVREF_SPLIT - LVREF_TOP))
+			_lvref_bg.draw_texture_rect_region(tex, Rect2(0, h - bot_h, w, bot_h), bot_src))
+		_level_screen.add_child(_lvref_bg)
+		_level_screen.move_child(_lvref_bg, 0)
+		_lvref_bg.resized.connect(_lvref_bg.queue_redraw)
 	# рамка панды поверх панды
 	_lvref_ring = Control.new()
 	_lvref_ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -7296,6 +7324,26 @@ func _run_levelshots(spec: String) -> void:
 		_start_level(n)
 		await get_tree().create_timer(1.7).timeout
 		await _snap(dir, "lv%03d" % n)
+	get_tree().quit()
+
+
+## Снимки зон 1–8 со всеми постройками (режим стройки): --zoneshots=DIR
+func _run_zoneshots(dir: String) -> void:
+	DirAccess.make_dir_recursive_absolute(dir)
+	_bot = true
+	await get_tree().create_timer(1.0).timeout
+	for z in Zones.ZONES.size():
+		Save.zone = z
+		Save.built = {}
+		for i in Zones.ZONES[z].tasks.size():
+			Save.built[i] = 0
+		_set_repair_mode(true)
+		await get_tree().create_timer(0.6).timeout
+		await _snap(dir, "zone%d" % (z + 1))
+		Save.built = {0: 0}
+		_set_repair_mode(true)
+		await get_tree().create_timer(0.3).timeout
+		await _snap(dir, "zone%d_empty" % (z + 1))
 	get_tree().quit()
 
 

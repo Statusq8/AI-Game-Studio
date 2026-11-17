@@ -61,7 +61,18 @@ func _draw() -> void:
 		if done.has(i):
 			var k: float = _pop.get(i, 1.0)
 			var off := Vector2(0, -(1.0 - k) * 220.0)
-			draw_item(self, task.kind, Zones.DESIGNS[int(done[i])], c + off, 0.6 + 0.4 * k, int(done[i]))
+			var zt := art("zitem_%d_%d" % [zone, i])
+			if zt:
+				# своя картинка предмета зоны: тень-эллипс и сам предмет, низ — у точки места
+				var box := size.x * float(task.get("size", 0.27)) * (0.6 + 0.4 * k)
+				var sz := zt.get_size()
+				var sc := box / maxf(sz.x, sz.y)
+				draw_set_transform(c + off + Vector2(0, box * 0.32), 0.0, Vector2(1.0, 0.28))
+				draw_circle(Vector2.ZERO, box * 0.42, Color(0, 0, 0, 0.18))
+				draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+				draw_texture_rect(zt, Rect2(c + off - Vector2(sz.x * sc / 2.0, sz.y * sc * 0.62), sz * sc), false)
+			else:
+				draw_item(self, task.kind, Zones.DESIGNS[int(done[i])], c + off, 0.6 + 0.4 * k, int(done[i]))
 		else:
 			var pulse := 1.0 + sin(_t * 3.0 + i) * 0.06
 			draw_circle(c + Vector2(0, 6), 46 * pulse, Color(0, 0, 0, 0.18))
