@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.52.0"
+const VERSION := "2.53.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -3920,6 +3920,8 @@ func _fly_to_goal(gv: Dictionary, from: Vector2, color: int, kind: String = "col
 
 func _goal_tick(gv: Dictionary) -> void:
 	gv.shown = maxi(int(gv.goal.left), int(gv.shown) - 1)
+	if not _bot:
+		Sfx.play("goal", 1.0 + randf() * 0.1, -6.0)
 	var l: Label = gv.label
 	if not is_instance_valid(l):
 		return
@@ -4632,7 +4634,7 @@ func _show_win_ref(coins: int) -> void:
 	for i in [0, 1, 2]:
 		var st: TextureRect = stars[i]
 		tw.tween_callback(func() -> void:
-			Sfx.play("coin", 0.9 + 0.15 * i)
+			Sfx.play("star", 1.0 + 0.12 * i)
 			_board._sparkles(_fx.to_local(st.get_global_rect().get_center()), Color("#fff3b0"), 8) if _board else null)
 		tw.tween_property(st, "scale", Vector2(1.3, 1.3), 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		tw.tween_property(st, "scale", Vector2.ONE, 0.1)

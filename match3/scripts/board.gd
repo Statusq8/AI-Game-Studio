@@ -1391,7 +1391,7 @@ func _crack_ice(c: Vector2i) -> void:
 		var cc := fx.to_local(to_global(cell_pos(c)))
 		_shatter(it, cc, CELL * 0.95, 6 if ice[c.x][c.y] <= 0 else 3, 0.8)
 		_glow_flash(cc, Color(0.75, 0.95, 1.0), CELL * 1.4, 0.2)
-		Sfx.play("glass", randf_range(1.0, 1.2), -6.0)
+		Sfx.play("ice", randf_range(0.95, 1.1), -3.0)
 	if ice[c.x][c.y] <= 0:
 		goal_hit.emit("ice", to_global(cell_pos(c)))
 	queue_redraw()
@@ -1426,7 +1426,7 @@ func _break_chain(c: Vector2i) -> void:
 	var vt := Gem.tex("ob_vines")
 	if vt and fx:
 		_shatter(vt, fx.to_local(to_global(cell_pos(c))), CELL * 0.95, 5, 0.75)
-		Sfx.play("wood", randf_range(1.1, 1.3), -8.0)
+		Sfx.play("vine", randf_range(0.9, 1.1), -4.0)
 	if chain[c.x][c.y] <= 0:
 		goal_hit.emit("chain", to_global(cell_pos(c)))
 
@@ -1936,6 +1936,7 @@ func _chain_lightning(start: Vector2i, targets: Array, col: int, on_hit := Calla
 			_lightning(fx.to_local(to_global(cell_pos(cur))), fx.to_local(to_global(cell_pos(nxt))), color, 8)
 			_flipbook("zap", fx.to_local(to_global(cell_pos(nxt))), CELL * 1.7 * get_global_transform().get_scale().x, 0.35, color.lerp(Color.WHITE, 0.4), true, 8)
 			_sparkles(fx.to_local(to_global(cell_pos(nxt))), color, 2)
+		Sfx.play("zap", 1.0 + minf(0.6, (targets.size() - left.size()) * 0.03), -8.0)
 		var g := gem_at(nxt)
 		if on_hit.is_valid():
 			on_hit.call(nxt)
@@ -2051,6 +2052,7 @@ func _gravity() -> void:
 	if moved.is_empty():
 		return
 	var longest := 0.0
+	var lands: Array = []
 	# небольшой сдвиг старта по столбцам — фишки сыплются «волной», а не одной плитой
 	var col_lag: Array[float] = []
 	for x in W:
@@ -2083,6 +2085,12 @@ func _gravity() -> void:
 		tw.tween_property(g, "scale", Vector2(1.0 + 0.04 * k, 1.0 - 0.04 * k), 0.07)
 		tw.parallel().tween_property(g, "position:y", target.y, 0.07).set_ease(Tween.EASE_IN)
 		tw.tween_property(g, "scale", Vector2.ONE, 0.07)
+		lands.append(dl + t)
+	# тихие «тук» приземления: не больше 4 на волну, по времени касания
+	lands.sort()
+	var step := maxi(1, lands.size() / 4)
+	for i in range(0, lands.size(), step):
+		get_tree().create_timer(lands[i]).timeout.connect(Sfx.play.bind("land", randf_range(0.9, 1.15), -9.0))
 	await get_tree().create_timer(longest + 0.12).timeout
 
 
