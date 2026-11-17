@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.47.0"
+const VERSION := "2.49.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -112,6 +112,10 @@ func _ready() -> void:
 			_run_fxdemo.call_deferred()
 		elif arg == "--inputtest":
 			_run_input_test.call_deferred()
+		elif arg == "--orbdemo":
+			_run_orbdemo.call_deferred()
+		elif arg == "--breakdemo":
+			_run_breakdemo.call_deferred()
 		elif arg == "--perf":
 			_run_perf.call_deferred()
 		elif arg.begins_with("--balance="):
@@ -3593,6 +3597,11 @@ func _show_tip() -> void:
 			Save.seen_tips = seen
 			Save.store()
 			_board.input_enabled = false
+			if Zoo.art("tipref_window"):
+				_show_tip_ref(k, func() -> void:
+					_clear_overlay()
+					_board.input_enabled = true)
+				return
 			var v := _dialog("Новое: " + GOAL_NAMES.get(k, k), [TIPS[k]], [["Понятно", "GreenButton", func() -> void:
 				_clear_overlay()
 				_board.input_enabled = true]])
@@ -4527,8 +4536,11 @@ func _show_win_ref(coins: int) -> void:
 	cn.set_meta("val", 0)
 	cn.draw.connect(func() -> void:
 		var txt := "+%d" % int(cn.get_meta("val"))
+		# число не заходит за разделитель плашки (x ≈ 440 референса): «+120», «+1500» — мельче
 		var fs := 84
-		var p := WIN_COINS_AT - Vector2(0, WIN_Y0)
+		while fs > 44 and font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > 186.0:
+			fs -= 2
+		var p := WIN_COINS_AT - Vector2(0, WIN_Y0) - Vector2(0, (84 - fs) * 0.36)
 		for d in range(7, 0, -1):
 			cn.draw_string_outline(font, p + Vector2(0, d), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 16, Color("#3d1a08"))
 		cn.draw_string_outline(font, p, txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 16, Color("#3d1a08"))
@@ -6311,6 +6323,100 @@ func _show_chestopen_ref(rw: Dictionary) -> void:
 	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
 	_confetti()
 
+## ---------- подсказка «Новое: …» в общем стиле окон (рамка, лента, панда — tools/tipbuild.py) ----------
+## Координаты — в пикселях референса окна «Не хватает звёзд» (те же, что NSREF_*).
+func _show_tip_ref(k: String, done: Callable) -> void:
+	_clear_overlay()
+	var dim := ColorRect.new()
+	dim.color = Color(0.05, 0.03, 0.2, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_overlay.add_child(dim)
+	var kk := minf(size.x / WIN_W, (size.y - 16.0) / (NSREF_BOT - NSREF_TOP))
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = Vector2(WIN_W, NSREF_BOT - NSREF_Y0)
+	holder.position = Vector2(size.x / 2.0 - WIN_W / 2.0 * kk, size.y / 2.0 - ((NSREF_TOP + NSREF_BOT) / 2.0 - NSREF_Y0) * kk)
+	holder.scale = Vector2(kk, kk)
+	_overlay.add_child(holder)
+	var body := Control.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.size = holder.size
+	body.pivot_offset = holder.size / 2.0
+	holder.add_child(body)
+	var font: Font = UiTheme.title_font()
+	var at := func(p: Vector2) -> Vector2: return p - Vector2(0, NSREF_Y0)
+	var wt := TextureRect.new()
+	wt.texture = Zoo.art("tipref_window")
+	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(wt)
+	var title := "Новое: " + str(GOAL_NAMES.get(k, k))
+	var deco := Control.new()
+	deco.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	deco.size = body.size
+	deco.draw.connect(func() -> void:
+		_arc_text(deco, title, at.call(Vector2(425.0, 646.0)), 480.0, 54, Color("#0e1f6e"))
+		# препятствие — крупно, на сиянии
+		var c: Vector2 = at.call(Vector2(530, 790))
+		var t := Time.get_ticks_msec() / 1000.0
+		var gr := 120.0 * (1.0 + 0.04 * sin(t * 2.5))
+		deco.draw_texture_rect(Board.fx_tex("glow"), Rect2(c - Vector2(gr, gr), Vector2(gr, gr) * 2.0), false, Color(1.0, 0.9, 0.5, 0.85))
+		_draw_goal_icon(deco, k, c + Vector2(0, sin(t * 2.0) * 4.0), 120.0))
+	body.add_child(deco)
+	_every_frame(deco)
+	# текст подсказки — справа от панды
+	var lbl := Label.new()
+	lbl.text = str(TIPS[k])
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.add_theme_color_override("font_color", Color("#5a2c0a"))
+	lbl.position = at.call(Vector2(298, 878))
+	lbl.size = Vector2(462, 228)
+	# размер текста — самый крупный, при котором он помещается над кнопкой
+	var bf: Font = lbl.get_theme_font("font")
+	var tfs := 34
+	while tfs > 20 and bf.get_multiline_string_size(lbl.text, HORIZONTAL_ALIGNMENT_CENTER, lbl.size.x, tfs).y > lbl.size.y:
+		tfs -= 1
+	lbl.add_theme_font_size_override("font_size", tfs)
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(lbl)
+	var btn := TextureButton.new()
+	btn.texture_normal = Zoo.art("nsref_btn")
+	btn.position = at.call(NSREF_BTN)
+	btn.size = btn.texture_normal.get_size()
+	btn.pivot_offset = btn.size / 2.0
+	btn.draw.connect(func() -> void:
+		var bt := "Понятно"
+		var fs := 54
+		var ts := font.get_string_size(bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var p := Vector2(btn.size.x / 2.0 - ts.x / 2.0, btn.size.y / 2.0 + fs * 0.36 - 6)
+		btn.draw_string_outline(font, p + Vector2(0, 4), bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#0e3a08"))
+		btn.draw_string_outline(font, p, bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#14450c"))
+		btn.draw_string(font, p, bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	btn.button_down.connect(func() -> void: btn.create_tween().tween_property(btn, "scale", Vector2(0.93, 0.93), 0.06))
+	btn.button_up.connect(func() -> void:
+		btn.create_tween().tween_property(btn, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+	btn.pressed.connect(func() -> void:
+		Sfx.play("click")
+		done.call())
+	body.add_child(btn)
+	var close := Button.new()
+	close.flat = true
+	for stn in ["normal", "hover", "pressed", "focus"]:
+		close.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+	close.size = Vector2(NSREF_CLOSE.z, NSREF_CLOSE.z) * 2.0
+	close.position = at.call(Vector2(NSREF_CLOSE.x, NSREF_CLOSE.y)) - close.size / 2.0
+	close.pressed.connect(func() -> void:
+		Sfx.play("click")
+		done.call())
+	body.add_child(close)
+	body.scale = Vector2(0.6, 0.6)
+	body.modulate.a = 0.0
+	var tw := body.create_tween()
+	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
 	for i in 70:
@@ -6763,6 +6869,56 @@ func _run_perf() -> void:
 			await get_tree().process_frame
 	get_tree().quit()
 
+## Демо разрушения препятствий (для записи --write-movie): ящики, горшки, лёд, лианы.
+func _run_orbdemo() -> void:
+	_bot = true
+	Save.seen_tips = TIPS.keys()
+	for kind in [Gem.ROCKET_H, Gem.BOMB]:
+		_start_level(3)
+		await get_tree().create_timer(1.6).timeout
+		_moves = 99
+		var a: Node2D = _board.gem_at(Vector2i(3, 4))
+		var b: Node2D = _board.gem_at(Vector2i(4, 4))
+		if a and b:
+			a.set_special(Gem.ORB)
+			a.color = -1
+			b.set_special(kind)
+			await get_tree().create_timer(0.4).timeout
+			print("ORB frame %d" % Engine.get_frames_drawn())
+			_board.try_swap(Vector2i(3, 4), Vector2i(4, 4))
+		await get_tree().create_timer(0.3).timeout
+		while _board.busy:
+			await get_tree().process_frame
+		await get_tree().create_timer(0.5).timeout
+	get_tree().quit()
+
+
+func _run_breakdemo() -> void:
+	_bot = true
+	Save.seen_tips = TIPS.keys()
+	for lvn in [9, 8, 15]:
+		_start_level(lvn)
+		await get_tree().create_timer(1.6).timeout
+		_moves = 99
+		var g: Node2D = _board.gem_at(Vector2i(3, 3))
+		if g:
+			g.set_special(Gem.BOMB)
+			await get_tree().create_timer(0.3).timeout
+			print("BRK %d frame %d" % [lvn, Engine.get_frames_drawn()])
+			_board.activate_single(Vector2i(3, 3))
+		while _board.busy:
+			await get_tree().process_frame
+		await get_tree().create_timer(0.3).timeout
+		var r: Node2D = _board.gem_at(Vector2i(4, 6))
+		if r:
+			r.set_special(Gem.ROCKET_H)
+			await get_tree().create_timer(0.3).timeout
+			_board.activate_single(Vector2i(4, 6))
+		while _board.busy:
+			await get_tree().process_frame
+		await get_tree().create_timer(0.5).timeout
+	get_tree().quit()
+
 ## Проверка настоящего ввода: свайп и два тапа через очередь событий, как палец на телефоне.
 func _run_input_test() -> void:
 	Save.hearts = Save.MAX_HEARTS
@@ -6938,6 +7094,15 @@ func _run_winshot(dir: String) -> void:
 	_show_nostars_ref(Zones.ZONES[0].tasks[2])
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "n1_nostars")
+	_show_tip_ref("crate", _clear_overlay)
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "q1_tip")
+	_show_tip_ref("chain", _clear_overlay)
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "q2_tip")
+	_show_win_ref(1250)
+	await get_tree().create_timer(2.5).timeout
+	await _snap(dir, "w3_bigcoins")
 	_show_chestopen_ref({"coins": 150, "hammer": 1, "pre_bomb": 1})
 	await get_tree().create_timer(0.8).timeout
 	await _snap(dir, "o1_chestopen")

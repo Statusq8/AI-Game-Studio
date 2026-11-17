@@ -1274,7 +1274,7 @@ func _hit_block(c0: Vector2i) -> void:
 	var gone: bool = block_hp[c.x][c.y] <= 0
 	# препятствие разлетается на куски из своего материала (щепки ящика, черепки горшка…)
 	if stage_tex and fx:
-		var pieces := (16 if big else 10) if gone else (6 if big else 4)
+		var pieces := (9 if big else 7) if gone else (4 if big else 3)
 		_shatter(stage_tex, fx.to_local(to_global(center)), CELL * (2.0 if big else 1.0), pieces, 1.0 if gone else 0.6)
 		_burst(center, BLOCKS[kind].fx if BLOCKS.has(kind) else Color.WHITE, 6 if big else 4)
 	else:
@@ -1367,7 +1367,13 @@ func _crack_ice(c: Vector2i) -> void:
 	if ice[c.x][c.y] <= 0:
 		return
 	ice[c.x][c.y] -= 1
-	_burst(cell_pos(c), Color("#bfe9ff"), 10)
+	_burst(cell_pos(c), Color("#bfe9ff"), 8)
+	var it := Gem.tex("ob_tile_ice")
+	if it and fx:
+		var cc := fx.to_local(to_global(cell_pos(c)))
+		_shatter(it, cc, CELL * 0.95, 6 if ice[c.x][c.y] <= 0 else 3, 0.8)
+		_glow_flash(cc, Color(0.75, 0.95, 1.0), CELL * 1.4, 0.2)
+		Sfx.play("glass", randf_range(1.0, 1.2), -6.0)
 	if ice[c.x][c.y] <= 0:
 		goal_hit.emit("ice", to_global(cell_pos(c)))
 	queue_redraw()
@@ -1388,7 +1394,11 @@ func _break_chain(c: Vector2i) -> void:
 		return
 	chain[c.x][c.y] -= 1
 	_overlay.queue_redraw()
-	_burst(cell_pos(c), Color("#b8bcc8"), 10)
+	_burst(cell_pos(c), Color("#5fbf3a"), 8)
+	var vt := Gem.tex("ob_vines")
+	if vt and fx:
+		_shatter(vt, fx.to_local(to_global(cell_pos(c))), CELL * 0.95, 5, 0.75)
+		Sfx.play("wood", randf_range(1.1, 1.3), -8.0)
 	if chain[c.x][c.y] <= 0:
 		goal_hit.emit("chain", to_global(cell_pos(c)))
 
@@ -1407,10 +1417,10 @@ func _grow_grass(cells: Dictionary) -> void:
 
 ## Убирает клетки; особые фишки в зоне взрыва срабатывают цепочкой.
 ## grassify — клетки, которые после очистки покрываются травой.
-func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
+func _clear(initial: Dictionary, grassify: Dictionary = {}, seed_delay: Dictionary = {}) -> void:
 	var pending: Array = initial.keys()
 	var cleared := {}
-	var delay_of := {}  # клетка -> задержка исчезновения (ракета долетает не сразу)
+	var delay_of := seed_delay.duplicate()  # клетка -> задержка исчезновения (ракета долетает не сразу)
 	var power := 0.0
 	var effects: Array = []
 	var flights: Array = []
@@ -1454,6 +1464,13 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 					var d: float = base_d + Vector2(a2 - c).length() * ROCKET_CELL_TIME
 					if not delay_of.has(a2) or d < delay_of[a2]:
 						delay_of[a2] = d
+			elif g.special == Gem.BOMB or g.special == Gem.PROPELLER:
+				# отложенный взрыв (бустеры от шара рвутся по очереди) — его область ждёт тоже
+				var bd: float = delay_of.get(c, 0.0)
+				if bd > 0.05:
+					for a2 in area:
+						if not delay_of.has(a2) or bd < delay_of[a2]:
+							delay_of[a2] = bd
 			if g.special == Gem.PROPELLER:
 				var target := _pick_target(cleared, area)
 				if target != Vector2i(-1, -1):
@@ -1475,7 +1492,11 @@ func _clear(initial: Dictionary, grassify: Dictionary = {}) -> void:
 				_rocket_fx(e.cell, e.kind == Gem.ROCKET_V, delay_of.get(e.cell, 0.0))
 				wait = maxf(wait, 0.05)
 			Gem.BOMB:
-				_bomb_fx(e.cell, 1.5)
+				var bdl: float = delay_of.get(e.cell, 0.0)
+				if bdl > 0.05:
+					get_tree().create_timer(bdl).timeout.connect(_bomb_fx.bind(e.cell, 1.5))
+				else:
+					_bomb_fx(e.cell, 1.5)
 				wait = maxf(wait, 0.16)
 			Gem.ORB:
 				_beam_fx(e.cell, e.kind, e.color)
@@ -1697,20 +1718,53 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 		orb.set_special(Gem.NONE)
 		orb.color = -1
 		area[orb.cell] = true
+		big_hit.emit(2.0)
+		# как в Royal Match: цепная молния прыгает по фишкам цвета, каждая от удара превращается в бустер,
+		# потом короткая пауза — и бустеры взрываются один за другим по ходу молнии
+		var targets: Array = []
 		for x in W:
 			for y in H:
 				var g := gem_at(Vector2i(x, y))
-				if g and g.special == Gem.NONE and g.color == col and not _chained(g.cell):
-					var k := kind
-					if kind == Gem.ROCKET_H or kind == Gem.ROCKET_V:
-						k = Gem.ROCKET_H if rng.randf() < 0.5 else Gem.ROCKET_V
-					g.set_special(k)
-					g.scale = Vector2(1.3, 1.3)
-					create_tween().tween_property(g, "scale", Vector2.ONE, 0.2)
-					area[g.cell] = true
+				if g and g != other and g.special == Gem.NONE and g.color == col and not _chained(g.cell):
+					targets.append(Vector2i(x, y))
+		var order: Array = []
+		var turn := func(c: Vector2i) -> void:
+			var g := gem_at(c)
+			if g == null:
+				return
+			var k := kind
+			if kind == Gem.ROCKET_H or kind == Gem.ROCKET_V:
+				k = Gem.ROCKET_H if rng.randf() < 0.5 else Gem.ROCKET_V
+			g.set_special(k)
+			order.append(c)
+			if fx:
+				var p := fx.to_local(to_global(cell_pos(c)))
+				var gk := get_global_transform().get_scale().x
+				_glow_flash(p, Color(1, 1, 0.85), CELL * 1.6 * gk, 0.25)
+				_pop_ring(p, Gem.COLORS[col].lightened(0.5))
+			g.scale = Vector2(1.6, 1.6)
+			g.modulate = Color(2.2, 2.2, 2.2)
+			var t := create_tween().set_parallel(true)
+			t.tween_property(g, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+			t.tween_property(g, "modulate", Color.WHITE, 0.25)
+		await _chain_lightning(at, targets, col, turn)
+		# напряжённая пауза: бустеры дрожат
+		for c: Vector2i in order:
+			var g := gem_at(c)
+			if g:
+				var t := create_tween().set_loops(3)
+				t.tween_property(g, "rotation", 0.12, 0.05)
+				t.tween_property(g, "rotation", -0.12, 0.05)
+				t.chain().tween_property(g, "rotation", 0.0, 0.03)
+		await get_tree().create_timer(0.4).timeout
+		var seed := {}
+		var step := clampf(0.9 / maxf(1.0, order.size()), 0.05, 0.11)
+		for i in order.size():
+			area[order[i]] = true
+			seed[order[i]] = 0.12 + i * step
 		area[other.cell] = true
-		await get_tree().create_timer(0.35).timeout
-		await _clear(area)
+		seed[other.cell] = 0.0
+		await _clear(area, {}, seed)
 		return
 	var kinds := [k1, k2]
 	var rockets := kinds.count(Gem.ROCKET_H) + kinds.count(Gem.ROCKET_V)
@@ -1797,7 +1851,7 @@ func _orb_with_color(orb: Node2D, col: int) -> void:
 
 ## Цепная молния: прыгает от шара к ближайшей фишке нужного цвета, потом к следующей и т. д.
 ## Каждая задетая фишка вспыхивает; убираются все вместе в конце.
-func _chain_lightning(start: Vector2i, targets: Array, col: int) -> void:
+func _chain_lightning(start: Vector2i, targets: Array, col: int, on_hit := Callable()) -> void:
 	Sfx.play("orb")
 	var color: Color = Gem.COLORS[col].lightened(0.45) if col >= 0 else Color("#bfe9ff")
 	var left := targets.duplicate()
@@ -1824,7 +1878,9 @@ func _chain_lightning(start: Vector2i, targets: Array, col: int) -> void:
 			_flipbook("zap", fx.to_local(to_global(cell_pos(nxt))), CELL * 1.7 * get_global_transform().get_scale().x, 0.35, color.lerp(Color.WHITE, 0.4), true, 8)
 			_sparkles(fx.to_local(to_global(cell_pos(nxt))), color, 2)
 		var g := gem_at(nxt)
-		if g:
+		if on_hit.is_valid():
+			on_hit.call(nxt)
+		elif g:
 			var t := create_tween().set_parallel(true)
 			t.tween_property(g, "scale", Vector2(1.25, 1.25), 0.08).set_trans(Tween.TRANS_BACK)
 			t.tween_property(g, "modulate", Color(1.8, 1.8, 2.0), 0.08)
@@ -2317,59 +2373,88 @@ func _flipbook(name: String, at: Vector2, px: float, time: float, tint := Color.
 ## Осколки из самой картинки препятствия: кусочки текстуры разлетаются вверх-в стороны,
 ## падают под гравитацией, крутятся (с «3D»-сплющиванием) и отбрасывают тень.
 func _shatter(tex: Texture2D, at: Vector2, px: float, n: int, power := 1.0) -> void:
-	if _fx_load() > FX_HARD:
+	# разлом, как в Royal Match: картинка препятствия раскалывается на клинья (от случайной точки у центра
+	# к краям), каждый клин — кусок той же картинки; куски вылетают от центра, кувыркаются, падают и гаснут
+	if fx == null or _fx_load() > FX_HARD:
 		return
 	if _fx_load() > FX_SOFT:
-		n = mini(n, 2)
+		n = mini(n, 3)
+	n = clampi(n, 2, 9)
 	var gs := get_global_transform().get_scale().x
-	var tw0 := tex.get_size()
-	var k := px * gs / maxf(tw0.x, tw0.y)
+	var ts := tex.get_size()
+	var k := px * gs / maxf(ts.x, ts.y)
+	var ctr := ts / 2.0 + Vector2(randf_range(-0.12, 0.12), randf_range(-0.12, 0.12)) * ts
+	# точки на краю картинки по кругу (углы прямоугольника тоже попадают в нужный клин)
+	var angs: Array = []
+	var a0 := randf() * TAU
 	for i in n:
-		var pw := tw0.x * randf_range(0.22, 0.38)
-		var ph := tw0.y * randf_range(0.22, 0.38)
-		var rx := randf_range(0.05, 0.95) * (tw0.x - pw)
-		var ry := randf_range(0.05, 0.95) * (tw0.y - ph)
-		var region := Rect2(rx, ry, pw, ph)
-		var start := at + (Vector2(rx + pw / 2.0, ry + ph / 2.0) - tw0 / 2.0) * k
-		var piece := Sprite2D.new()
-		piece.texture = tex
-		piece.region_enabled = true
-		piece.region_rect = region
-		piece.scale = Vector2(k, k)
-		piece.position = start
-		piece.z_index = 7
-		var shadow := Sprite2D.new()
-		shadow.texture = tex
-		shadow.region_enabled = true
-		shadow.region_rect = region
-		shadow.scale = Vector2(k, k)
-		shadow.modulate = Color(0, 0, 0, 0.3)
-		shadow.z_index = 6
-		fx.add_child(shadow)
-		fx.add_child(piece)
-		var out := (start - at).normalized()
+		angs.append(a0 + TAU * (i + randf_range(-0.25, 0.25)) / n)
+	angs.sort()
+	var edge := func(a: float) -> Vector2:
+		var d := Vector2(cos(a), sin(a))
+		var tx := INF if absf(d.x) < 0.001 else ((ts.x if d.x > 0 else 0.0) - ctr.x) / d.x
+		var ty := INF if absf(d.y) < 0.001 else ((ts.y if d.y > 0 else 0.0) - ctr.y) / d.y
+		return ctr + d * minf(tx, ty)
+	var corners := [Vector2(0, 0), Vector2(ts.x, 0), Vector2(ts.x, ts.y), Vector2(0, ts.y)]
+	for i in n:
+		var aa: float = angs[i]
+		var ab: float = angs[(i + 1) % n] + (TAU if i == n - 1 else 0.0)
+		var poly := PackedVector2Array([ctr, edge.call(aa)])
+		for cn: Vector2 in corners:
+			var ca := atan2(cn.y - ctr.y, cn.x - ctr.x)
+			while ca < aa:
+				ca += TAU
+			if ca < ab:
+				poly.append(cn)
+		poly.append(edge.call(ab))
+		# порядок углов по углу от центра
+		var rest := Array(poly.slice(1))
+		rest.sort_custom(func(p1: Vector2, p2: Vector2) -> bool:
+			var x1 := atan2(p1.y - ctr.y, p1.x - ctr.x)
+			var x2 := atan2(p2.y - ctr.y, p2.x - ctr.x)
+			while x1 < aa:
+				x1 += TAU
+			while x2 < aa:
+				x2 += TAU
+			return x1 < x2)
+		var pts := PackedVector2Array([ctr])
+		for q: Vector2 in rest:
+			pts.append(q)
+		var mid := Vector2.ZERO
+		for q: Vector2 in pts:
+			mid += q
+		mid /= pts.size()
+		var pg := Polygon2D.new()
+		pg.texture = tex
+		var local := PackedVector2Array()
+		for q: Vector2 in pts:
+			local.append(q - mid)
+		pg.polygon = local
+		pg.uv = pts
+		pg.position = at + (mid - ts / 2.0) * k
+		pg.scale = Vector2(k, k)
+		pg.z_index = 7
+		fx.add_child(pg)
+		var start := pg.position
+		var out := (mid - ctr).normalized()
 		if out == Vector2.ZERO:
 			out = Vector2.UP
-		var vel := (out * randf_range(140, 300) + Vector2(randf_range(-80, 80), -randf_range(260, 460))) * power * gs
-		var spin := randf_range(6.0, 14.0) * (1.0 if randf() < 0.5 else -1.0)
-		var life := randf_range(0.6, 0.85)
-		var tw := piece.create_tween()
+		var vel := (out * randf_range(220, 380) + Vector2(randf_range(-40, 40), -randf_range(220, 380))) * power * gs
+		var spin := randf_range(5.0, 11.0) * (1.0 if out.x >= 0.0 else -1.0)
+		var life := randf_range(0.5, 0.7)
+		var tw := pg.create_tween()
 		tw.tween_method(func(u: float) -> void:
 			var tt := u * life
-			var pos := start + vel * tt + Vector2(0, 1500.0 * gs) * tt * tt * 0.5
-			var lift := 4.0 * u * (1.0 - u)
-			var flip := cos(tt * spin * 0.7)
-			piece.position = pos
-			piece.rotation = tt * spin
-			piece.scale = Vector2(k * flip, k) * (1.0 + 0.25 * lift)
-			piece.modulate = Color(1, 1, 1, 1.0 - pow(u, 4.0))
-			shadow.position = pos + Vector2(6, 10 + 26.0 * lift) * gs
-			shadow.rotation = piece.rotation
-			shadow.scale = piece.scale * 0.9
-			shadow.modulate.a = 0.3 * (1.0 - u), 0.0, 1.0, life)
-		tw.tween_callback(func() -> void:
-			piece.queue_free()
-			shadow.queue_free())
+			pg.position = start + vel * tt + Vector2(0, 1700.0 * gs) * tt * tt * 0.5
+			pg.rotation = tt * spin
+			pg.scale = Vector2(k, k) * (1.0 + 0.15 * sin(u * PI))
+			pg.modulate = Color(1, 1, 1, 1.0 - pow(u, 3.0)), 0.0, 1.0, life)
+		tw.tween_callback(pg.queue_free)
+	# пыль/облачко материала в центре
+	if _fx_load() < FX_SOFT:
+		var sp := _flipbook("smoke", at, px * gs * 1.25, 0.4, Color(1, 1, 1, 0.75), false, 6)
+		if sp:
+			sp.rotation = randf() * TAU
 
 
 ## Вспышка-свечение (аддитивная): светлое пятно, расширяется и гаснет.

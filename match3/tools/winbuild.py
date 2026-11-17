@@ -150,9 +150,12 @@ def main() -> None:
     n, lab, st, _ = cv2.connectedComponentsWithStats(warm)
     for i, (sx, sy) in enumerate(STARS):
         k = lab[sy, sx]
-        m = ndi.binary_fill_holes(lab == k).astype(np.uint8)
-        m = cv2.dilate(m, np.ones((3, 3), np.uint8))
-        al = cv2.GaussianBlur(m.astype(np.float32) * 255, (0, 0), 0.8)
+        # закрываем выемки (блики на краю звезды), без расширения наружу — иначе по краю светлая кайма лучей
+        m = (lab == k).astype(np.uint8)
+        m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9)))
+        m = ndi.binary_fill_holes(m).astype(np.uint8)
+        m = cv2.erode(m, np.ones((2, 2), np.uint8))
+        al = cv2.GaussianBlur(m.astype(np.float32) * 255, (0, 0), 0.7)
         x, y, w, hh = st[k, :4]
         x, y, w, hh = x - 3, y - 3, w + 6, hh + 6
         rgba = np.dstack([im, al.clip(0, 255)]).astype(np.uint8)[y:y + hh, x:x + w]
