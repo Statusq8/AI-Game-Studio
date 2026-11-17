@@ -485,8 +485,9 @@ func _draw() -> void:
 					Vector2i.UP: edges.append([p0, p0 + Vector2(CELL, 0), Vector2(0, -1)])
 					Vector2i.DOWN: edges.append([p0 + Vector2(0, CELL), p0 + Vector2(CELL, CELL), Vector2(0, 1)])
 	# слои: [смещение наружу, толщина, цвет, сдвиг вниз]
-	var layers := [[12.0, 30.0, Color(0, 0, 0, 0.28), 7.0], [12.0, 26.0, Color("#3b1f05"), 0.0],
-		[11.0, 18.0, Color("#f2a019"), 0.0], [8.0, 6.0, Color("#ffe58a"), 0.0]]
+	# тонкая обводка (по просьбе владельца): тёмная кайма 10 px, золотой кант 6 px, блик 2 px
+	var layers := [[5.0, 13.0, Color(0, 0, 0, 0.25), 3.0], [5.0, 10.0, Color("#3b1f05"), 0.0],
+		[5.0, 6.0, Color("#f2a019"), 0.0], [4.0, 2.0, Color("#ffe58a"), 0.0]]
 	for L in layers:
 		var off: float = L[0]
 		var wd: float = L[1]

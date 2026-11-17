@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.43.0"
+const VERSION := "2.43.1"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -2753,7 +2753,7 @@ func _close_dialog() -> void:
 
 ## Рамка поля обнимает только занятые клетки (поле 6×10, 8×8 и т.п. — без пустых полос внутри рамки).
 ## Отступ вокруг поля под обводку (px поля) и верх области поля под шапкой (px референса).
-const BOARD_PAD := 30.0
+const BOARD_PAD := 16.0
 const BOARD_TOP_REF := 330.0
 
 
