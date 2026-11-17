@@ -1,0 +1,73 @@
+name: Match3 Android APK
+
+on:
+  # «Зоопарк мечты» (match3/) — APK собирается только вручную, когда владелец просит.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    env:
+      GODOT_VERSION: '4.5.1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Godot and export templates
+        run: |
+          set -euo pipefail
+          BASE="https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-stable"
+          curl -fL --retry 3 "$BASE/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" -o /tmp/godot.zip
+          unzip -q /tmp/godot.zip -d /tmp/godot
+          sudo install -m 755 "/tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64" /usr/local/bin/godot
+          curl -fL --retry 3 "$BASE/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" -o /tmp/templates.tpz
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          unzip -q /tmp/templates.tpz -d /tmp/godot-templates
+          cp -r /tmp/godot-templates/templates/. "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/"
+      - name: Debug signing key and editor paths
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/debug.keystore" -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android Debug,O=Android,C=US"
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$RUNNER_TEMP/debug.keystore" >> "$GITHUB_ENV"
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey" >> "$GITHUB_ENV"
+          echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android" >> "$GITHUB_ENV"
+          mkdir -p "$HOME/.config/godot"
+          cat > "$HOME/.config/godot/editor_settings-4.tres" <<EOT
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "${JAVA_HOME_17_X64:-$JAVA_HOME}"
+          EOT
+      - name: Import, smoke test, export APK
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          godot --headless --path match3 --editor --quit 2>&1 | tee build/import.log
+          timeout 120 godot --headless --path match3 --quit-after 600 2>&1 | tee build/run.log || true
+          if grep -E "SCRIPT ERROR|Parse Error|Failed to load script" build/import.log build/run.log; then
+            echo "::error::GDScript errors found"; exit 1
+          fi
+          godot --headless --path match3 --export-debug Android "$GITHUB_WORKSPACE/build/zoopark-mechty-debug.apk"
+          test -s build/zoopark-mechty-debug.apk
+          ls -la build/zoopark-mechty-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zoopark-mechty-debug-apk
+          path: build/zoopark-mechty-debug.apk
+      - name: Publish APK to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="zoopark-apk"
+          gh release delete "$TAG" --yes --cleanup-tag -R "$GITHUB_REPOSITORY" || true
+          gh release create "$TAG" build/zoopark-mechty-debug.apk --prerelease \
+            --target "$GITHUB_SHA" --title "Зоопарк мечты — APK" \
+            --notes "Debug APK, коммит $GITHUB_SHA" -R "$GITHUB_REPOSITORY"
