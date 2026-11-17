@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.44.0"
+const VERSION := "2.45.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -6961,7 +6961,7 @@ func _run_shots(dir: String) -> void:
 	await _snap(dir, "1d_settings")
 	_clear_overlay()
 	# уровни с разными препятствиями: 4 ящики, 5 трава, 6 предметы, 7 цепи, 8 вазы
-	for n in [8, 12, 21, 40, 55, 70]:
+	for n in [4, 8, 10, 12, 15, 40]:
 		_start_level(n)
 		await get_tree().create_timer(1.6).timeout
 		await _snap(dir, "2_level_%d" % n)
