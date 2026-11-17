@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.46.0"
+const VERSION := "2.47.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -70,6 +70,7 @@ var _level: Dictionary
 var _moves := 0
 var _state := "idle"  # idle | play | bonus | done
 var _shake := 0.0
+var _shake_base := Vector2.INF
 var _flying := 0
 var _bot := false
 
@@ -135,11 +136,16 @@ func _process(delta: float) -> void:
 		var ab: Button = _booster_btns[_aiming]
 		ab.set_meta("glow", 0.5 + 0.5 * sin(Time.get_ticks_msec() / 160.0))
 		ab.queue_redraw()
+	# тряска поля. Место поля запоминаем один раз за тряску: раньше _board_rest() (вся раскладка шапки)
+	# пересчитывался КАЖДЫЙ кадр, даже без тряски — лишняя нагрузка постоянно
 	if _shake > 0.0:
-		_board_frame.position = _board_rest() + Vector2(randf_range(-1, 1), randf_range(-1, 1)) * _shake
-		_shake = move_toward(_shake, 0.0, 40.0 * delta)
-	elif _board_frame.position != _board_rest():
-		_board_frame.position = _board_rest()
+		if _shake_base == Vector2.INF:
+			_shake_base = _board_rest()
+		_shake = move_toward(_shake, 0.0, 60.0 * delta)
+		_board_frame.position = _shake_base + Vector2(randf_range(-1, 1), randf_range(-1, 1)) * _shake
+		if _shake <= 0.0:
+			_board_frame.position = _shake_base
+			_shake_base = Vector2.INF
 
 
 # ---------- построение интерфейса ----------
@@ -1512,12 +1518,16 @@ func _build_level_screen() -> void:
 	_board.goal_hit.connect(_on_goal_hit)
 	_board.settled.connect(_on_settled)
 	_board.big_hit.connect(func(p: float) -> void:
+		# тряска умеренная и с потолком (при цепочке бустеров сила суммируется — было до 80 px)
 		if Save.shake:
-			_shake = maxf(_shake, 9.0 + p * 6.0)
+			_shake = maxf(_shake, minf(5.0 + p * 2.0, 12.0))
 		if p >= 2.0:
-			Save.vibrate(int(35 + p * 15))
-			_flash(clampf(0.22 + p * 0.09, 0.3, 0.7))
-		if p >= 3.0 and not _bot:
+			Save.vibrate(int(minf(35 + p * 10, 80)))
+			if _state == "play":
+				_flash(clampf(0.15 + p * 0.05, 0.2, 0.4))
+		# замедление — только в игре и не чаще раза в 3 с (в финале его нет)
+		if p >= 4.0 and not _bot and _state == "play" and Time.get_ticks_msec() - _slowmo_at > 3000:
+			_slowmo_at = Time.get_ticks_msec()
 			_slowmo())
 	_booster_bar = HBoxContainer.new()
 	_booster_bar.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -1591,7 +1601,7 @@ func _build_level_screen() -> void:
 			_panda_react("special"))
 	_board.shake.connect(func(a: float) -> void:
 		if Save.shake:
-			_shake = maxf(_shake, a)
+			_shake = maxf(_shake, minf(a, 12.0))
 		Save.vibrate(40))
 	_level_screen.resized.connect(func() -> void:
 		_layout_level_ref()
@@ -3779,10 +3789,14 @@ func _flash(strength: float) -> void:
 
 
 ## Замедление на секунду для больших комбо.
+var _slowmo_at := 0
+
+
 func _slowmo() -> void:
-	Engine.time_scale = 0.4
-	await get_tree().create_timer(0.6, true, false, true).timeout
-	Engine.time_scale = 1.0
+	Engine.time_scale = 0.6
+	await get_tree().create_timer(0.35, true, false, true).timeout
+	if Engine.time_scale == 0.6:
+		Engine.time_scale = 1.0
 
 
 func _on_combo(n: int) -> void:
@@ -3972,8 +3986,8 @@ func _on_settled() -> void:
 				_show_lose()
 		"bonus":
 			_state = "done"
-			if _bonus_skip:
-				_bonus_skip = false
+			_bonus_skip = false
+			if not _bot:
 				Engine.time_scale = 1.0
 			_show_win()
 
@@ -3986,6 +4000,9 @@ func _begin_bonus() -> void:
 	_panda_react("win")
 	_board.input_enabled = false
 	_bonus_skip = false
+	# финал сам по себе быстрее (×1.8), тап — ×6
+	if not _bot:
+		Engine.time_scale = 1.8
 	# финал можно пропустить: тап по экрану — всё доигрывается в 6 раз быстрее (монеты за ходы те же)
 	if not _bot:
 		var skip := Button.new()
@@ -4025,7 +4042,7 @@ func _begin_bonus() -> void:
 	var bonus := _moves
 	_level["bonus_coins"] = bonus * COINS_PER_MOVE
 	# праздник: каждый оставшийся ход вылетает бабочкой из счётчика и превращает фишку в бабочку
-	var n := mini(bonus, 12)
+	var n := mini(bonus, 8)
 	var from := _moves_label.get_global_rect().get_center()
 	var rtex: Texture2D = Gem.tex("propeller")
 	for i in n:
@@ -4061,7 +4078,7 @@ func _begin_bonus() -> void:
 				g.set_special(Gem.PROPELLER)
 				g.scale = Vector2(1.5, 1.5)
 				g.create_tween().tween_property(g, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK))
-		await get_tree().create_timer(0.09).timeout
+		await get_tree().create_timer(0.05).timeout
 	_moves = 0
 	_update_moves()
 	await get_tree().create_timer(0.35).timeout
@@ -6704,6 +6721,34 @@ func _run_perf() -> void:
 			ch.visible = true
 	_board.self_modulate.a = 0.0
 	_board.set_meta("x", 1)
+	# стресс: 18 бустеров разом (как финал)
+	var kinds := [Gem.ROCKET_H, Gem.ROCKET_V, Gem.BOMB, Gem.PROPELLER]
+	var put := 0
+	for x in 8:
+		for y in range(2, 10):
+			var g: Node2D = _board.gem_at(Vector2i(x, y))
+			if g and g.special == Gem.NONE and g.color >= 0 and put < 18 and (x + y) % 3 == 0:
+				g.set_special(kinds[put % 4])
+				put += 1
+	var t0 := Time.get_ticks_msec()
+	_board.detonate_all_specials()
+	var mx_dc := 0.0
+	var mx_fx := 0
+	var frames := 0
+	while _board.busy:
+		await get_tree().process_frame
+		frames += 1
+		mx_dc = maxf(mx_dc, Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+		var nfx: int = _board.fx.get_child_count() if _board.fx else 0
+		if nfx > mx_fx:
+			mx_fx = nfx
+			if nfx > 120:
+				var kinds2 := {}
+				for ch in _board.fx.get_children():
+					var key: String = ch.get_class() + ":" + (str(ch.texture.resource_path.get_file()) if ch is Sprite2D and ch.texture and ch.texture.resource_path != "" else (str(ch.get_meta("fb", "")) if ch.has_meta("fb") else ""))
+					kinds2[key] = kinds2.get(key, 0) + 1
+				print("FXMIX ", nfx, " ", kinds2)
+	print("PERF stress specials %d time_s %.2f frames %d max_draw_calls %.0f max_fx_nodes %d" % [put, (Time.get_ticks_msec() - t0) / 1000.0, frames, mx_dc, mx_fx])
 	for k in 4:
 		var all: Array = _board.all_moves()
 		if not all.is_empty():

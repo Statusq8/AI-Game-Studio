@@ -29,8 +29,8 @@ signal shuffled
 
 const Gem := preload("res://scripts/gem.gd")
 const CELL := 84.0
-const PROPELLER_TIME := 1.5  # полёт бабочки к цели: 0.3 взлёт + 1.0 полёт + 0.2 нырок
-const PROPELLER_DELAY := 0.25  # сначала взрываются соседи, потом бабочка взлетает
+const PROPELLER_TIME := 0.9  # полёт бабочки к цели: 0.18 взлёт + 0.55 полёт + 0.13 нырок (было 1.5 — «висело»)
+const PROPELLER_DELAY := 0.15  # сначала взрываются соседи, потом бабочка взлетает
 const ROCKET_CELL_TIME := 0.07  # ракета пролетает клетку за столько секунд
 enum { B_NONE, B_CRATE, B_VASE, B_SAFE, B_JAR, B_CAGE, B_BALLOON, B_FLOWER, B_BUSH, B_SHELL, B_STONE, B_COLORBOX, B_BIRDHOUSE }
 ## Препятствия-блоки: цель уровня, бьёт ли совпадение рядом, картинки по стадиям поломки.
@@ -1943,7 +1943,7 @@ func _gravity() -> void:
 	for g: Node2D in moved:
 		var target := cell_pos(g.cell)
 		var dist := maxf((target - g.position).length() / CELL, 0.0)
-		var t := 0.12 + sqrt(dist) * 0.09
+		var t := 0.09 + sqrt(dist) * 0.065  # быстрее (было 0.12 + 0.09·√клеток)
 		# нижние фишки трогаются чуть раньше верхних — между ними появляется зазор, как у сыплющихся конфет
 		var dl := col_lag[g.cell.x] + float(H - 1 - g.cell.y) * 0.012
 		longest = maxf(longest, dl + t)
@@ -2224,8 +2224,8 @@ static func fx_tex(kind: String) -> Texture2D:
 ## Бюджет эффектов: сколько спрайтов уже летает. Когда взрывов много сразу (финал уровня, комбо),
 ## мелкие украшения (осколки, капли, искры, огонь следа) пропускаются — главное (вспышки, взрывы)
 ## остаётся. Раньше в финале одновременно жило 1000+ спрайтов, и игра зависала.
-const FX_SOFT := 70    # выше — без осколков и капель
-const FX_HARD := 160   # выше — только крупные взрывы
+const FX_SOFT := 40    # выше — без осколков и капель
+const FX_HARD := 90   # выше — только крупные взрывы
 
 
 ## Заранее загрузить и «показать» видеокарте все текстуры эффектов (почти невидимо, один кадр) —
@@ -2285,7 +2285,7 @@ static var _fb_tex := {}
 func _flipbook(name: String, at: Vector2, px: float, time: float, tint := Color.WHITE, additive := false, z := 7) -> Sprite2D:
 	if fx == null or not FLIPBOOKS.has(name):
 		return null
-	if _fx_load() > FX_HARD * 2 and name in ["pop", "smoke", "fireball", "zap"]:
+	if _fx_load() > FX_HARD and name in ["pop", "smoke", "fireball", "zap"]:
 		return null
 	if not _fb_tex.has(name):
 		var path := "res://assets/vfx/%s.png" % name
@@ -2592,9 +2592,11 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 			beam.scale = Vector2(len / gw, thick / gw)
 			core.scale = Vector2(len / gw, thick * 0.35 / gw)
 			# огненный след сразу за соплом + дымок дальше
-			if r.position.distance_to(prev) > 0.0:
+			# при большой нагрузке (много взрывов разом) след ракеты упрощается — иначе кадр «проседает»
+			var busy_fx := _fx_load() > FX_SOFT
+			if r.position.distance_to(prev) > 0.0 and _fx_load() < FX_HARD:
 				_flame(r.position - dir * 62.0)
-			if r.position.distance_to(last[0]) > 26.0:
+			if not busy_fx and r.position.distance_to(last[0]) > 26.0:
 				last[0] = r.position
 				trail_i[0] += 1
 				if trail_i[0] % 3 == 0:
@@ -2682,7 +2684,7 @@ func _lightning(a: Vector2, b: Vector2, color: Color, width: float) -> void:
 
 ## Бомба: вспышка, ударная волна, огонь и обломки.
 func _bomb_fx(cell: Vector2i, power: float) -> void:
-	shake.emit(24.0 * power)
+	shake.emit(minf(10.0 * power, 14.0))
 	Sfx.play("bomb", 1.0 / sqrt(power))
 	# ударная волна отталкивает фишки вокруг
 	for dx in range(-3, 4):
@@ -2786,9 +2788,9 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int, delay: float = 0.0) -
 	shadow.z_index = 5
 	var tw := p.create_tween()
 	# 1. вспорхнула: присела и подпрыгнула вверх
-	tw.tween_property(p, "scale", Vector2(1.15, 0.85) * gs, 0.08)
-	tw.tween_property(p, "scale", Vector2(1.2, 1.2) * gs, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.parallel().tween_property(p, "position", lift, 0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(p, "scale", Vector2(1.15, 0.85) * gs, 0.05)
+	tw.tween_property(p, "scale", Vector2(1.2, 1.2) * gs, 0.13).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(p, "position", lift, 0.13).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	# 2. полёт: плавная дуга, наклон по ходу, искорки, тень на поле
 	tw.tween_method(func(t: float) -> void:
 		var q := lift.bezier_interpolate(c1, c2, hover, t)
@@ -2800,12 +2802,12 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int, delay: float = 0.0) -
 		shadow.modulate.a = 0.22
 		if q.distance_to(last[0]) > 22.0:
 			last[0] = q
-			_sparkles(q, Color("#ffcf5a"), 1), 0.0, 1.0, 1.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+			_sparkles(q, Color("#ffcf5a"), 1), 0.0, 1.0, 0.55).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	# 3. зависла над целью и нырнула в неё
-	tw.tween_property(p, "rotation", 0.0, 0.06)
-	tw.parallel().tween_property(p, "scale", Vector2(1.35, 1.35) * gs, 0.06)
-	tw.tween_property(p, "position", b, 0.14).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	tw.parallel().tween_property(p, "scale", Vector2(0.7, 0.7) * gs, 0.14)
+	tw.tween_property(p, "rotation", 0.0, 0.04)
+	tw.parallel().tween_property(p, "scale", Vector2(1.35, 1.35) * gs, 0.04)
+	tw.tween_property(p, "position", b, 0.09).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(p, "scale", Vector2(0.7, 0.7) * gs, 0.09)
 	# по просьбе владельца без взрыва: бабочка просто ныряет в цель, фишка лопается обычным образом
 	tw.tween_callback(shadow.queue_free)
 	tw.tween_property(p, "modulate:a", 0.0, 0.08)
