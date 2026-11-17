@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.39.1"
+const VERSION := "2.40.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -707,6 +707,9 @@ func _refresh_home() -> void:
 func _on_spot(i: int) -> void:
 	var task: Dictionary = Zones.ZONES[Save.zone].tasks[i]
 	if Save.stars < int(task.cost):
+		if Zoo.art("nsref_window"):
+			_show_nostars_ref(task)
+			return
 		_dialog(task.name, ["Нужно звёзд: %d (у тебя %d)" % [task.cost, Save.stars], "Проходи уровни — за каждый дают звезду!"], [
 			["Играть", "GreenButton", _try_play],
 			["Закрыть", "Button", _clear_overlay],
@@ -6039,6 +6042,95 @@ func _show_collection_ref() -> void:
 	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
 
+## ---------- «Не хватает звёзд» 1:1 по референсу (слои: tools/nostarsbuild.py) ----------
+## Референс 852×1846 (references/screen_13_nostars.webp); координаты — в его пикселях.
+const NSREF_Y0 := 510.0
+const NSREF_TOP := 515.0
+const NSREF_BOT := 1308.0
+const NSREF_CLOSE := Vector3(762, 622, 46)
+const NSREF_PLATE := Rect2(296, 1000, 414, 76)
+const NSREF_BTN := Vector2(312, 1120)
+
+
+func _show_nostars_ref(task: Dictionary) -> void:
+	_clear_overlay()
+	var dim := ColorRect.new()
+	dim.color = Color(0.05, 0.03, 0.2, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_overlay.add_child(dim)
+	var k := minf(size.x / WIN_W, (size.y - 16.0) / (NSREF_BOT - NSREF_TOP))
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = Vector2(WIN_W, NSREF_BOT - NSREF_Y0)
+	holder.position = Vector2(size.x / 2.0 - WIN_W / 2.0 * k, size.y / 2.0 - ((NSREF_TOP + NSREF_BOT) / 2.0 - NSREF_Y0) * k)
+	holder.scale = Vector2(k, k)
+	_overlay.add_child(holder)
+	var body := Control.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.size = holder.size
+	body.pivot_offset = holder.size / 2.0
+	holder.add_child(body)
+	var font: Font = UiTheme.title_font()
+	var at := func(p: Vector2) -> Vector2: return p - Vector2(0, NSREF_Y0)
+	var wt := TextureRect.new()
+	wt.texture = Zoo.art("nsref_window")
+	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(wt)
+	var need := int(task.cost)
+	var txt := Control.new()
+	txt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	txt.size = body.size
+	txt.draw.connect(func() -> void:
+		_arc_text(txt, "Не хватает звёзд", at.call(Vector2(425.0, 646.0)), 480.0, 54, Color("#0e1f6e"))
+		var t := "Нужно %d, у тебя %d" % [need, Save.stars]
+		var fs := 36
+		while font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > NSREF_PLATE.size.x - 30.0 and fs > 20:
+			fs -= 2
+		var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var pr: Rect2 = NSREF_PLATE
+		var p: Vector2 = at.call(pr.get_center()) + Vector2(-ts.x / 2.0, fs * 0.36)
+		txt.draw_string_outline(font, p + Vector2(0, 3), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 9, Color("#7a3e10"))
+		txt.draw_string_outline(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 9, Color("#7a3e10"))
+		txt.draw_string(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	body.add_child(txt)
+	var btn := TextureButton.new()
+	btn.texture_normal = Zoo.art("nsref_btn")
+	btn.position = at.call(NSREF_BTN)
+	btn.size = btn.texture_normal.get_size()
+	btn.pivot_offset = btn.size / 2.0
+	btn.draw.connect(func() -> void:
+		var bt := "Играть"
+		var fs := 58
+		var ts := font.get_string_size(bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var p := Vector2(btn.size.x / 2.0 - ts.x / 2.0, btn.size.y / 2.0 + fs * 0.36 - 6)
+		btn.draw_string_outline(font, p + Vector2(0, 4), bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#0e3a08"))
+		btn.draw_string_outline(font, p, bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#14450c"))
+		btn.draw_string(font, p, bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	btn.button_down.connect(func() -> void: btn.create_tween().tween_property(btn, "scale", Vector2(0.93, 0.93), 0.06))
+	btn.button_up.connect(func() -> void:
+		btn.create_tween().tween_property(btn, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+	btn.pressed.connect(func() -> void:
+		Sfx.play("click")
+		_clear_overlay()
+		_try_play())
+	body.add_child(btn)
+	var close := Button.new()
+	close.flat = true
+	for stn in ["normal", "hover", "pressed", "focus"]:
+		close.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+	close.size = Vector2(NSREF_CLOSE.z, NSREF_CLOSE.z) * 2.0
+	close.position = at.call(Vector2(NSREF_CLOSE.x, NSREF_CLOSE.y)) - close.size / 2.0
+	close.pressed.connect(func() -> void:
+		Sfx.play("click")
+		_clear_overlay())
+	body.add_child(close)
+	body.scale = Vector2(0.6, 0.6)
+	body.modulate.a = 0.0
+	var tw := body.create_tween()
+	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
 	for i in 70:
@@ -6508,6 +6600,10 @@ func _run_winshot(dir: String) -> void:
 	_show_collection_ref()
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "k2_collection")
+	Save.stars = 1
+	_show_nostars_ref(Zones.ZONES[0].tasks[2])
+	await get_tree().create_timer(0.6).timeout
+	await _snap(dir, "n1_nostars")
 	Save.zone = kz
 	Save.built = kb
 	Save.shake = true
