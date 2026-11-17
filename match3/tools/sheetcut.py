@@ -1,87 +1,69 @@
 #!/usr/bin/env python3
-"""Нарезка листа UI-элементов на зелёном фоне на отдельные PNG.
+"""Единый набор графики (одна генерация владельца, docs/games/match3/references/art_sheet_v1.webp, сетка 5×4 на белом).
 
-python3 tools/sheetcut.py SHEET name1,name2,... [--out assets/art] [--min 2000]
-
-Элементы находятся как связные куски (зелёный фон вырезается), упорядочиваются по рядам
-(сверху вниз), в ряду — слева направо, и сохраняются под именами из списка (пропуск — «-»).
+python3 tools/sheetcut.py SHEET → assets/art/<имя>.png для каждого предмета (имена — NAMES по рядам).
+Фон убирается заливкой от краёв по «почти белому», предметы в клетке сетки склеиваются (искра у фитиля и т. п.),
+края сглаживаются. Фишки и бонусы — большая сторона 192 px, препятствия и плитки — 160 px.
+После: python3 tools/gem_atlas.py (атлас фишек).
 """
-import argparse
 import os
+import sys
 
 import cv2
 import numpy as np
 from PIL import Image
+from scipy import ndimage as ndi
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-def key(a: np.ndarray) -> np.ndarray:
-    # цвет фона — медиана по краям листа; ключ по расстоянию до него (тёмно-зелёные кнопки остаются)
-    edge_px = np.concatenate([a[0], a[-1], a[:, 0], a[:, -1]])
-    bg = np.median(edge_px, axis=0)
-    d = np.sqrt(((a - bg) ** 2).sum(axis=2))
-    alpha = np.clip((d - 30.0) / (75.0 - 30.0), 0.0, 1.0)
-    # фон — только зелёное, связанное с краем листа: зелёные кнопки внутри элементов не трогаем
-    bgm = (alpha < 0.5).astype(np.uint8)
-    n, lab = cv2.connectedComponents(bgm, connectivity=4)
-    edge = set(np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))) - {0}
-    outside = np.isin(lab, list(edge))
-    # мягкий край оставляем только у внешнего фона
-    near = cv2.dilate(outside.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
-    return np.where(near, alpha, 1.0) * np.where(outside, 0.0, 1.0) + np.where(outside, alpha * 0, 0)
+ART = os.path.join(ROOT, "assets", "art")
+NAMES = [
+    ["gem_0", "gem_1", "gem_2", "gem_3", "gem_4"],
+    ["gem_5", "rocket", "bomb", "propeller", "orb"],
+    ["ob_crate_0", "ob_crate_1", "ob_crate_2", "ob_pot_0", "ob_pot_1"],
+    ["ob_vines", "ob_tile_ice", "ob_tile_grass", "lv_tile_a", "lv_tile_b"],
+]
+BIG = {"gem_0", "gem_1", "gem_2", "gem_3", "gem_4", "gem_5", "rocket", "bomb", "propeller", "orb"}
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("sheet")
-    ap.add_argument("names")
-    ap.add_argument("--out", default="assets/art")
-    ap.add_argument("--min", type=int, default=2000)
-    ap.add_argument("--grow", type=int, default=9)
-    o = ap.parse_args()
-    a = np.asarray(Image.open(o.sheet).convert("RGB")).astype(np.float32)
-    alpha = key(a)
-    m = (alpha > 0.5).astype(np.uint8)
-    m = cv2.dilate(m, np.ones((o.grow, o.grow), np.uint8))  # склеить листики и ленты с элементом
-    n, lab_d, st, _ = cv2.connectedComponentsWithStats(m, 8)
-    boxes = [tuple(st[i, :4]) + (i,) for i in range(1, n) if st[i, cv2.CC_STAT_AREA] >= o.min]
-    # ряды: группируем по центру по вертикали
-    boxes.sort(key=lambda b: b[1] + b[3] / 2)
-    rows, cur = [], []
-    for b in boxes:
-        # новый ряд — если элемент начинается ниже середины всех элементов текущего ряда
-        if cur and b[1] > max(c[1] + c[3] * 0.6 for c in cur):
-            rows.append(cur)
-            cur = []
-        cur.append(b)
-    if cur:
-        rows.append(cur)
-    ordered = [b for r in rows for b in sorted(r, key=lambda b: b[0])]
-    names = o.names.split(",")
-    # убираем зелёный отсвет на краях
-    r, g, bch = a[..., 0], a[..., 1], a[..., 2]
-    g2 = np.where(alpha < 0.99, np.minimum(g, np.maximum(r, bch) + 10.0), g)
-    rgba = np.dstack([r, g2, bch, alpha * 255]).clip(0, 255).astype(np.uint8)
-    out = os.path.join(ROOT, o.out)
-    idx = [b[4] for b in ordered]
-    for i, (x, y, w, h, _) in enumerate(ordered):
-        nm = names[i] if i < len(names) else f"_extra{i}"
-        if nm == "-":
+    im = np.asarray(Image.open(sys.argv[1]).convert("RGB")).astype(np.int16)
+    H, W = im.shape[:2]
+    # фон: почти белый и связанный с краем картинки
+    white = (np.abs(im - 255).max(axis=2) < 40).astype(np.uint8)
+    lab, n = ndi.label(white)
+    border = set(np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]]))) - {0}
+    bg = np.isin(lab, list(border))
+    fg = ~bg
+    fg = ndi.binary_opening(fg, iterations=1)
+    lab2, n2 = ndi.label(fg)
+    sizes = ndi.sum(fg, lab2, range(1, n2 + 1))
+    rows, cols = len(NAMES), len(NAMES[0])
+    groups = {}
+    for i, s in enumerate(sizes, start=1):
+        if s < 60:
             continue
-        # рамка была расширена дилатацией — сужаем по реальной прозрачности
-        sub = alpha[y:y + h, x:x + w]
-        ys, xs = np.where(sub > 0.1)
-        y0, y1, x0, x1 = y + ys.min(), y + ys.max() + 1, x + xs.min(), x + xs.max() + 1
-        p = 2
-        crop = rgba[max(0, y0 - p):y1 + p, max(0, x0 - p):x1 + p].copy()
-        # чужие куски, попавшие в рамку, убираем
-        lm = (lab_d[max(0, y0 - p):y1 + p, max(0, x0 - p):x1 + p] != idx[i])
-        crop[lm, 3] = 0
-        Image.fromarray(crop, "RGBA").save(os.path.join(out, nm + ".png"), optimize=True)
-        print(f"{nm}: {w}x{h} at {x},{y}")
-    if len(ordered) != len(names):
-        print(f"ВНИМАНИЕ: найдено {len(ordered)}, имён {len(names)}")
+        ys, xs = np.where(lab2 == i)
+        r = min(rows - 1, int(ys.mean() / (H / rows)))
+        c = min(cols - 1, int(xs.mean() / (W / cols)))
+        groups.setdefault((r, c), []).append(i)
+    rgb = im.astype(np.uint8)
+    for (r, c), ids in sorted(groups.items()):
+        m = np.isin(lab2, ids)
+        m = ndi.binary_fill_holes(m)
+        # срезаем 3 px края: там светлая кайма от белого фона
+        m = ndi.binary_erosion(m, iterations=3)
+        ys, xs = np.where(m)
+        y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+        a = cv2.GaussianBlur(m.astype(np.float32) * 255, (0, 0), 0.8)
+        # светлая кайма от белого фона на краю: слегка затемняем полупрозрачные пиксели
+        crop = np.dstack([rgb[y0:y1, x0:x1], a[y0:y1, x0:x1].clip(0, 255).astype(np.uint8)])
+        img = Image.fromarray(crop, "RGBA")
+        name = NAMES[r][c]
+        side = 192 if name in BIG else 160
+        k = side / max(img.size)
+        img = img.resize((max(1, round(img.width * k)), max(1, round(img.height * k))), Image.LANCZOS)
+        img.save(os.path.join(ART, name + ".png"))
+        print(name, img.size)
 
 
 if __name__ == "__main__":
