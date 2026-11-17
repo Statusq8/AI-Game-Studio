@@ -442,6 +442,27 @@ func _tile_box(col: Color) -> StyleBoxFlat:
 func _draw() -> void:
 	var r := Rect2(Vector2.ZERO, board_size())
 	var gap := 2.5
+	# обводка поля цельным контуром (как в Royal Match): каждый слой — форма поля, расширенная на N px
+	# (каждая клетка — скруглённый прямоугольник, расширенный наружу; соседние сливаются без стыков),
+	# слои от широкого к узкому, клетки поля рисуются сверху. Видна только полоса снаружи клеток.
+	# [расширение, цвет, сдвиг вниз]: тень, тёмная кайма, золото, блик, золото, тонкая тёмная линия у клеток
+	var layers := [[9.0, Color(0, 0, 0, 0.25), 3.0], [8.0, Color("#3b1f05"), 0.0], [6.5, Color("#f2a019"), 0.0],
+		[4.3, Color("#ffe58a"), 0.0], [3.3, Color("#e8920f"), 0.0], [1.5, Color("#4a2806"), 0.0]]
+	var cells: Array = []
+	for x in W:
+		for y in H:
+			if not hole[x][y]:
+				cells.append(Vector2(x, y) * CELL)
+	for L in layers:
+		var e: float = L[0]
+		var tris := PackedVector2Array()
+		for p: Vector2 in cells:
+			var rr := Rect2(p - Vector2(e, e) + Vector2(0, L[2]), Vector2(CELL + 2.0 * e, CELL + 2.0 * e))
+			tris.append_array(_round_rect_tris(rr, e))
+		var cols := PackedColorArray()
+		cols.resize(tris.size())
+		cols.fill(L[1])
+		RenderingServer.canvas_item_add_triangle_array(get_canvas_item(), PackedInt32Array(), tris, cols)
 	# клетки рисуются слоями (сначала все подложки, потом все плитки А, потом все плитки Б) —
 	# одинаковые картинки подряд видеокарта склеивает в одну пачку (раньше вперемешку — ~160 вызовов)
 	var tiles := [[], []]
@@ -467,55 +488,6 @@ func _draw() -> void:
 		var tt: Texture2D = Gem.tex("lv_tile_a" if i == 0 else "lv_tile_b")
 		for rect: Rect2 in tiles[i]:
 			draw_texture_rect(tt, rect.grow(-1.0), false)
-	# обводка поля по его форме, как в Royal Match: тень, тёмная кайма, широкий золотой кант, светлый блик.
-	# Каждая сторона клетки на краю поля — отрезок; на концах кружки, чтобы углы были скруглены.
-	var edges: Array = []
-	for x in W:
-		for y in H:
-			if hole[x][y]:
-				continue
-			var p0 := Vector2(x, y) * CELL
-			for d: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
-				var nb: Vector2i = Vector2i(x, y) + d
-				if inside(nb) and not hole[nb.x][nb.y]:
-					continue
-				match d:
-					Vector2i.LEFT: edges.append([p0, p0 + Vector2(0, CELL), Vector2(-1, 0)])
-					Vector2i.RIGHT: edges.append([p0 + Vector2(CELL, 0), p0 + Vector2(CELL, CELL), Vector2(1, 0)])
-					Vector2i.UP: edges.append([p0, p0 + Vector2(CELL, 0), Vector2(0, -1)])
-					Vector2i.DOWN: edges.append([p0 + Vector2(0, CELL), p0 + Vector2(CELL, CELL), Vector2(0, 1)])
-	# слои: [смещение наружу, толщина, цвет, сдвиг вниз]
-	# тонкая обводка (по просьбе владельца): тёмная кайма 10 px, золотой кант 6 px, блик 2 px
-	var layers := [[5.0, 13.0, Color(0, 0, 0, 0.25), 3.0], [5.0, 10.0, Color("#3b1f05"), 0.0],
-		[5.0, 6.0, Color("#f2a019"), 0.0], [4.0, 2.0, Color("#ffe58a"), 0.0]]
-	for L in layers:
-		var off: float = L[0]
-		var wd: float = L[1]
-		var col: Color = L[2]
-		var dn := Vector2(0, L[3])
-		# одним вызовом на слой: все стороны — полосы (прямоугольники-полигоны), углы — кружки только там,
-		# где сходятся стороны (без повторов); один тип рисования подряд — одна пачка у видеокарты
-		var rects := PackedVector2Array()
-		var corners := {}
-		for e in edges:
-			var o: Vector2 = e[2]
-			var a: Vector2 = e[0] + o * off + dn
-			var b: Vector2 = e[1] + o * off + dn
-			var nrm := o * wd / 2.0
-			rects.append_array([a - nrm, b - nrm, b + nrm, a - nrm, b + nrm, a + nrm])
-			corners[a.round()] = true
-			corners[b.round()] = true
-		var cols := PackedColorArray()
-		cols.resize(rects.size())
-		cols.fill(col)
-		var circ := _circle_tris(corners.keys(), wd / 2.0)
-		var cc := PackedColorArray()
-		cc.resize(circ.size())
-		cc.fill(col)
-		rects.append_array(circ)
-		cols.append_array(cc)
-		RenderingServer.canvas_item_add_triangle_array(get_canvas_item(), PackedInt32Array(), rects, cols)
-	# внутренние углы (у дыр): кант соседних сторон пересекается — поверх кладём клетки заново ниже
 	for x in W:
 		for y in H:
 			if hole[x][y]:
@@ -542,6 +514,22 @@ func _draw() -> void:
 					var by := rect.position.y + rect.size.y - 10
 					draw_line(Vector2(bx, by), Vector2(bx - 4, by - 12), Color("#2f8f2f"), 3.0)
 					draw_line(Vector2(bx + 4, by), Vector2(bx + 8, by - 10), Color("#2f8f2f"), 3.0)
+
+
+## Скруглённый прямоугольник треугольниками (радиус углов rad): крест из двух прямоугольников + 4 четверти круга.
+func _round_rect_tris(r: Rect2, rad: float) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var add_rect := func(q: Rect2) -> void:
+		var a := q.position
+		var b := q.position + Vector2(q.size.x, 0)
+		var c := q.end
+		var d := q.position + Vector2(0, q.size.y)
+		out.append_array([a, b, c, a, c, d])
+	add_rect.call(Rect2(r.position + Vector2(rad, 0), Vector2(r.size.x - 2.0 * rad, r.size.y)))
+	add_rect.call(Rect2(r.position + Vector2(0, rad), Vector2(r.size.x, r.size.y - 2.0 * rad)))
+	out.append_array(_circle_tris([r.position + Vector2(rad, rad), Vector2(r.end.x - rad, r.position.y + rad),
+		Vector2(r.position.x + rad, r.end.y - rad), r.end - Vector2(rad, rad)], rad))
+	return out
 
 
 ## Кружки (для скругления углов обводки) — треугольниками, чтобы рисовать вместе со сторонами одним вызовом.
