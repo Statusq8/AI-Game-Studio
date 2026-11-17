@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.40.0"
+const VERSION := "2.41.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -5658,6 +5658,9 @@ func _open_chest(from: Control) -> void:
 	Sfx.play("coin")
 	_dust(from.get_global_rect().get_center())
 	_clear_overlay()
+	if Zoo.art("coref_window"):
+		_show_chestopen_ref(rw)
+		return
 	var dv := _dialog("Сундук открыт!", [], [["Ура!", "GreenButton", func() -> void:
 		_clear_overlay()
 		_refresh_home()]])
@@ -6130,6 +6133,101 @@ func _show_nostars_ref(task: Dictionary) -> void:
 	var tw := body.create_tween()
 	tw.tween_property(body, "scale", Vector2.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+
+## ---------- «Сундук открыт!» 1:1 по референсу (слои: tools/chestopenbuild.py) ----------
+## Референс 852×1846 (references/screen_14_chestopen.webp); координаты — в его пикселях.
+const COREF_Y0 := 362.0
+const COREF_TOP := 366.0
+const COREF_BOT := 1400.0
+const COREF_CLOSE := Vector3(762, 484, 46)
+const COREF_SLOTS := [Vector2(175.5, 1088.5), Vector2(309.5, 1089.5), Vector2(437.5, 1089.5)]
+const COREF_BTN := Vector2(116, 1216)
+
+
+func _show_chestopen_ref(rw: Dictionary) -> void:
+	_clear_overlay()
+	var dim := ColorRect.new()
+	dim.color = Color(0.05, 0.03, 0.2, 0.6)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	dim.mouse_filter = Control.MOUSE_FILTER_STOP
+	_overlay.add_child(dim)
+	var k := minf(size.x / WIN_W, (size.y - 16.0) / (COREF_BOT - COREF_TOP))
+	var holder := Control.new()
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = Vector2(WIN_W, COREF_BOT - COREF_Y0)
+	holder.position = Vector2(size.x / 2.0 - WIN_W / 2.0 * k, size.y / 2.0 - ((COREF_TOP + COREF_BOT) / 2.0 - COREF_Y0) * k)
+	holder.scale = Vector2(k, k)
+	_overlay.add_child(holder)
+	var font: Font = UiTheme.title_font()
+	var at := func(p: Vector2) -> Vector2: return p - Vector2(0, COREF_Y0)
+	# лучи и сияние за окном (как в референсе), медленно крутятся
+	var rays := Control.new()
+	rays.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rays.size = holder.size
+	var rc: Vector2 = at.call(Vector2(426, 780))
+	rays.draw.connect(func() -> void:
+		var t := Time.get_ticks_msec() / 1000.0
+		rays.draw_texture_rect(Board.fx_tex("glow"), Rect2(rc - Vector2(560, 700), Vector2(1120, 1400)), false, Color(1.0, 0.85, 0.35, 0.7))
+		for i in 16:
+			var a := TAU * i / 16.0 + t * 0.2
+			rays.draw_colored_polygon(PackedVector2Array([rc, rc + Vector2(cos(a - 0.08), sin(a - 0.08)) * 900.0,
+				rc + Vector2(cos(a + 0.08), sin(a + 0.08)) * 900.0]), Color(1.0, 0.9, 0.45, 0.22)))
+	holder.add_child(rays)
+	_every_frame(rays)
+	var body := Control.new()
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.size = holder.size
+	body.pivot_offset = holder.size / 2.0
+	holder.add_child(body)
+	var wt := TextureRect.new()
+	wt.texture = Zoo.art("coref_window")
+	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(wt)
+	var keys := rw.keys()
+	var txt := Control.new()
+	txt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	txt.size = body.size
+	txt.draw.connect(func() -> void:
+		_arc_text(txt, "Сундук открыт!", at.call(Vector2(425.0, 520.0)), 430.0, 54, Color("#3c0a5e"))
+		for i in mini(keys.size(), COREF_SLOTS.size()):
+			_draw_reward(txt, keys[i], int(rw[keys[i]]), at.call(COREF_SLOTS[i]) + Vector2(0, -8), 74.0))
+	body.add_child(txt)
+	var btn := TextureButton.new()
+	btn.texture_normal = Zoo.art("coref_btn")
+	btn.position = at.call(COREF_BTN)
+	btn.size = btn.texture_normal.get_size()
+	btn.pivot_offset = btn.size / 2.0
+	btn.draw.connect(func() -> void:
+		var bt := "Ура!"
+		var fs := 60
+		var ts := font.get_string_size(bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+		var p := Vector2(btn.size.x / 2.0 - ts.x / 2.0, btn.size.y / 2.0 + fs * 0.36 - 6)
+		btn.draw_string_outline(font, p + Vector2(0, 4), bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#0e3a08"))
+		btn.draw_string_outline(font, p, bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color("#14450c"))
+		btn.draw_string(font, p, bt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	btn.button_down.connect(func() -> void: btn.create_tween().tween_property(btn, "scale", Vector2(0.93, 0.93), 0.06))
+	btn.button_up.connect(func() -> void:
+		btn.create_tween().tween_property(btn, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT))
+	var done := func() -> void:
+		Sfx.play("click")
+		_clear_overlay()
+		_refresh_home()
+	btn.pressed.connect(done)
+	body.add_child(btn)
+	var close := Button.new()
+	close.flat = true
+	for stn in ["normal", "hover", "pressed", "focus"]:
+		close.add_theme_stylebox_override(stn, StyleBoxEmpty.new())
+	close.size = Vector2(COREF_CLOSE.z, COREF_CLOSE.z) * 2.0
+	close.position = at.call(Vector2(COREF_CLOSE.x, COREF_CLOSE.y)) - close.size / 2.0
+	close.pressed.connect(done)
+	body.add_child(close)
+	body.scale = Vector2(0.6, 0.6)
+	body.modulate.a = 0.0
+	var tw := body.create_tween()
+	tw.tween_property(body, "scale", Vector2.ONE, 0.32).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(body, "modulate:a", 1.0, 0.15)
+	_confetti()
 
 ## Конфетти: залп из двух нижних углов + дождь сверху.
 func _confetti() -> void:
@@ -6604,6 +6702,9 @@ func _run_winshot(dir: String) -> void:
 	_show_nostars_ref(Zones.ZONES[0].tasks[2])
 	await get_tree().create_timer(0.6).timeout
 	await _snap(dir, "n1_nostars")
+	_show_chestopen_ref({"coins": 150, "hammer": 1, "pre_bomb": 1})
+	await get_tree().create_timer(0.8).timeout
+	await _snap(dir, "o1_chestopen")
 	Save.zone = kz
 	Save.built = kb
 	Save.shake = true
