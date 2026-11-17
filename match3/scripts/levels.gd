@@ -183,16 +183,31 @@ static func make(n: int) -> Dictionary:
 		lv["holes"] = uniq.keys()
 		_cut_holes(lv, lv.holes)
 	# сложные уровни: каждый 5-й «Сложный», каждый 15-й «Очень сложный» (меньше ходов, больше монет)
-	if n % 15 == 0:
+	if n % 15 == 0 and n >= 30:
 		lv["hard"] = 2
 		lv.moves -= 4
-	elif n % 5 == 0:
+	elif n % 5 == 0 and n >= 15:
 		lv["hard"] = 1
 		lv.moves -= 2
 	_trim_goals(lv)
-	# ходов — в разумных рамках: обычный уровень 18–26, сложный 16–24, очень сложный 15–22
+	# ходов — в разумных рамках: обычный уровень 18–26, сложный 16–24, очень сложный 15–22.
+	# Если препятствия «просят» больше ходов, чем потолок (раньше лишнее просто срезалось и уровень
+	# становился стеной — баланс 2026-11-17, ходы препятствий подобраны ботом --balance): потолок поднимается до +6, а цель по цвету уменьшается.
 	var hard := int(lv.get("hard", 0))
-	lv.moves = clampi(lv.moves, [18, 16, 15][hard], [26, 24, 22][hard])
+	var cap: int = [26, 24, 22][hard]
+	var over: int = lv.moves - cap
+	if over > 0:
+		var k := 1.0 - minf(0.5, over * 0.045)
+		for g in lv.goals:
+			if g.kind == "color":
+				g.left = maxi(8, int(round(g.left * k)))
+		cap += mini(over, 6)
+	# первые уровни (до 15) — мягче: цель по цвету на 20 % меньше
+	if n <= 15 and hard == 0:
+		for g in lv.goals:
+			if g.kind == "color":
+				g.left = maxi(8, int(round(g.left * 0.8)))
+	lv.moves = clampi(lv.moves, [18, 16, 15][hard], cap)
 	lv["seed"] = rng.randi()
 	return lv
 
@@ -213,7 +228,7 @@ static func _trim_goals(lv: Dictionary) -> void:
 
 
 ## Большие препятствия 2×2 (как в Royal Match): камень, цветок, клетка.
-const BIG := {"stone": 4, "flower": 3, "cage": 3}
+const BIG := {"stone": 3, "flower": 3, "cage": 4}
 
 
 static func _add_big(lv: Dictionary, kind: String, n: int, rng: RandomNumberGenerator) -> void:
@@ -240,7 +255,7 @@ static func _add_big(lv: Dictionary, kind: String, n: int, rng: RandomNumberGene
 		if count >= want:
 			break
 	lv.goals.append({"kind": kind, "left": count})
-	lv.moves += 4 * count
+	lv.moves += (6 if kind == "stone" else 4) * count
 
 
 ## Клетка свободна от любых препятствий — на одной клетке не больше одного препятствия.
@@ -277,10 +292,10 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 				lv["birdhouse"] = true
 				# цель — птицы: каждый скворечник выпускает 3 птицы, их надо спустить вниз
 				lv.goals.append({"kind": "item", "left": count * 3})
-				lv.moves += 7 + 4 * count
+				lv.moves += 8 + 6 * count
 			else:
 				lv.goals.append({"kind": kind, "left": count})
-				lv.moves += 7 if kind in ["safe", "stone"] else (5 if kind == "vase" else 3)
+				lv.moves += 9 if kind in ["safe", "stone"] else (7 if kind == "vase" else 3)
 		"ice":
 			var count := 0
 			for y in range(H - 3, H):
@@ -290,7 +305,7 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 						lv.ice[c] = 2 if (n >= 20 and rng.randf() < 0.3) else 1
 						count += 1
 			lv.goals.append({"kind": "ice", "left": count})
-			lv.moves += 4
+			lv.moves += 7
 		"honey":
 			for tries in 200:
 				if lv.honey.size() >= 3:
@@ -312,11 +327,11 @@ static func _add_obstacle(lv: Dictionary, kind: String, n: int, rng: RandomNumbe
 				if c not in lv.grass_start:
 					lv.grass_start.append(c)
 			lv.goals.append({"kind": "grass", "left": lv.grass_target.size() - lv.grass_start.size()})
-			lv.moves += 9
+			lv.moves += 11
 		"item":
-			lv.items = clampi(2 + n / 10, 2, 4)
+			lv.items = clampi(2 + n / 15, 2, 4)
 			lv.goals.append({"kind": "item", "left": lv.items})
-			lv.moves += 3 * lv.items + 2
+			lv.moves += 5 * lv.items + 2
 		"chain":
 			var count := clampi(5 + n / 4, 5, 12)
 			var cells: Array = []

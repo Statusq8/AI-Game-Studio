@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "2.41.0"
+const VERSION := "2.42.0"
 const WIN_COINS := 50
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -111,6 +111,9 @@ func _ready() -> void:
 			_run_fxdemo.call_deferred()
 		elif arg == "--inputtest":
 			_run_input_test.call_deferred()
+		elif arg.begins_with("--balance="):
+			var bs := arg.trim_prefix("--balance=").split(":")
+			_run_balance.call_deferred(int(bs[0]), int(bs[1]), int(bs[2]) if bs.size() > 2 else 3)
 		elif arg.begins_with("--bot"):
 			var spec := arg.trim_prefix("--bot=") if "=" in arg else "10"
 			if ":" in spec:
@@ -6526,6 +6529,75 @@ func _run_bot(levels: int, first: int = 1) -> void:
 	print("BOT done: %d/%d wins" % [wins, levels - first + 1])
 	get_tree().quit()
 
+
+## Проверка баланса: «разумный» бот без бустеров (берёт особые фишки, иначе — ходы с цветом цели),
+## tries попыток на уровень. Печать: BAL n hard try WIN/LOSE moves_left goal_done%.
+func _run_balance(first: int, last: int, tries: int) -> void:
+	_bot = true
+	Engine.time_scale = 10.0
+	for n in range(first, last + 1):
+		for t in tries:
+			Save.streak = 0
+			Save.hearts = Save.MAX_HEARTS
+			_pre_selected = {}
+			seed(n * 1000 + t)
+			_start_level(n)
+			var total := 0
+			for g in _level.goals:
+				total += int(g.left)
+			await get_tree().create_timer(1.2).timeout
+			var guard := 0
+			while _state == "play" and guard < 200:
+				if _board.busy or not _board.input_enabled:
+					await get_tree().process_frame
+					continue
+				var all: Array = _board.all_moves()
+				if all.is_empty():
+					await get_tree().process_frame
+					continue
+				var goal_cols := {}
+				for g in _level.goals:
+					if g.left > 0 and g.kind == "color":
+						goal_cols[int(g.color)] = true
+				var best: Array = all.pick_random()
+				var bs := -1.0
+				for cand in all:
+					var a: Node2D = _board.gem_at(cand[0])
+					var b: Node2D = _board.gem_at(cand[1])
+					var sc := randf()
+					if cand[0] == cand[1]:
+						sc += 6.0
+					elif a.is_power() and b.is_power():
+						sc += 9.0
+					elif a.is_power() or b.is_power():
+						sc += 5.0
+					if goal_cols.has(a.color) or goal_cols.has(b.color):
+						sc += 2.0
+					sc += (cand[0].y + cand[1].y) * 0.08  # ниже на поле — больше каскадов
+					if sc > bs:
+						bs = sc
+						best = cand
+				guard += 1
+				if best[0] == best[1]:
+					_board.activate_single(best[0])
+				else:
+					_board.try_swap(best[0], best[1])
+				await get_tree().process_frame
+			var ml := _moves
+			while _state == "bonus" or _board.busy:
+				await get_tree().process_frame
+			await get_tree().create_timer(0.4).timeout
+			var won := Save.level > n
+			var left := 0
+			for g in _level.goals:
+				left += int(g.left)
+			print("BAL %d %d %d %s %d %d" % [n, int(_level.get("hard", 0)), t, "WIN" if won else "LOSE", ml if won else 0,
+				int(100.0 * (total - left) / maxf(1.0, total))])
+			Save.level = 1
+			Save.coins = 0
+			_clear_overlay()
+	print("BAL done")
+	get_tree().quit()
 
 ## Проверка настоящего ввода: свайп и два тапа через очередь событий, как палец на телефоне.
 func _run_input_test() -> void:
