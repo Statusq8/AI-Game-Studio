@@ -128,7 +128,12 @@ def soft_clip(x, drive=1.5):
     return np.tanh(x * drive) / np.tanh(drive)
 
 
+SOFT = 0.72  # владелец: «тише и мягче» — общий множитель громкости и мягкий срез верхов
+
+
 def save(name, x, vol=0.85, verb=0.15, size=0.45):
+    vol *= SOFT
+    x = lp(x, 6500, 2)
     if verb > 0:
         x = reverb(x, verb, size)
     x = x - np.mean(x)

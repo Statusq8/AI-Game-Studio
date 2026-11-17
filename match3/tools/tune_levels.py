@@ -29,9 +29,10 @@ def run(first, last, tries):
 
 
 def target(n, hard):
+    # сложнее (отзыв «слишком легко»): бот слабее человека, поэтому цели ниже, чем «ощущается»
     if n <= 15:
-        return 0.9
-    return [0.7, 0.45, 0.3][hard]
+        return 0.85 if hard == 0 else 0.55
+    return [0.6, 0.38, 0.25][hard]
 
 
 def main():
@@ -74,7 +75,7 @@ def main():
         delta = max(-6, min(8, int(round(delta))))
         if abs(delta) <= 1:
             delta = 0
-        nm = max(14, min(40, mv + delta))
+        nm = max(15, min(40, mv + delta))
         newmoves[n] = nm
         print("%3d hard=%d moves %2d  wins %d/%d  sur=%s  -> %d" % (n, hard, mv, wins, len(rows), [int(x) for x in sur], nm))
     if "--apply" in sys.argv:

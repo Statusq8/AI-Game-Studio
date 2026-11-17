@@ -29,7 +29,7 @@ signal shuffled
 
 const Gem := preload("res://scripts/gem.gd")
 const CELL := 84.0
-const PROPELLER_TIME := 0.9  # полёт бабочки к цели: 0.18 взлёт + 0.55 полёт + 0.13 нырок (было 1.5 — «висело»)
+const PROPELLER_TIME := 0.65  # полёт бабочки к цели: 0.18 взлёт + 0.55 полёт + 0.13 нырок (было 1.5 — «висело»)
 const PROPELLER_DELAY := 0.15  # сначала взрываются соседи, потом бабочка взлетает
 const ROCKET_CELL_TIME := 0.07  # ракета пролетает клетку за столько секунд
 enum { B_NONE, B_CRATE, B_VASE, B_SAFE, B_JAR, B_CAGE, B_BALLOON, B_FLOWER, B_BUSH, B_SHELL, B_STONE, B_COLORBOX, B_BIRDHOUSE, B_CAN }
@@ -258,7 +258,7 @@ func _draw_block(n: Node2D, cell: Vector2i) -> void:
 		n.draw_set_transform(Vector2(0, 0), 0.0, Vector2(k, k))
 		n.draw_texture(t, -sz / 2)
 		n.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-		if hp >= 2 and (BLOCKS[kind].tex.size() == 1 or big):
+		if hp >= 2 and (BLOCKS[kind].tex.size() == 1 or big or block_max[cell.x][cell.y] > BLOCKS[kind].tex.size()):
 			# прочность цифрой, если у картинки нет стадий (у больших блоков — всегда)
 			var f: Font = load("res://scripts/ui_theme.gd").title_font()
 			var bp := Vector2(CELL * (0.75 if big else 0.3), CELL * (0.75 if big else 0.3))
@@ -873,7 +873,7 @@ func _process(delta: float) -> void:
 		_idle = 0.0
 		return
 	_idle += delta
-	if _idle > 5.0:
+	if _idle > 10.0:
 		_idle = -3.0
 		show_hint()
 		idle_hint.emit()
@@ -1209,7 +1209,7 @@ func _cascade(prefer: Array) -> void:
 
 
 ## Мёд растекается на соседнюю фишку, если за ход его ни разу не задели.
-const SPREAD_HONEY := false
+const SPREAD_HONEY := true  # владелец: мёд растекается (сложнее)
 
 
 func _spread_honey() -> void:
@@ -1321,7 +1321,7 @@ func _hit_block(c0: Vector2i) -> void:
 	var center := cell_pos(c) + (Vector2(CELL, CELL) / 2.0 if big else Vector2.ZERO)
 	var gone: bool = block_hp[c.x][c.y] <= 0
 	# препятствие разлетается на куски из своего материала (щепки ящика, черепки горшка…)
-	if stage_tex and fx:
+	if stage_tex and fx and not (gone and kind == B_BALLOON):
 		var pieces := (9 if big else 7) if gone else (4 if big else 3)
 		_shatter(stage_tex, fx.to_local(to_global(center)), CELL * (2.0 if big else 1.0), pieces, 1.0 if gone else 0.6)
 		_burst(center, BLOCKS[kind].fx if BLOCKS.has(kind) else Color.WHITE, 6 if big else 4)
@@ -1341,8 +1341,21 @@ func _hit_block(c0: Vector2i) -> void:
 		_pop_ring(center, col.lerp(Color.WHITE, 0.3))
 		if not big:
 			shake.emit(2.5)
-		if n:
+		if n and kind == B_BALLOON:
+			# шарик отрывается и улетает вверх, покачиваясь
+			n.z_index = 6
+			var p0 := n.position
+			var bt := create_tween()
+			bt.tween_method(func(u: float) -> void:
+				n.position = p0 + Vector2(sin(u * 9.0) * 10.0, -u * CELL * 4.0)
+				n.rotation = sin(u * 9.0) * 0.15
+				n.scale = Vector2.ONE * (1.0 + u * 0.25)
+				n.modulate.a = 1.0 - u * u, 0.0, 1.0, 0.7)
+			bt.tween_callback(n.queue_free)
+		elif n:
 			n.z_index = 3
+			if kind == B_CAGE:
+				_bird_fly(center, big)
 			var tw := create_tween()
 			tw.tween_property(n, "modulate", Color(2.2, 2.2, 2.2, 1.0), 0.05)
 			tw.parallel().tween_property(n, "scale", Vector2(1.28, 1.28), 0.09).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -1361,6 +1374,27 @@ func _hit_block(c0: Vector2i) -> void:
 		tw.parallel().tween_property(n, "scale", Vector2(0.94, 1.08), 0.08)
 		tw.tween_property(n, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 		_pop_ring(center, (BLOCKS[kind].fx if BLOCKS.has(kind) else Color.WHITE).lerp(Color.WHITE, 0.4))
+
+
+## Из открытой клетки вылетает птичка: подпрыгивает, машет и улетает за край поля.
+func _bird_fly(center: Vector2, big: bool) -> void:
+	var b: Node2D = Gem.new()
+	b.size = CELL * (1.1 if big else 0.9)
+	b.position = center
+	b.z_index = 9
+	add_child(b)
+	b.set_special(Gem.ITEM)
+	b.bird = true
+	var side := -1.0 if center.x > W * CELL / 2.0 else 1.0
+	var p0 := center
+	var tw := b.create_tween()
+	tw.tween_property(b, "scale", Vector2(1.3, 1.3), 0.12).set_trans(Tween.TRANS_BACK)
+	tw.tween_method(func(u: float) -> void:
+		b.position = p0 + Vector2(side * u * CELL * 6.0, -u * CELL * 5.0 - sin(u * PI) * CELL)
+		b.rotation = sin(u * 30.0) * 0.12
+		b.scale = Vector2(side * (1.3 - u * 0.5), 1.3 - u * 0.5), 0.0, 1.0, 0.9).set_trans(Tween.TRANS_SINE)
+	tw.tween_callback(b.queue_free)
+	Sfx.play("butterfly", 1.2, -6.0)
 
 
 ## Особое поведение после разрушения: куст и горшок раскидывают газон, скворечник выпускает птиц.
@@ -1861,9 +1895,9 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 				t.tween_property(g, "rotation", 0.12, 0.05)
 				t.tween_property(g, "rotation", -0.12, 0.05)
 				t.chain().tween_property(g, "rotation", 0.0, 0.03)
-		await get_tree().create_timer(0.4).timeout
+		await get_tree().create_timer(0.25).timeout
 		var seed := {}
-		var step := clampf(0.9 / maxf(1.0, order.size()), 0.05, 0.11)
+		var step := clampf(0.6 / maxf(1.0, order.size()), 0.035, 0.08)
 		for i in order.size():
 			area[order[i]] = true
 			seed[order[i]] = 0.12 + i * step
@@ -1881,6 +1915,11 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 	area[g1.cell] = true
 	area[g2.cell] = true
 	if props >= 1:
+		if fx:
+			var lf := fx.to_local(to_global(cell_pos(at)))
+			_glow_flash(lf, Color(1.0, 0.9, 0.5), CELL * 3.0 * get_global_transform().get_scale().x, 0.35)
+			_shockwave(lf, CELL * 3.5 * get_global_transform().get_scale().x, 0.4)
+			_sparkles(lf, Color("#ffcf5a"), 10)
 		# пропеллер уносит вторую фишку к цели и взрывает её там
 		var carried: int = k1 if k2 == Gem.PROPELLER else k2
 		var count := 3 if props == 2 else 1
@@ -1928,6 +1967,13 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 			for dy in range(-3, 4):
 				area[at + Vector2i(dx, dy)] = true
 		_bomb_fx(at, 2.0)
+		# догоняющие взрывы по углам — «очень большая бомба»
+		for k in 4:
+			var off := Vector2i([-2, 2, -2, 2][k], [-2, -2, 2, 2][k])
+			get_tree().create_timer(0.12 + k * 0.05).timeout.connect(func() -> void:
+				if fx:
+					var pp := fx.to_local(to_global(cell_pos(at + off)))
+					_flipbook("boom", pp, CELL * 2.2 * get_global_transform().get_scale().x, 0.4))
 		big_hit.emit(3.0)
 	else:
 		for d in range(-1, 2):
@@ -1935,8 +1981,11 @@ func _combo(g1: Node2D, g2: Node2D, at: Vector2i) -> void:
 				area[Vector2i(x, at.y + d)] = true
 			for y in H:
 				area[Vector2i(at.x + d, y)] = true
-			_rocket_fx(at + Vector2i(0, d), false)
-			_rocket_fx(at + Vector2i(d, 0), true)
+		# большая ракета (как в Royal Match): две огромные ракеты крестом, шириной в три ряда
+		_rocket_fx(at, false, 0.0, 2.2)
+		_rocket_fx(at, true, 0.0, 2.2)
+		if fx:
+			_shockwave(fx.to_local(to_global(cell_pos(at))), CELL * 6.0 * get_global_transform().get_scale().x, 0.45)
 		big_hit.emit(3.0)
 	await _clear(area)
 
@@ -1971,7 +2020,7 @@ func _chain_lightning(start: Vector2i, targets: Array, col: int, on_hit := Calla
 		if _flipbook("orbburst", fx.to_local(to_global(cell_pos(start))), CELL * 5.0 * gk, 1.1, Color.WHITE, false, 9) == null:
 			_flipbook("zap", fx.to_local(to_global(cell_pos(start))), CELL * 3.2 * gk, 0.5, Color.WHITE, true, 9)
 		_glow_flash(fx.to_local(to_global(cell_pos(start))), color, CELL * 2.5 * gk, 0.35)
-	var step := clampf(0.75 / maxf(1.0, left.size()), 0.04, 0.09)
+	var step := clampf(0.45 / maxf(1.0, left.size()), 0.025, 0.06)
 	while not left.is_empty():
 		var best := 0
 		var bd := 1e9
@@ -2689,6 +2738,11 @@ func _pop_fx(cell: Vector2i, col: int, shards: int) -> void:
 	rt.tween_property(ring, "scale", rk * 1.15, 0.24).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 	rt.tween_property(ring, "modulate:a", 0.0, 0.24).set_ease(Tween.EASE_IN)
 	rt.chain().tween_callback(ring.queue_free)
+	# брызги цвета фишки — сочнее
+	if load < FX_SOFT:
+		for i in 5:
+			var ang := randf_range(-PI * 0.95, -PI * 0.05) if i % 2 == 0 else randf() * TAU
+			_droplet(at, color.lerp(Color.WHITE, randf() * 0.3), randf_range(8.0, 13.0) * gk, Vector2(cos(ang), sin(ang)) * randf_range(170.0, 320.0) * gk, randf_range(0.35, 0.5))
 	var tex: Texture2D = Gem.tex("gem_%d" % col) if col >= 0 else null
 	for i in shards:
 		var sh := Sprite2D.new()
@@ -2751,7 +2805,7 @@ func _sparkles(at: Vector2, color: Color, n: int) -> void:
 
 
 ## Ракета: две ракеты разлетаются в стороны с огненным следом, по линии бьёт молния.
-func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
+func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0, big := 1.0) -> void:
 	if fx == null:
 		return
 	if delay > 0.0:
@@ -2760,7 +2814,12 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 	var c := cell_pos(cell)
 	var tex: Texture2D = Gem.tex("rocket")
 	var rgs := get_global_transform().get_scale().x
-	_flipbook("fireball", fx.to_local(to_global(c)), CELL * 2.2 * rgs, 0.5)
+	_flipbook("fireball", fx.to_local(to_global(c)), CELL * 2.2 * rgs * big, 0.5)
+	# старт: вспышка и кольцо-ударная волна
+	_glow_flash(fx.to_local(to_global(c)), Color(1.0, 0.8, 0.4), CELL * 2.4 * rgs * big, 0.25)
+	_pop_ring(fx.to_local(to_global(c)), Color(1.0, 0.75, 0.3))
+	if _fx_load() < FX_SOFT:
+		_sparkles(fx.to_local(to_global(c)), Color("#ffd27a"), 6)
 	var trail_i := [0]
 	for sgn in [-1.0, 1.0]:
 		var dir := Vector2(0, sgn) if vertical else Vector2(sgn, 0)
@@ -2768,7 +2827,7 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 		var end := fx.to_local(to_global(c + dir * (H if vertical else W) * CELL))
 		var r := Sprite2D.new()
 		r.texture = tex
-		var k := CELL * 1.75 / maxf(tex.get_width(), tex.get_height()) if tex else 1.0
+		var k := CELL * 1.75 * big / maxf(tex.get_width(), tex.get_height()) if tex else 1.0
 		# картинка смотрит вправо: влево — зеркалим, вверх/вниз — поворачиваем
 		if vertical:
 			r.rotation = PI / 2.0 * sgn
@@ -2786,7 +2845,7 @@ func _rocket_fx(cell: Vector2i, vertical: bool, delay: float = 0.0) -> void:
 		beam.z_index = 4
 		core.z_index = 4
 		var gw := float(beam.texture.get_width())
-		var thick := CELL * 0.55 * get_global_transform().get_scale().x
+		var thick := CELL * 0.55 * get_global_transform().get_scale().x * (big * 1.6 if big > 1.0 else 1.0)
 		for bs in [beam, core]:
 			bs.rotation = PI / 2.0 if vertical else 0.0
 		var tw := r.create_tween()
@@ -2904,7 +2963,7 @@ func _bomb_fx(cell: Vector2i, power: float) -> void:
 			var dist := Vector2(dx, dy).length()
 			var base := cell_pos(c)
 			var t := create_tween()
-			t.tween_property(g, "position", base + dir * 14.0 / dist, 0.06).set_ease(Tween.EASE_OUT)
+			t.tween_property(g, "position", base + dir * 22.0 / dist, 0.06).set_ease(Tween.EASE_OUT)
 			t.tween_property(g, "position", base, 0.2).set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
 	if fx == null:
 		return
@@ -2916,6 +2975,19 @@ func _bomb_fx(cell: Vector2i, power: float) -> void:
 	if _flipbook("boom", at, CELL * 2.7 * power * gsc, 0.45) == null:
 		_flipbook("explosion", at, CELL * 3.0 * power * gsc, 0.45)
 	_glow_flash(at, Color(1.0, 0.75, 0.35), CELL * 3.0 * power * gsc, 0.3)
+	# мощнее на вид: искры, клубы дыма по кругу, обломки
+	if _fx_load() < FX_SOFT:
+		_sparkles(at, Color("#ffd27a"), 10)
+		for i in 5:
+			var a := TAU * i / 5.0 + randf() * 0.5
+			var sp := _flipbook("smoke", at + Vector2(cos(a), sin(a)) * CELL * 1.3 * power * gsc, CELL * 1.5 * gsc, 0.6, Color(1, 0.95, 0.85, 0.7), false, 5)
+			if sp:
+				sp.rotation = randf() * TAU
+		for i in 8:
+			var a2 := randf() * TAU
+			_droplet(at, Color("#ffb347").lerp(Color("#7a4a1c"), randf()), randf_range(9.0, 15.0) * gsc, Vector2(cos(a2), sin(a2) - 0.6) * randf_range(260.0, 480.0) * gsc, randf_range(0.45, 0.65))
+	if power >= 2.0:
+		_shockwave(at, CELL * 9.0 * gsc, 0.6)
 	var flash := Node2D.new()
 	flash.position = at
 	flash.z_index = 5
@@ -2996,8 +3068,8 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int, delay: float = 0.0) -
 	var tw := p.create_tween()
 	# 1. вспорхнула: присела и подпрыгнула вверх
 	tw.tween_property(p, "scale", Vector2(1.15, 0.85) * gs, 0.05)
-	tw.tween_property(p, "scale", Vector2(1.2, 1.2) * gs, 0.13).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.parallel().tween_property(p, "position", lift, 0.13).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(p, "scale", Vector2(1.2, 1.2) * gs, 0.1).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(p, "position", lift, 0.1).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	# 2. полёт: плавная дуга, наклон по ходу, искорки, тень на поле
 	tw.tween_method(func(t: float) -> void:
 		var q := lift.bezier_interpolate(c1, c2, hover, t)
@@ -3009,7 +3081,7 @@ func _propeller_fx(from: Vector2i, to: Vector2i, col: int, delay: float = 0.0) -
 		shadow.modulate.a = 0.22
 		if q.distance_to(last[0]) > 22.0:
 			last[0] = q
-			_sparkles(q, Color("#ffcf5a"), 1), 0.0, 1.0, 0.55).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+			_sparkles(q, Color("#ffcf5a"), 1), 0.0, 1.0, 0.36).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	# 3. зависла над целью и нырнула в неё
 	tw.tween_property(p, "rotation", 0.0, 0.04)
 	tw.parallel().tween_property(p, "scale", Vector2(1.35, 1.35) * gs, 0.04)

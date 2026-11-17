@@ -9,8 +9,8 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "3.1.0"
-const WIN_COINS := 50
+const VERSION := "3.2.0"
+const WIN_COINS := 30
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
 	{"coins": 300}, {"rockets": 2, "shuffle": 1}, {"coins": 500, "pre_orb": 1, "pre_bomb": 1, "hammer": 1}]
@@ -19,8 +19,20 @@ const CHEST_WINS := 10
 const CHEST_COINS := 150
 const COINS_PER_MOVE := 5
 const EXTRA_MOVES := 5
-const EXTRA_MOVES_PRICE := 300
+const EXTRA_MOVES_PRICE := 300  # первая покупка; каждая следующая на этом уровне дороже: 300 → 600 → 900
+var _extra_buys := 0
+
+
+func _extra_price() -> int:
+	return EXTRA_MOVES_PRICE * mini(_extra_buys + 1, 3)
 const BOOSTER_PRICE := 250
+## цены по силе бустера (владелец: «разные по силе»)
+const BOOSTER_PRICES := {"hammer": 200, "rockets": 300, "shuffle": 150, "arrow": 250, "cannon": 250,
+	"pre_rocket": 200, "pre_bomb": 300, "pre_orb": 450}
+
+
+func _bprice(kind: String) -> int:
+	return int(BOOSTER_PRICES.get(kind, BOOSTER_PRICE))
 const IN_BOOSTERS := [["hammer", "Молот"], ["rockets", "Ракеты"], ["shuffle", "Микс"]]
 const PRE_BOOSTERS := [["pre_rocket", "Ракета", 1], ["pre_bomb", "Бомба", 3], ["pre_orb", "Шар", 4]]
 ## Бонусы на старт открываются по ходу игры, как в Royal Match (до этого — замок и «с N ур.»)
@@ -390,31 +402,48 @@ func _build_home() -> void:
 	_home_level_btn.theme_type_variation = "GreenButton"
 	_home_level_btn.custom_minimum_size = Vector2(330, 110)
 	_home_level_btn.add_theme_font_size_override("font_size", 40)
-	if Zoo.art("ui2_play"):
-		# кнопка уровня из арта владельца: номер в кремовой плашке, стрелка «▶»
+	if Zoo.art("nsref_btn"):
+		# кнопка уровня как в Royal Match: большая зелёная «Уровень N» внизу по центру;
+		# сложный — красная с плашкой «Сложный» сверху
 		_home_level_btn.flat = true
 		for st in ["normal", "hover", "pressed", "focus"]:
 			_home_level_btn.add_theme_stylebox_override(st, StyleBoxEmpty.new())
-		_home_level_btn.custom_minimum_size = Vector2(445.0 * REF_K, 445.0 * REF_K * 322.0 / 617.0)
+		_home_level_btn.custom_minimum_size = Vector2(480.0 * REF_K, 480.0 * REF_K * 125.0 / 380.0)
 		_home_level_btn.draw.connect(func() -> void:
 			var b := _home_level_btn
-			var hard: bool = b.get_meta("hard", false)
+			var hard: int = int(b.get_meta("hard_n", 0))
 			var pr := b.is_pressed()
-			var tex := Zoo.art("ui2_play_down" if pr else "ui2_play")
-			var sz := tex.get_size()
-			var k := b.size.x / sz.x
-			var r := Rect2(Vector2(0, b.size.y - sz.y * k), sz * k)
-			b.draw_texture_rect(tex, r, false, Color(1.35, 0.62, 0.55) if hard else Color.WHITE)
-			# номер уровня — в левой кремовой плашке (≈ 20–42% ширины, 47–68% высоты картинки)
+			var tex := Zoo.art("nsref_btn")
+			var r := Rect2(Vector2(0, 3.0 if pr else 0.0), b.size)
+			var tint: Color = [Color.WHITE, Color(1.45, 0.55, 0.5), Color(1.0, 0.6, 1.5)][hard]
+			b.draw_texture_rect(tex, r, false, tint)
 			var font: Font = UiTheme.title_font()
-			var t := str(Save.level)
-			var fs := 70 if t.length() <= 2 else (60 if t.length() == 3 else 48)
+			var t := "Уровень %d" % Save.level
+			var fs := int(r.size.y * 0.42)
+			while font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > r.size.x * 0.8 and fs > 20:
+				fs -= 2
 			var ts := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
-			var pc := r.position + Vector2(r.size.x * 0.33, r.size.y * 0.58)
-			var tp := pc + Vector2(-ts.x / 2, fs * 0.36)
-			b.draw_string_outline(font, tp + Vector2(0, 4), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, Color(0, 0, 0, 0.35))
-			b.draw_string_outline(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#2a2a2a") if not hard else Color("#5a0a04"))
-			b.draw_string(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+			var ink: Color = [Color("#14450c"), Color("#5a0a04"), Color("#3a0a5a")][hard]
+			var tp := r.get_center() + Vector2(-ts.x / 2.0, fs * 0.36 - r.size.y * 0.04)
+			b.draw_string_outline(font, tp + Vector2(0, 4), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, ink.darkened(0.3))
+			b.draw_string_outline(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 14, ink)
+			b.draw_string(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
+			if hard > 0:
+				# плашка «Сложный» с черепом-огоньком над кнопкой
+				var ht: String = ["", "Сложный", "Очень сложный"][hard]
+				var hfs := int(fs * 0.62)
+				var hts := font.get_string_size(ht, HORIZONTAL_ALIGNMENT_LEFT, -1, hfs)
+				var hc := Vector2(r.get_center().x, r.position.y - hfs * 0.2)
+				var hr := Rect2(hc - Vector2(hts.x / 2.0 + 22.0, hfs * 0.75), Vector2(hts.x + 44.0, hfs * 1.5))
+				var sb := StyleBoxFlat.new()
+				sb.set_corner_radius_all(int(hr.size.y / 2.0))
+				sb.bg_color = Color("#c81e2a") if hard == 1 else Color("#7a22b8")
+				sb.border_color = Color("#ffe08a")
+				sb.set_border_width_all(3)
+				b.draw_style_box(sb, hr)
+				var hp := hc + Vector2(-hts.x / 2.0, hfs * 0.36)
+				b.draw_string_outline(font, hp, ht, HORIZONTAL_ALIGNMENT_LEFT, -1, hfs, 8, Color("#3a0606"))
+				b.draw_string(font, hp, ht, HORIZONTAL_ALIGNMENT_LEFT, -1, hfs, Color.WHITE))
 		_home_level_btn.button_down.connect(_home_level_btn.queue_redraw)
 		_home_level_btn.button_up.connect(_home_level_btn.queue_redraw)
 	_home_level_btn.pressed.connect(_try_play)
@@ -430,6 +459,7 @@ func _build_home() -> void:
 	_repair_btn = _icon_button("repair", 180.0 * REF_K, Color("#ff9a2a"))
 	_repair_btn.pressed.connect(func() -> void: _transition(_set_repair_mode.bind(not _repair_mode)))
 	_home.add_child(_repair_btn)
+	_every_frame(_repair_btn)
 
 	# нижняя панель: 5 вкладок
 	_tabbar = HBoxContainer.new()
@@ -500,7 +530,7 @@ func _layout_home() -> void:
 	var ref_b := func(y: float) -> float: return h - (1752.0 - y) * REF_K
 	_tabbar.size = Vector2(w, 207.0 * REF_K)
 	_tabbar.position = Vector2(0, ref_b.call(1545.0))
-	_home_level_btn.position = Vector2(672.0 * REF_K - _home_level_btn.custom_minimum_size.x / 2, ref_b.call(1392.0) - _home_level_btn.custom_minimum_size.y / 2)
+	_home_level_btn.position = Vector2(w / 2.0 - _home_level_btn.custom_minimum_size.x / 2, ref_b.call(1440.0) - _home_level_btn.custom_minimum_size.y / 2)
 	# колонки кнопок — по референсу: подарок (88, 283) Ø154, сундук ниже; справа почта (826, 258) Ø124, шаг 127
 	if _lside:
 		_lside.position = Vector2(88 - 77, 283 - 77) * REF_K
@@ -712,9 +742,9 @@ func _refresh_home() -> void:
 	_zone_bar.max_value = zone.tasks.size()
 	_zone_bar.value = Save.built.size()
 	var lv := Levels.make(Save.level)
-	if Zoo.art("ui2_play"):
+	if Zoo.art("nsref_btn"):
 		_home_level_btn.text = ""
-		_home_level_btn.set_meta("hard", lv.get("hard", 0) > 0)
+		_home_level_btn.set_meta("hard_n", int(lv.get("hard", 0)))
 		_home_level_btn.queue_redraw()
 	else:
 		_home_level_btn.text = "Уровень %d" % Save.level
@@ -953,15 +983,16 @@ func _show_shop() -> void:
 		var buy := Button.new()
 		buy.theme_type_variation = "GreenButton"
 		buy.custom_minimum_size = Vector2(140, 60)
+		buy.set_meta("price", _bprice(kind))
 		buy.position = Vector2(0, 176)
 		buy.size = Vector2(140, 60)
-		buy.text = "     %d" % BOOSTER_PRICE
+		buy.text = "     %d" % _bprice(kind)
 		buy.add_theme_font_size_override("font_size", 24)
-		buy.disabled = Save.coins < BOOSTER_PRICE
+		buy.disabled = Save.coins < _bprice(kind)
 		buy.draw.connect(func() -> void:
 			Zoo.draw_art(buy, "ui_coin", Vector2(30, buy.size.y / 2 - 3), 36.0))
 		buy.pressed.connect(func() -> void:
-			if Save.spend(BOOSTER_PRICE):
+			if Save.spend(_bprice(kind)):
 				Save.add_booster(kind)
 				Sfx.play("coin")
 				card.pivot_offset = card.size / 2
@@ -972,7 +1003,7 @@ func _show_shop() -> void:
 					c.queue_redraw()
 					for bb in c.get_children():
 						if bb is Button:
-							bb.disabled = Save.coins < BOOSTER_PRICE
+							bb.disabled = Save.coins < int(bb.get_meta("price", BOOSTER_PRICE))
 				bal.queue_redraw()
 				_refresh_coins())
 		card.add_child(buy)
@@ -1528,7 +1559,7 @@ func _build_level_screen() -> void:
 	_board.big_hit.connect(func(p: float) -> void:
 		# тряска умеренная и с потолком (при цепочке бустеров сила суммируется — было до 80 px)
 		if Save.shake:
-			_shake = maxf(_shake, minf(5.0 + p * 2.0, 12.0))
+			_shake = maxf(_shake, minf(3.0 + p * 1.2, 7.0))  # тряска меньше (отзыв владельца)
 		if p >= 2.0:
 			Save.vibrate(int(minf(35 + p * 10, 80)))
 			if _state == "play":
@@ -1609,7 +1640,7 @@ func _build_level_screen() -> void:
 			_panda_react("special"))
 	_board.shake.connect(func(a: float) -> void:
 		if Save.shake:
-			_shake = maxf(_shake, minf(a, 12.0))
+			_shake = maxf(_shake, minf(a * 0.55, 7.0))
 		Save.vibrate(40))
 	_level_screen.resized.connect(func() -> void:
 		_layout_level_ref()
@@ -2221,6 +2252,14 @@ func _draw_icon_button(btn: Button, kind: String, d: float, base: Color) -> void
 		btn.draw_circle(Vector2.ZERO, r * 0.95, Color(0, 0, 0, 0.0))
 		btn.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 		var sc := 0.94 if btn.is_pressed() else 1.0
+		# молоток стройки пульсирует, когда звёзд хватает на постройку
+		if akind == "repair" and _can_build_now():
+			var tt := Time.get_ticks_msec() / 1000.0
+			sc *= 1.0 + 0.07 * maxf(0.0, sin(tt * 5.0))
+			var gl := Board.fx_tex("glow")
+			if gl:
+				var gr := d * (0.75 + 0.05 * sin(tt * 5.0))
+				btn.draw_texture_rect(gl, Rect2(c - Vector2(gr, gr), Vector2(gr, gr) * 2.0), false, Color(1.0, 0.85, 0.3, 0.55))
 		Zoo.draw_art(btn, art_k[akind], c, d * sc)
 		var k2 := r / 40.0
 		match akind:
@@ -2617,11 +2656,11 @@ func _on_booster(kind: String) -> void:
 		_hide_aim_banner()
 	if int(Save.boosters.get(kind, 0)) <= 0:
 		_board.input_enabled = false
-		_dialog("Нет бустера", ["Купить 1 шт. за %d монет?" % BOOSTER_PRICE], [
-			["%d монет" % BOOSTER_PRICE, "OrangeButton", func() -> void:
-				if Save.spend(BOOSTER_PRICE):
+		_dialog("Нет бустера", ["Купить 1 шт. за %d монет?" % _bprice(kind)], [
+			["%d монет" % _bprice(kind), "OrangeButton", func() -> void:
+				if Save.spend(_bprice(kind)):
 					Save.add_booster(kind)
-				_close_dialog(), Save.coins < BOOSTER_PRICE],
+				_close_dialog(), Save.coins < _bprice(kind)],
 			["Реклама: +1", "PurpleButton", func() -> void:
 				Ads.show_rewarded(func() -> void: Save.add_booster(kind))
 				_close_dialog(), not Ads.is_ready()],
@@ -3299,12 +3338,35 @@ func _quit_level(then: Callable) -> void:
 	then.call()
 
 
+## Хватает ли звёзд хотя бы на одну постройку текущей зоны.
+func _can_build_now() -> bool:
+	if Save.zone >= Zones.ZONES.size():
+		return false
+	var tasks: Array = Zones.ZONES[Save.zone].tasks
+	for i in tasks.size():
+		if not Save.built.has(i) and Save.stars >= int(tasks[i].cost):
+			return true
+	return false
+
+
+## 1 ход, 2 хода, 5 ходов
+static func _plural(n: int, one: String, few: String, many: String) -> String:
+	var m10 := n % 10
+	var m100 := n % 100
+	if m10 == 1 and m100 != 11:
+		return one
+	if m10 >= 2 and m10 <= 4 and (m100 < 12 or m100 > 14):
+		return few
+	return many
+
+
 func _refresh_coins() -> void:
 	for l in _coin_labels:
 		l.text = str(Save.coins)
 
 
 func _start_level(n: int) -> void:
+	_extra_buys = 0
 	if not _bot and Engine.time_scale != 1.0:
 		Engine.time_scale = 1.0  # на случай, если пропуск финала оборвали
 	if _board:
@@ -3570,9 +3632,9 @@ func _intro_banner() -> void:
 const TIPS := {
 	"crate": "Ящик ломается, когда рядом собираешь фишки. Бывает в несколько слоёв.",
 	"grass": "Собери фишки прямо на газоне — газон под ними срежется. Бустеры тоже срезают газон.",
-	"vase": "Горшок бьётся за 2 удара: собирай фишки рядом с ним или взрывай бустерами.",
+	"vase": "Горшок бьётся за 3 удара: собирай фишки рядом с ним или взрывай бустерами.",
 	"chain": "Лианы держат фишку — её нельзя двигать. Собери её в ряд или взорви, чтобы освободить.",
-	"bush": "Куст ломается за 2 удара: собирай фишки рядом с ним.",
+	"bush": "Куст ломается за 3 удара: собирай фишки рядом с ним.",
 	"balloon": "Шарик лопается от одного совпадения рядом или от бустера.",
 	"can": "Лейке нужно 3 удара: собирай фишки рядом или взрывай бустерами.",
 	"flower": "Сначала бутон распускается, потом цветок собирается. Собирай фишки рядом.",
@@ -3580,7 +3642,7 @@ const TIPS := {
 	"item": "Доведи золотые яйца и птиц до самого низа поля — убирай фишки под ними.",
 	"ice": "Фишка во льду не двигается. Собери её в ряд или рядом с ней — лёд расколется и освободит фишку.",
 	"stone": "Камень не боится обычных совпадений! Разбей его ракетой, бомбой, бабочкой или шаром.",
-	"honey": "Мёд склеивает фишку — её нельзя двигать. Собери её в ряд или ударь бустером, чтобы смыть мёд.",
+	"honey": "Мёд склеивает фишку и растекается, если его не трогать! Собирай фишки под мёдом или бей бустерами.",
 	"cage": "В клетке птичка. Собирай фишки рядом, чтобы открыть клетку.",
 	"jar": "Разбей банку — получишь монеты!",
 	"safe": "Сейф прочный: нужно много ударов рядом или бустерами.",
@@ -3819,6 +3881,9 @@ func _on_combo(n: int) -> void:
 	if n < 3 or _state != "play":
 		return
 	_panda_react("bigcombo" if n >= 5 else "combo")
+	# надписи «Отлично!/Супер!» — реже: только с 4-го каскада
+	if n < 4:
+		return
 	var i := mini(n - 3, 3)
 	var l := _big_text(["Отлично!", "Супер!", "Невероятно!", "Потрясающе!"][i], 78 + mini(n, 6) * 5,
 		[Color("#ffe14d"), Color("#8dff6a"), Color("#ff8ad8"), Color("#7fe3ff")][i],
@@ -4020,7 +4085,7 @@ func _begin_bonus() -> void:
 	_bonus_skip = false
 	# финал сам по себе быстрее (×1.8), тап — ×6
 	if not _bot:
-		Engine.time_scale = 1.8
+		Engine.time_scale = 2.6  # финал ещё быстрее (отзыв)
 	# финал можно пропустить: тап по экрану — всё доигрывается в 6 раз быстрее (монеты за ходы те же)
 	if not _bot:
 		var skip := Button.new()
@@ -4827,16 +4892,17 @@ func _show_lose_ref() -> void:
 		return b
 	var buy: TextureButton = mk_btn.call("loseref_buy", LOSE_BUY)
 	buy.draw.connect(func() -> void:
-		var t := str(EXTRA_MOVES_PRICE)
+		var t := str(_extra_price())
 		var fs := 56
 		var tp := Vector2(236, 147)
 		buy.draw_string_outline(font, tp + Vector2(0, 3), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#0e3a08"))
 		buy.draw_string_outline(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#14450c"))
 		buy.draw_string(font, tp, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
 	buy.pressed.connect(func() -> void:
-		if Save.spend(EXTRA_MOVES_PRICE):
+		if Save.spend(_extra_price()):
+			_extra_buys += 1
 			_add_moves())
-	if Save.coins < EXTRA_MOVES_PRICE:
+	if Save.coins < _extra_price():
 		buy.disabled = true
 		buy.modulate = Color(0.6, 0.6, 0.6, 0.85)
 	var ad: TextureButton = mk_btn.call("loseref_ad", LOSE_AD)
@@ -4911,16 +4977,35 @@ func _show_prelevel_ref(n: int, lv: Dictionary) -> void:
 	var font: Font = UiTheme.title_font()
 	var at := func(p: Vector2) -> Vector2: return p - Vector2(0, PRE_Y0)
 	var wt := TextureRect.new()
-	wt.texture = Zoo.art("preref_window")
+	var hard := int(lv.get("hard", 0))
+	# сложный — красная лента, очень сложный — фиолетовая (как в Royal Match)
+	var wname: String = ["preref_window", "preref_window_hard", "preref_window_superhard"][hard]
+	wt.texture = Zoo.art(wname) if Zoo.art(wname) else Zoo.art("preref_window")
 	wt.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	body.add_child(wt)
 	# лента: «Уровень N» (на сложных — «Сложный уровень N» / «Очень сложный N»)
-	var hard := int(lv.get("hard", 0))
 	var title: String = ["Уровень %d", "Сложный уровень %d", "Очень сложный %d"][hard] % n
 	var ribbon := Control.new()
 	ribbon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ribbon.size = body.size
-	ribbon.draw.connect(func() -> void: _arc_text(ribbon, title, at.call(Vector2(425.0, 566.0)), 500.0, 64, Color("#1d5a0c")))
+	var rib_ink: Color = [Color("#1d5a0c"), Color("#5a0a1e"), Color("#2e0b5a")][hard]
+	ribbon.draw.connect(func() -> void:
+		_arc_text(ribbon, title, at.call(Vector2(425.0, 566.0)), 500.0, 64, rib_ink)
+		# число ходов — плашка на верхней кромке блока целей
+		var mt := "%d %s" % [int(lv.moves), _plural(int(lv.moves), "ход", "хода", "ходов")]
+		var mfs := 34
+		var mts := font.get_string_size(mt, HORIZONTAL_ALIGNMENT_LEFT, -1, mfs)
+		var pc: Vector2 = at.call(Vector2(425.0, 716.0))
+		var pr := Rect2(pc - Vector2(mts.x / 2.0 + 26.0, 24.0), Vector2(mts.x + 52.0, 48.0))
+		var sb := StyleBoxFlat.new()
+		sb.set_corner_radius_all(24)
+		sb.bg_color = Color("#7a3d12")
+		sb.border_color = Color("#f2c46a")
+		sb.set_border_width_all(4)
+		ribbon.draw_style_box(sb, pr)
+		var mp := pc + Vector2(-mts.x / 2.0, mfs * 0.36)
+		ribbon.draw_string_outline(font, mp, mt, HORIZONTAL_ALIGNMENT_LEFT, -1, mfs, 8, Color("#3d1a08"))
+		ribbon.draw_string(font, mp, mt, HORIZONTAL_ALIGNMENT_LEFT, -1, mfs, Color.WHITE))
 	body.add_child(ribbon)
 	# цели: иконки в плашке, под ними числа, между ними тонкие перегородки
 	var goals_l: Array = lv.goals
@@ -5032,8 +5117,9 @@ func _show_prelevel_ref(n: int, lv: Dictionary) -> void:
 		b.size = Vector2(230, 240)
 		b.position = tc - b.size / 2.0
 		b.pivot_offset = b.size / 2.0
-		b.disabled = cnt <= 0
-		if cnt <= 0:
+		var buyable := cnt <= 0 and not locked
+		b.disabled = locked
+		if locked:
 			b.modulate = Color(0.65, 0.65, 0.65, 0.9)
 		var lc := b.size / 2.0  # центр плитки в координатах кнопки
 		var ic_off: Vector2 = PRE_ICON_AT[i] - PRE_TILE_C[i]
@@ -5055,6 +5141,15 @@ func _show_prelevel_ref(n: int, lv: Dictionary) -> void:
 				var lp := lc + Vector2(-lts.x / 2.0, 92.0)
 				b.draw_string_outline(font, lp, lt, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs, 10, Color("#3a1c06"))
 				b.draw_string(font, lp, lt, HORIZONTAL_ALIGNMENT_LEFT, -1, lfs, Color.WHITE)
+			elif buyable and int(Save.boosters.get(kind, 0)) <= 0:
+				# бонуса нет — плитка предлагает купить: цена с монеткой
+				var pt := str(_bprice(kind))
+				var pfs := 34
+				var pts := font.get_string_size(pt, HORIZONTAL_ALIGNMENT_LEFT, -1, pfs)
+				var pp := lc + Vector2(-pts.x / 2.0 + 16.0, 98.0)
+				Zoo.draw_art(b, "ui_coin", pp + Vector2(-24.0, -12.0), 34.0)
+				b.draw_string_outline(font, pp, pt, HORIZONTAL_ALIGNMENT_LEFT, -1, pfs, 10, Color("#3a1c06"))
+				b.draw_string(font, pp, pt, HORIZONTAL_ALIGNMENT_LEFT, -1, pfs, Color("#ffe14d"))
 			elif cnt > 0:
 				var bc := lc + PRE_COUNT_OFF
 				b.draw_texture_rect(count_t, Rect2(bc - count_t.get_size() / 2.0, count_t.get_size()), false)
@@ -5065,6 +5160,21 @@ func _show_prelevel_ref(n: int, lv: Dictionary) -> void:
 				b.draw_string_outline(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 10, Color("#0e4a08"))
 				b.draw_string(font, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
 		b.toggled.connect(func(on: bool) -> void:
+			if on and int(Save.boosters.get(kind, 0)) <= 0:
+				# покупка прямо с плитки
+				if Save.spend(_bprice(kind)):
+					Save.add_booster(kind)
+					Save.store()
+					_refresh_coins()
+					Sfx.play("coin")
+				else:
+					b.set_pressed_no_signal(false)
+					Sfx.play("bad")
+					var nt := b.create_tween()
+					nt.tween_property(b, "rotation", 0.08, 0.05)
+					nt.tween_property(b, "rotation", -0.08, 0.05)
+					nt.tween_property(b, "rotation", 0.0, 0.05)
+					return
 			_pre_selected[kind] = on
 			Sfx.play("special" if on else "click")
 			b.queue_redraw()
@@ -5307,12 +5417,13 @@ func _show_shop_ref() -> void:
 		_every_frame(card)
 		cards.append(card)
 		var buy := TextureButton.new()
+		buy.set_meta("price", _bprice(kind))
 		buy.texture_normal = price_t
 		buy.position = SHOP_PRICE_OFF
 		buy.size = price_t.get_size()
 		buy.pivot_offset = buy.size / 2.0
 		buy.draw.connect(func() -> void:
-			var t := str(BOOSTER_PRICE)
+			var t := str(_bprice(kind))
 			var fs := 54
 			var p := Vector2(114, 63)
 			buy.draw_string_outline(font, p + Vector2(0, 3), t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, 12, Color("#0e3a08"))
@@ -5324,7 +5435,7 @@ func _show_shop_ref() -> void:
 		card.add_child(buy)
 		prices.append(buy)
 		buy.pressed.connect(func() -> void:
-			if not Save.spend(BOOSTER_PRICE):
+			if not Save.spend(_bprice(kind)):
 				return
 			Save.add_booster(kind)
 			Sfx.play("coin")
@@ -5337,10 +5448,10 @@ func _show_shop_ref() -> void:
 			bal.queue_redraw()
 			_refresh_coins()
 			for pb in prices:
-				var off: bool = Save.coins < BOOSTER_PRICE
+				var off: bool = Save.coins < int(pb.get_meta("price", BOOSTER_PRICE))
 				pb.disabled = off
 				pb.modulate = Color(0.6, 0.6, 0.6, 0.85) if off else Color.WHITE)
-		if Save.coins < BOOSTER_PRICE:
+		if Save.coins < _bprice(kind):
 			buy.disabled = true
 			buy.modulate = Color(0.6, 0.6, 0.6, 0.85)
 	# панда с корзинкой — поверх всего
@@ -5774,7 +5885,7 @@ func _show_chest_ref() -> void:
 func _open_chest(from: Control) -> void:
 	var pool := ["hammer", "rockets", "shuffle", "pre_rocket", "pre_bomb", "pre_orb"]
 	pool.shuffle()
-	var rw := {"coins": CHEST_COINS, pool[0]: 1, pool[1]: 1}
+	var rw := {"coins": CHEST_COINS, pool[0]: 1}
 	_give(rw)
 	Save.chest_wins = 0
 	Save.store()
@@ -6621,7 +6732,7 @@ func _show_lose() -> void:
 	buy.custom_minimum_size = Vector2(500, 104)
 	buy.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	buy.text = ""
-	buy.disabled = Save.coins < EXTRA_MOVES_PRICE
+	buy.disabled = Save.coins < _extra_price()
 	buy.draw.connect(func() -> void:
 		var t := "+%d ходов" % EXTRA_MOVES
 		var fs := 40
@@ -6633,12 +6744,13 @@ func _show_lose() -> void:
 		var cc := pr.position + Vector2(30, pr.size.y / 2)
 		if not Zoo.draw_art(buy, "ui_coin", cc, 50.0):
 			buy.draw_circle(cc, 20, Color("#ffd23f"))
-		var pt := str(EXTRA_MOVES_PRICE)
+		var pt := str(_extra_price())
 		var pp := pr.position + Vector2(62, pr.size.y / 2 + 11)
 		buy.draw_string_outline(font, pp, pt, HORIZONTAL_ALIGNMENT_LEFT, -1, 32, 8, Color("#1b5a12"))
 		buy.draw_string(font, pp, pt, HORIZONTAL_ALIGNMENT_LEFT, -1, 32, Color("#fff6b0")))
 	buy.pressed.connect(func() -> void:
-		if Save.spend(EXTRA_MOVES_PRICE):
+		if Save.spend(_extra_price()):
+			_extra_buys += 1
 			_add_moves())
 	v.add_child(buy)
 	# «+5 ходов» за рекламу
