@@ -603,8 +603,9 @@ func _spawn_cell(c: Vector2i) -> bool:
 
 
 ## Фишка не двигается: на ней лианы или мёд.
+## Фишка скована: лианы, мёд или лёд — её нельзя двигать, она не падает; удар ломает оковы, фишка остаётся.
 func _chained(c: Vector2i) -> bool:
-	return inside(c) and (chain[c.x][c.y] > 0 or honey[c.x][c.y])
+	return inside(c) and (chain[c.x][c.y] > 0 or honey[c.x][c.y] or ice[c.x][c.y] > 0)
 
 
 func _movable(c: Vector2i) -> bool:
@@ -1124,6 +1125,9 @@ func _cascade(prefer: Array) -> void:
 			var mc := color_at(c)
 			for d in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
 				var n: Vector2i = c + d
+				if inside(n) and not to_clear.has(n) and ice[n.x][n.y] > 0:
+					_break_chain(n)
+					continue
 				if inside(n) and block_kind[n.x][n.y] != B_NONE and BLOCKS[block_kind[n.x][n.y]].adj:
 					if block_kind[n.x][n.y] == B_COLORBOX and block_color[n.x][n.y] != mc:
 						continue
@@ -1237,6 +1241,20 @@ func _special_for(group: Dictionary) -> int:
 
 
 func _creation_cell(group: Dictionary, prefer: Array, kind: int) -> Vector2i:
+	var c0 := _creation_cell_raw(group, prefer, kind)
+	if not _chained(c0):
+		return c0
+	# скованная фишка останется на месте — бонус появится в ближайшей свободной клетке группы
+	var best := c0
+	var bd := 1e9
+	for c: Vector2i in group.cells:
+		if not _chained(c) and Vector2(c - c0).length_squared() < bd:
+			bd = Vector2(c - c0).length_squared()
+			best = c
+	return best
+
+
+func _creation_cell_raw(group: Dictionary, prefer: Array, kind: int) -> Vector2i:
 	for p in prefer:
 		if p in group.cells:
 			return p
@@ -1385,6 +1403,16 @@ func _break_chain(c: Vector2i) -> void:
 	if _hits.has(c):
 		return
 	_hits[c] = true
+	if ice[c.x][c.y] > 0:
+		# лёд: трескается, на последнем слое разлетается — фишка внутри освобождается
+		_crack_ice(c)
+		if ice[c.x][c.y] <= 0:
+			var g := gem_at(c)
+			if g:
+				var t := g.create_tween()
+				t.tween_property(g, "scale", Vector2(1.18, 1.18), 0.08)
+				t.tween_property(g, "scale", Vector2.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		return
 	if honey[c.x][c.y] and chain[c.x][c.y] <= 0:
 		honey[c.x][c.y] = false
 		_honey_hit = true
@@ -2216,7 +2244,7 @@ func _merge_into(creations: Array) -> void:
 		var target := cell_pos(cr.cell)
 		for c: Vector2i in cr.cells:
 			var g := gem_at(c)
-			if g == null or g.special != Gem.NONE or g.color < 0 or g.has_meta("merged"):
+			if g == null or g.special != Gem.NONE or g.color < 0 or g.has_meta("merged") or _chained(c):
 				continue
 			g.set_meta("merged", true)
 			g.z_index = 3
