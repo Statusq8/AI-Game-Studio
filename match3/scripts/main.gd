@@ -9,7 +9,7 @@ const Zones := preload("res://scripts/zones.gd")
 const Zoo := preload("res://scripts/zoo.gd")
 const PandaAnim := preload("res://scripts/panda_anim.gd")
 
-const VERSION := "3.3.0"
+const VERSION := "3.3.1"
 const WIN_COINS := 30
 ## Ежедневный подарок на 7 дней (предложение Claude, правится): монеты — число, бустеры — название: количество.
 const DAILY := [{"coins": 100}, {"hammer": 2}, {"coins": 200}, {"pre_rocket": 1, "pre_bomb": 1},
@@ -4661,20 +4661,33 @@ func _show_win_ref(coins: int) -> void:
 	segs.size = body.size
 	segs.set_meta("flash", 0.0)
 	var filled := Save.chest_wins
+	# дорожка нарисована под 8 клеток: CHEST_WINS клеток ужимаем в ту же ширину, до сундука
+	var step := WIN_SEG_P * 8.0 / CHEST_WINS
+	var sw := seg_t.get_size() * Vector2(step / WIN_SEG_P, 1.0)
 	segs.draw.connect(func() -> void:
 		for i in filled:
-			var p := WIN_SEG + Vector2((i - 2) * WIN_SEG_P, -WIN_Y0)
+			var p := WIN_SEG + Vector2(-2.0 * WIN_SEG_P + i * step, -WIN_Y0)
 			var col := Color.WHITE
 			if i == filled - 1:
 				var f: float = segs.get_meta("flash")
 				col = Color(1.0 + f, 1.0 + f, 1.0 + f * 0.5)
 				if f > 0.0:
-					var c := p + seg_t.get_size() / 2.0
+					var c := p + sw / 2.0
 					var sc := 1.0 + f * 0.25
-					segs.draw_texture_rect(seg_t, Rect2(c - seg_t.get_size() * sc / 2.0, seg_t.get_size() * sc), false, col)
+					segs.draw_texture_rect(seg_t, Rect2(c - sw * sc / 2.0, sw * sc), false, col)
 					continue
-			segs.draw_texture_rect(seg_t, Rect2(p, seg_t.get_size()), false, col))
+			segs.draw_texture_rect(seg_t, Rect2(p, sw), false, col))
 	body.add_child(segs)
+	# дорожка заполнена — сундук открывается сам: короткая пауза, потом окно «Сундук открыт!»,
+	# после него — снова окно победы с пустой дорожкой
+	if filled >= CHEST_WINS and not _bot:
+		var auto := create_tween()
+		auto.tween_interval(1.5)
+		auto.tween_callback(func() -> void:
+			if not is_instance_valid(segs) or not segs.is_inside_tree():
+				return
+			_chest_after = _show_win_ref.bind(coins)
+			_open_chest(segs))
 	# кнопки
 	var mk_btn := func(tex_name: String, at: Vector2) -> TextureButton:
 		var b := TextureButton.new()
@@ -6421,6 +6434,9 @@ const COREF_SLOTS := [Vector2(175.5, 1088.5), Vector2(309.5, 1089.5), Vector2(43
 const COREF_BTN := Vector2(116, 1216)
 
 
+var _chest_after := Callable()  # куда вернуться после окна «Сундук открыт!» (из окна победы — назад к нему)
+
+
 func _show_chestopen_ref(rw: Dictionary) -> void:
 	_clear_overlay()
 	var dim := ColorRect.new()
@@ -6488,6 +6504,11 @@ func _show_chestopen_ref(rw: Dictionary) -> void:
 	var done := func() -> void:
 		Sfx.play("click")
 		_clear_overlay()
+		if _chest_after.is_valid():
+			var after := _chest_after
+			_chest_after = Callable()
+			after.call()
+			return
 		_refresh_home()
 	btn.pressed.connect(done)
 	body.add_child(btn)
@@ -7302,6 +7323,23 @@ func _run_winshot(dir: String) -> void:
 	_show_win_ref(1250)
 	await get_tree().create_timer(2.5).timeout
 	await _snap(dir, "w3_bigcoins")
+	Save.chest_wins = 9
+	_show_win_ref(60)
+	await get_tree().create_timer(1.0).timeout
+	await _snap(dir, "w4_chest9")
+	Save.chest_wins = CHEST_WINS
+	_show_win_ref(60)
+	await get_tree().create_timer(1.2).timeout
+	await _snap(dir, "w5_chestfull")
+	await get_tree().create_timer(1.5).timeout
+	await _snap(dir, "w6_chestopen")
+	_clear_overlay()
+	if _chest_after.is_valid():
+		var af := _chest_after
+		_chest_after = Callable()
+		af.call()
+	await get_tree().create_timer(1.0).timeout
+	await _snap(dir, "w7_back")
 	_show_chestopen_ref({"coins": 150, "hammer": 1, "pre_bomb": 1})
 	await get_tree().create_timer(0.8).timeout
 	await _snap(dir, "o1_chestopen")
